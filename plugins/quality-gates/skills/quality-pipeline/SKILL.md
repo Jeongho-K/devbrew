@@ -1,9 +1,12 @@
 ---
 name: quality-pipeline
 description: >
-  Run the 3-gate quality verification pipeline. Use when verifying code quality
-  after implementation, on PR creation (auto-triggered by hook), or manually via
-  /qg command. Manages sequential gate execution with loop-back on code changes.
+  This skill should be used when the user wants to run quality gates, verify code
+  quality, check PR readiness, or run the QG pipeline. Triggered by commands like
+  "/qg", "run quality gates", "verify my implementation", "check code quality",
+  "is my PR ready to merge", or automatically on PR creation via hook. Executes a
+  3-gate sequential pipeline: plan verification, PR review, and runtime verification,
+  with automatic loop-back when code changes occur.
 ---
 
 # Quality Gates Pipeline
@@ -28,78 +31,11 @@ MAX_GATE2_ITERATIONS = 5      # Review-fix-review cycles within Gate 2
 
 ## State File
 
-Create/update `.claude/quality-gates.local.md` in the current project directory to track pipeline state.
-
-**Initial state (create at pipeline start):**
-
-```markdown
----
-status: gate1
-current_gate: 1
-total_iterations: 1
-gate2_iteration: 0
-max_total_iterations: 5
-max_gate2_iterations: 5
-plan_file: <detected or provided plan path>
-pr_url: <PR URL if provided>
-started_at: "<current ISO timestamp>"
----
-
-# Quality Gates Pipeline State
-
-## Pipeline History
-- [<timestamp>] Pipeline started (iteration 1)
-```
-
-Update this file after each gate completes. Use Edit tool to update the YAML frontmatter and append to the history section.
+Create/update `.claude/quality-gates.local.md` per the format in [references/state-file-format.md](references/state-file-format.md). Update this file after each gate completes.
 
 ## Dependency Check (Before Pipeline Start)
 
-Before executing the pipeline, verify that required and optional external plugins are available:
-
-```
-=== PRE-FLIGHT: Dependency Check ===
-
-1. Check Gate 2 core dependency (pr-review-toolkit) [REQUIRED]:
-   - Attempt to confirm that pr-review-toolkit agents are available
-   - If NOT available:
-     → Warn user: "pr-review-toolkit plugin is not installed. Gate 2 (PR Review) will not function correctly.
-       Install it with: claude plugin install pr-review-toolkit"
-     → Ask: "Continue without Gate 2, or abort?"
-     → If continue: mark Gate 2 as SKIP in pipeline
-
-2. Check Gate 1/2 optional dependency (feature-dev) [OPTIONAL]:
-   - Check if feature-dev agents are available
-   - If NOT available:
-     → Log info: "feature-dev plugin not installed. Convention review (feature-dev:code-reviewer),
-       architecture validation (feature-dev:code-architect), and implementation trace
-       (feature-dev:code-explorer) will be skipped."
-     → Continue automatically (non-blocking)
-
-3. Check Gate 1/2 optional dependency (superpowers) [OPTIONAL]:
-   - Check if superpowers agents are available
-   - If NOT available:
-     → Log info: "superpowers plugin not installed. Plan-aligned review
-       (superpowers:code-reviewer) and evidence-based verification
-       (superpowers:verification-before-completion) will be skipped."
-     → Continue automatically (non-blocking)
-
-4. Check Gate 2 optional dependency (code-review) [OPTIONAL]:
-   - Check if code-review command/skill is available
-   - If NOT available:
-     → Log info: "code-review plugin not installed. PR auto-comment (Phase 4) will be skipped."
-     → Continue automatically (non-blocking)
-
-5. Check Gate 3 dependency (browser automation) [OPTIONAL]:
-   - Check if chrome-devtools-mcp OR playwright MCP tools are available
-   - If NEITHER is available:
-     → Warn user: "No browser automation plugin found (chrome-devtools-mcp or playwright).
-       Gate 3 (Runtime Verification) will fall back to curl/test-based checks only."
-     → This is informational only — Gate 3 has built-in fallback, so proceed automatically
-
-Build `available_plugins` list from checks above (e.g., ["pr-review-toolkit", "feature-dev", "superpowers", "code-review"]).
-Log dependency check results in the state file history.
-```
+Run the pre-flight dependency checks per [references/dependency-check.md](references/dependency-check.md) before starting the pipeline. This builds the `available_plugins` list used by all gates.
 
 ## Pipeline Execution
 
