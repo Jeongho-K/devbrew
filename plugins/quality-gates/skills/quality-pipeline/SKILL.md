@@ -1,9 +1,12 @@
 ---
 name: quality-pipeline
 description: >
-  Run the 3-gate quality verification pipeline. Use when verifying code quality
-  after implementation, on PR creation (auto-triggered by hook), or manually via
-  /qg command. Manages sequential gate execution with loop-back on code changes.
+  This skill should be used when the user wants to run quality gates, verify code
+  quality, check PR readiness, or run the QG pipeline. Triggered by commands like
+  "/qg", "run quality gates", "verify my implementation", "check code quality",
+  "is my PR ready to merge", or automatically on PR creation via hook. Executes a
+  3-gate sequential pipeline: plan verification, PR review, and runtime verification,
+  with automatic loop-back when code changes occur.
 ---
 
 # Quality Gates Pipeline
@@ -28,56 +31,11 @@ MAX_GATE2_ITERATIONS = 5      # Review-fix-review cycles within Gate 2
 
 ## State File
 
-Create/update `.claude/quality-gates.local.md` in the current project directory to track pipeline state.
-
-**Initial state (create at pipeline start):**
-
-```markdown
----
-status: gate1
-current_gate: 1
-total_iterations: 1
-gate2_iteration: 0
-max_total_iterations: 5
-max_gate2_iterations: 5
-plan_file: <detected or provided plan path>
-pr_url: <PR URL if provided>
-started_at: "<current ISO timestamp>"
----
-
-# Quality Gates Pipeline State
-
-## Pipeline History
-- [<timestamp>] Pipeline started (iteration 1)
-```
-
-Update this file after each gate completes. Use Edit tool to update the YAML frontmatter and append to the history section.
+Create/update `.claude/quality-gates.local.md` per the format in [references/state-file-format.md](references/state-file-format.md). Update this file after each gate completes.
 
 ## Dependency Check (Before Pipeline Start)
 
-Before executing the pipeline, verify that required external plugins are available:
-
-```
-=== PRE-FLIGHT: Dependency Check ===
-
-1. Check Gate 2 dependency (pr-review-toolkit):
-   - Attempt to confirm that pr-review-toolkit agents are available
-     (e.g., quality-gates:pr-reviewer dispatches pr-review-toolkit:code-reviewer)
-   - If NOT available:
-     → Warn user: "⚠ pr-review-toolkit plugin is not installed. Gate 2 (PR Review) will not function correctly.
-       Install it with: claude plugin install pr-review-toolkit"
-     → Ask: "Continue without Gate 2, or abort?"
-     → If continue: mark Gate 2 as SKIP in pipeline
-
-2. Check Gate 3 dependency (browser automation):
-   - Check if chrome-devtools-mcp OR playwright MCP tools are available
-   - If NEITHER is available:
-     → Warn user: "⚠ No browser automation plugin found (chrome-devtools-mcp or playwright).
-       Gate 3 (Runtime Verification) will fall back to curl/test-based checks only."
-     → This is informational only — Gate 3 has built-in fallback, so proceed automatically
-
-Log dependency check results in the state file history.
-```
+Run the pre-flight dependency checks per [references/dependency-check.md](references/dependency-check.md) before starting the pipeline. This builds the `available_plugins` list used by all gates.
 
 ## Pipeline Execution
 
@@ -94,10 +52,41 @@ FOR iteration IN 1..MAX_TOTAL_ITERATIONS:
     subagent_type="quality-gates:plan-verifier",
     prompt="Verify plan implementation completeness.
       plan_path: <plan_file or 'auto'>
-      project_dir: <current working directory>"
+      project_dir: <current working directory>
+      available_plugins: <available_plugins list from dependency check>"
   )
 
-  Read the agent's report. Check the Verdict line:
+  Read the agent's report. Check the Verdict line.
+
+  === GATE 1.5: Evidence-Based Verification (conditional) ===
+
+  If `available_plugins` includes `superpowers` AND the plan-verifier report
+  contains items in "Likely implemented" or "Possibly implemented" status:
+
+  Skill("superpowers:verification-before-completion")
+
+  Follow the skill's gate function:
+  1. IDENTIFY: Determine which command proves the implementation works (test suite, build, lint, etc.)
+  2. RUN: Execute the full command
+  3. READ: Check full output and exit code
+  4. VERIFY: Does the output confirm the implementation?
+
+  Integrate evidence into Gate 1's verdict — items with passing evidence
+  are more confidently "implemented".
+
+  If `superpowers` is NOT in `available_plugins`, skip this step.
+
+  Note: This step executes commands (tests, builds) but does NOT modify any code.
+
+  **Output Gate 1 result to user immediately:**
+  ```
+  ## Gate 1: Plan Verification — [PASS/FAIL/SKIP]
+  [verdict explanation]
+  [key findings summary]
+  [evidence-based verification results, if executed]
+  ```
+
+  Handle verdict:
   - PASS → proceed to Gate 2
   - SKIP → proceed to Gate 2 (with warning noted)
   - FAIL →
@@ -121,10 +110,21 @@ FOR iteration IN 1..MAX_TOTAL_ITERATIONS:
         max_iterations: <MAX_GATE2_ITERATIONS>
         iteration: <gate2_iter>
         project_dir: <current working directory>
-        previous_findings: <summary from last iteration or 'none'>"
+        previous_findings: <summary from last iteration or 'none'>
+        available_plugins: <available_plugins list from dependency check>
+        plan_path: <plan_file or empty>"
     )
 
-    Read the agent's report. Check the Verdict line:
+    Read the agent's report. Check the Verdict line.
+
+    **Output Gate 2 result to user immediately:**
+    ```
+    ## Gate 2: PR Review (iter [gate2_iter]) — [PASS/FAIL/NEEDS_RESTART]
+    [verdict explanation]
+    [agents run and key findings]
+    ```
+
+    Handle verdict:
     - PASS → proceed to Gate 3
     - NEEDS_RESTART →
       Code was changed. Restart from Gate 1.
@@ -152,7 +152,16 @@ FOR iteration IN 1..MAX_TOTAL_ITERATIONS:
       app_url: auto"
   )
 
-  Read the agent's report. Check the Verdict line:
+  Read the agent's report. Check the Verdict line.
+
+  **Output Gate 3 result to user immediately:**
+  ```
+  ## Gate 3: Runtime Verification — [PASS/FAIL/SKIP/NEEDS_RESTART]
+  [verdict explanation]
+  [checks performed and results]
+  ```
+
+  Handle verdict:
   - PASS → ALL GATES PASSED! Break the loop.
   - SKIP → Treat as pass (non-web project). Break the loop.
   - NEEDS_RESTART →
@@ -168,7 +177,7 @@ FOR iteration IN 1..MAX_TOTAL_ITERATIONS:
   === ALL GATES PASSED ===
 
   Update state file: status=completed
-  Delete state file (cleanup). Do NOT delete `.claude/quality-gates-reports/` — it persists for user review.
+  Delete state file (cleanup).
   Output final summary
   BREAK
 ```
@@ -211,21 +220,15 @@ When all gates pass (or are accepted), output:
 - [file1]: fixed null check (Gate 2)
 - [file2]: added error handling (Gate 2)
 
-### Detailed Agent Reports
-Individual toolkit agent reports available in `.claude/quality-gates-reports/`:
-[list all files in the directory, e.g.:]
-- code-reviewer-iter1.md
-- silent-failure-hunter-iter1.md
-- code-simplifier-iter2.md
-
 PR is ready for merge.
 ```
 
 ## Rules
 
 - ALWAYS create/update the state file — it prevents double-triggering from the hook
-- ALWAYS delete the state file when pipeline completes or is aborted — but NEVER delete `.claude/quality-gates-reports/`
+- ALWAYS delete the state file when pipeline completes or is aborted
 - When restarting from Gate 1, increment total_iterations and update state
+- Output each gate's result to the user immediately after completion — do not wait until the end
 - Pass context between gates — Gate 2 should know Gate 1's findings, Gate 3 should know the plan
 - If ANY gate's agent dispatch fails (error), report the error and ask user how to proceed
 - Track ALL code changes across all gates — the final summary should list every file modified

@@ -37,6 +37,6 @@ Use `Skill("quality-gates:quality-pipeline")` and pass through arguments from "$
 ### Pipeline Rules
 
 - If any gate requires code changes → restart from Gate 1
-- Gate 2 iterates up to 3 times internally
+- Gate 2 iterates up to 5 times internally
 - Full pipeline restarts up to 5 times
 - State tracked in `.claude/quality-gates.local.md`
