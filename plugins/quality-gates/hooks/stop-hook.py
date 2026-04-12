@@ -118,7 +118,7 @@ def extract_signal_from_hook_input(hook_input):
         else:
             last_msg = str(last_msg)
 
-    matches = re.findall(r"<qg-signal\s+([^/]*?)/>", last_msg)
+    matches = re.findall(r"<qg-signal\s+(.*?)\s*/>", last_msg)
     if not matches:
         return None
 
@@ -169,7 +169,7 @@ def extract_last_signal(transcript_path):
 
     # Search for <qg-signal> tags in all text (use last match)
     combined_text = "\n".join(all_text)
-    matches = re.findall(r"<qg-signal\s+([^/]*?)/>", combined_text)
+    matches = re.findall(r"<qg-signal\s+(.*?)\s*/>", combined_text)
 
     if not matches:
         return None
@@ -218,7 +218,7 @@ def compute_transition(state, signal):
 
     # Gate 2 transitions
     if gate == "2":
-        if verdict == "PASS":
+        if verdict in ("PASS", "PASS_WITH_WARNINGS"):
             if state.get("skip_runtime"):
                 return {"type": "complete"}
             return {"type": "next_gate", "next_gate": 3}
