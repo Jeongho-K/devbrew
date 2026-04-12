@@ -1,0 +1,8 @@
+{
+  "name": "project-init",
+  "description": "GitHub Flow git workflow: branch naming, lifecycle, and PR process. Guides Claude through correct branch strategy and PR creation.",
+  "version": "1.0.0",
+  "author": {
+    "name": "jeonghokim"
+  }
+}

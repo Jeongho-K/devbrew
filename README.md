@@ -31,6 +31,7 @@ Brewing better dev tools for Claude Code.
 | Plugin | Description | Category |
 |--------|-------------|----------|
 | [quality-gates](plugins/quality-gates/) | 3-gate quality verification pipeline | development |
+| [project-init](plugins/project-init/) | GitHub Flow git workflow: branch naming, lifecycle, PR process | development |
 
 ## 구조
 

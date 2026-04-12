@@ -11,6 +11,12 @@
       "description": "3-gate quality verification pipeline: plan verification, iterative PR review, and runtime verification.",
       "source": "./plugins/quality-gates",
       "category": "development"
+    },
+    {
+      "name": "project-init",
+      "description": "GitHub Flow git workflow: branch naming, lifecycle, and PR process.",
+      "source": "./plugins/project-init",
+      "category": "development"
     }
   ]
 }
