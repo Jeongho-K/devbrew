@@ -1,7 +1,7 @@
 ---
 description: "Run the quality gates pipeline (plan verification → PR review → runtime verification)"
 argument-hint: "[gate1|gate2|gate3] [--skip-runtime] [--plan <path>] [--pr-url <url>]"
-allowed-tools: [Agent, Skill, Bash, Read, Edit, Write, Glob, Grep]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/setup-qg.sh:*)", "Agent", "Skill", "Bash", "Read", "Edit", "Write", "Glob", "Grep"]
 ---
 
 # Quality Gates Pipeline
@@ -12,9 +12,15 @@ Run the 3-gate quality verification pipeline to ensure code quality before PR me
 
 ## Instructions
 
-Invoke the quality-pipeline skill to run the pipeline:
+Execute the setup script to initialize the pipeline:
 
-Use `Skill("quality-gates:quality-pipeline")` and pass through arguments from "$ARGUMENTS".
+```!
+"${CLAUDE_PLUGIN_ROOT}/scripts/setup-qg.sh" $ARGUMENTS
+```
+
+Now invoke `Skill("quality-gates:quality-pipeline")` with gate=1 (or the gate specified in $ARGUMENTS) to begin the first gate.
+
+When you finish the gate, emit a `<qg-signal>` tag. The Stop hook handles pipeline progression automatically.
 
 ### Quick Reference
 
@@ -27,6 +33,7 @@ Use `Skill("quality-gates:quality-pipeline")` and pass through arguments from "$
 | `/qg --skip-runtime` | Gates 1 & 2 only (skip runtime) |
 | `/qg --plan <path>` | Use specific plan file |
 | `/qg --pr-url <url>` | Specify PR URL |
+| `/cancel-qg` | Cancel active pipeline |
 
 ### Gates
 
@@ -36,7 +43,8 @@ Use `Skill("quality-gates:quality-pipeline")` and pass through arguments from "$
 
 ### Pipeline Rules
 
-- If any gate requires code changes → restart from Gate 1
+- Pipeline progression managed by Stop hook (no manual gate transitions needed)
+- If any gate requires code changes → automatic restart from Gate 1
 - Gate 2 iterates up to 5 times internally
 - Full pipeline restarts up to 5 times
-- State tracked in `.claude/quality-gates.local.md`
+- State tracked in `.claude/quality-gates.local.md` (managed by hook scripts)

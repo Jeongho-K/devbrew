@@ -5,231 +5,249 @@ description: >
   quality, check PR readiness, or run the QG pipeline. Triggered by commands like
   "/qg", "run quality gates", "verify my implementation", "check code quality",
   "is my PR ready to merge", or automatically on PR creation via hook. Executes a
-  3-gate sequential pipeline: plan verification, PR review, and runtime verification,
-  with automatic loop-back when code changes occur.
+  single gate per turn; the Stop hook manages pipeline progression automatically.
 ---
 
-# Quality Gates Pipeline
+# Quality Gates — Gate Executor
 
-You are orchestrating the 3-gate quality verification pipeline. Execute gates sequentially, handle loop-backs, and track state.
+You are executing a **single gate** of the quality pipeline. The Stop hook manages
+pipeline progression (gate-to-gate transitions, iteration counting, loop-back on
+code changes). You do NOT manage state files or pipeline flow.
 
 ## Arguments
 
-Parse the following from the prompt/arguments:
-- `gate1`, `gate2`, `gate3` — run a specific gate only
-- `--skip-runtime` — skip Gate 3
-- `--plan <path>` — specify plan file path
-- `--pr-url <url>` — PR URL (from auto-trigger)
-- If no arguments, run the full pipeline (Gate 1 → 2 → 3)
+Parse the following from the prompt parameters:
 
-## Configuration
+- `gate`: Which gate to execute (1, 2, or 3)
+- `plan_path`: Plan file path (or "auto")
+- `pr_url`: PR URL (optional)
+- `available_plugins`: Comma-separated list of available plugins
+- `iteration`: Current Gate 2 iteration number (Gate 2 only)
+- `max_iterations`: Maximum Gate 2 iterations (Gate 2 only)
+- `previous_findings`: Summary from last Gate 2 iteration (Gate 2 only)
 
-```
-MAX_TOTAL_ITERATIONS = 5      # Full pipeline restarts
-MAX_GATE2_ITERATIONS = 5      # Review-fix-review cycles within Gate 2
-```
+If this is the first gate invocation (no parameters in the prompt), determine the gate
+from any `/qg` arguments (gate1, gate2, gate3) or default to gate=1.
 
-## State File
+## Dependency Check
 
-Create/update `.claude/quality-gates.local.md` per the format in [references/state-file-format.md](references/state-file-format.md). Update this file after each gate completes.
+If `available_plugins` is provided in the prompt parameters, use it directly.
 
-## Dependency Check (Before Pipeline Start)
+Otherwise (first invocation only), run the pre-flight dependency checks per
+[references/dependency-check.md](references/dependency-check.md) to build the
+`available_plugins` list.
 
-Run the pre-flight dependency checks per [references/dependency-check.md](references/dependency-check.md) before starting the pipeline. This builds the `available_plugins` list used by all gates.
+## Gate Execution
 
-## Pipeline Execution
+### Gate 1: Plan Verification
 
-### Full Pipeline Flow
-
-```
-FOR iteration IN 1..MAX_TOTAL_ITERATIONS:
-
-  === GATE 1: Plan Verification ===
-
-  Dispatch the plan-verifier agent:
-
-  Agent(
-    subagent_type="quality-gates:plan-verifier",
-    prompt="Verify plan implementation completeness.
-      plan_path: <plan_file or 'auto'>
-      project_dir: <current working directory>
-      available_plugins: <available_plugins list from dependency check>"
-  )
-
-  Read the agent's report. Check the Verdict line.
-
-  === GATE 1.5: Evidence-Based Verification (conditional) ===
-
-  If `available_plugins` includes `superpowers` AND the plan-verifier report
-  contains items in "Likely implemented" or "Possibly implemented" status:
-
-  Skill("superpowers:verification-before-completion")
-
-  Follow the skill's gate function:
-  1. IDENTIFY: Determine which command proves the implementation works (test suite, build, lint, etc.)
-  2. RUN: Execute the full command
-  3. READ: Check full output and exit code
-  4. VERIFY: Does the output confirm the implementation?
-
-  Integrate evidence into Gate 1's verdict — items with passing evidence
-  are more confidently "implemented".
-
-  If `superpowers` is NOT in `available_plugins`, skip this step.
-
-  Note: This step executes commands (tests, builds) but does NOT modify any code.
-
-  **Output Gate 1 result to user immediately:**
-  ```
-  ## Gate 1: Plan Verification — [PASS/FAIL/SKIP]
-  [verdict explanation]
-  [key findings summary]
-  [evidence-based verification results, if executed]
-  ```
-
-  Handle verdict:
-  - PASS → proceed to Gate 2
-  - SKIP → proceed to Gate 2 (with warning noted)
-  - FAIL →
-    Report blocking gaps to the user.
-    Ask: "N blocking items remain. Should I implement them, or proceed anyway?"
-    - If implement: implement the items, then RESTART this iteration
-    - If proceed: mark as passed-with-warnings, continue to Gate 2
-
-  Update state file: status=gate2, append history.
-
-  === GATE 2: Iterative PR Review ===
-
-  FOR gate2_iter IN 1..MAX_GATE2_ITERATIONS:
-
-    Dispatch the pr-reviewer agent:
-
-    Agent(
-      subagent_type="quality-gates:pr-reviewer",
-      prompt="Run iterative PR review.
-        pr_url: <pr_url>
-        max_iterations: <MAX_GATE2_ITERATIONS>
-        iteration: <gate2_iter>
-        project_dir: <current working directory>
-        previous_findings: <summary from last iteration or 'none'>
-        available_plugins: <available_plugins list from dependency check>
-        plan_path: <plan_file or empty>"
-    )
-
-    Read the agent's report. Check the Verdict line.
-
-    **Output Gate 2 result to user immediately:**
-    ```
-    ## Gate 2: PR Review (iter [gate2_iter]) — [PASS/FAIL/NEEDS_RESTART]
-    [verdict explanation]
-    [agents run and key findings]
-    ```
-
-    Handle verdict:
-    - PASS → proceed to Gate 3
-    - NEEDS_RESTART →
-      Code was changed. Restart from Gate 1.
-      total_iterations++
-      BREAK inner loop, CONTINUE outer loop
-    - FAIL →
-      If gate2_iter < MAX_GATE2_ITERATIONS: continue inner loop
-      Else: report remaining issues to user, ask to proceed or abort
-
-  Update state file: status=gate3, append history.
-
-  === GATE 3: Runtime Verification ===
-
-  If --skip-runtime was specified, skip this gate.
-
-  Dispatch the runtime-verifier agent:
-
-  Agent(
-    subagent_type="quality-gates:runtime-verifier",
-    prompt="Verify application runtime behavior.
-      project_dir: <current working directory>
-      plan_path: <plan_file>
-      project_type: auto
-      app_start_command: auto
-      app_url: auto"
-  )
-
-  Read the agent's report. Check the Verdict line.
-
-  **Output Gate 3 result to user immediately:**
-  ```
-  ## Gate 3: Runtime Verification — [PASS/FAIL/SKIP/NEEDS_RESTART]
-  [verdict explanation]
-  [checks performed and results]
-  ```
-
-  Handle verdict:
-  - PASS → ALL GATES PASSED! Break the loop.
-  - SKIP → Treat as pass (non-web project). Break the loop.
-  - NEEDS_RESTART →
-    Code was changed. Restart from Gate 1.
-    total_iterations++
-    CONTINUE outer loop
-  - FAIL →
-    Report failures to user.
-    Ask: "Runtime verification failed. Should I fix the issues?"
-    - If fix: fix issues, restart from Gate 1
-    - If skip: mark as passed-with-warnings, break
-
-  === ALL GATES PASSED ===
-
-  Update state file: status=completed
-  Delete state file (cleanup).
-  Output final summary
-  BREAK
-```
-
-### If MAX_TOTAL_ITERATIONS Exceeded
+Dispatch the plan-verifier agent:
 
 ```
-Report: "Quality pipeline exceeded maximum iterations (5)."
-Ask user to choose:
-  1. Extend (add 3 more iterations)
-  2. Accept as-is (proceed with current state)
-  3. Abort (stop pipeline)
+Agent(
+  subagent_type="quality-gates:plan-verifier",
+  prompt="Verify plan implementation completeness.
+    plan_path: <plan_path or 'auto'>
+    project_dir: <current working directory>
+    available_plugins: <available_plugins list>"
+)
 ```
 
-### Single Gate Execution
+Read the agent's report. Check the Verdict line.
 
-If a specific gate was requested (e.g., `/qg gate2`):
-- Run only that gate
-- Do NOT loop back to other gates
-- Report the single gate's result
+**Evidence-Based Verification (conditional):**
+
+If `available_plugins` includes `superpowers` AND the plan-verifier report
+contains items in "Likely implemented" or "Possibly implemented" status:
+
+```
+Skill("superpowers:verification-before-completion")
+```
+
+Follow the skill's gate function:
+1. IDENTIFY: Determine which command proves the implementation works
+2. RUN: Execute the full command
+3. READ: Check full output and exit code
+4. VERIFY: Does the output confirm the implementation?
+
+Integrate evidence into Gate 1's verdict.
+Note: This step executes commands but does NOT modify any code.
+
+**Output Gate 1 result to user:**
+```
+## Gate 1: Plan Verification — [PASS/FAIL/SKIP]
+[verdict explanation]
+[key findings summary]
+[evidence-based verification results, if executed]
+```
+
+**Handle verdict:**
+- PASS → emit signal with verdict="PASS"
+- SKIP → emit signal with verdict="SKIP"
+- FAIL →
+  Report blocking gaps to the user.
+  Ask: "N blocking items remain. Should I implement them, or proceed anyway?"
+  - If implement: implement the items, then emit signal with verdict="RETRY"
+  - If proceed: emit signal with verdict="PASS_WITH_WARNINGS"
+
+### Gate 2: PR Review
+
+Dispatch the pr-reviewer agent:
+
+```
+Agent(
+  subagent_type="quality-gates:pr-reviewer",
+  prompt="Run iterative PR review.
+    pr_url: <pr_url>
+    max_iterations: <max_iterations>
+    iteration: <iteration>
+    project_dir: <current working directory>
+    previous_findings: <previous_findings or 'none'>
+    available_plugins: <available_plugins list>
+    plan_path: <plan_path or empty>"
+)
+```
+
+Read the agent's report. Check the Verdict line.
+
+**Output Gate 2 result to user:**
+```
+## Gate 2: PR Review (iter [iteration]) — [PASS/FAIL/NEEDS_RESTART]
+[verdict explanation]
+[agents run and key findings]
+```
+
+**Handle verdict:**
+- PASS → emit signal with verdict="PASS"
+- NEEDS_RESTART → emit signal with verdict="NEEDS_RESTART"
+- FAIL → emit signal with verdict="FAIL"
+
+### Gate 3: Runtime Verification
+
+Dispatch the runtime-verifier agent:
+
+```
+Agent(
+  subagent_type="quality-gates:runtime-verifier",
+  prompt="Verify application runtime behavior.
+    project_dir: <current working directory>
+    plan_path: <plan_path>
+    project_type: auto
+    app_start_command: auto
+    app_url: auto"
+)
+```
+
+Read the agent's report. Check the Verdict line.
+
+**Output Gate 3 result to user:**
+```
+## Gate 3: Runtime Verification — [PASS/FAIL/SKIP/NEEDS_RESTART]
+[verdict explanation]
+[checks performed and results]
+```
+
+**Handle verdict:**
+- PASS → emit signal with verdict="PASS"
+- SKIP → emit signal with verdict="SKIP"
+- NEEDS_RESTART → emit signal with verdict="NEEDS_RESTART"
+- FAIL → emit signal with verdict="FAIL"
+
+## Special Prompts from Stop Hook
+
+The Stop hook may inject special prompts that start with keywords.
+Handle them as follows:
+
+### MAX_TOTAL_ITERATIONS_EXCEEDED
+
+Pipeline exceeded maximum total iterations. Present to user:
+1. **Extend** — add 3 more iterations
+2. **Accept as-is** — proceed with current state
+3. **Abort** — stop pipeline
+
+Based on choice:
+- Extend: `<qg-signal action="extend" additional="3" />`
+- Accept: `<qg-signal action="complete" />`
+- Abort: `<qg-signal action="abort" reason="User chose to abort" />`
+
+### GATE2_MAX_EXCEEDED
+
+Gate 2 exceeded maximum review iterations. Report remaining issues and present:
+1. **Proceed to Gate 3** anyway
+2. **Abort** pipeline
+
+Based on choice:
+- Proceed: `<qg-signal gate="2" verdict="PASS_WITH_WARNINGS" summary="Proceeding with remaining issues" files_changed="" />`
+- Abort: `<qg-signal action="abort" reason="User chose to abort" />`
+
+### GATE3_FAIL
+
+Gate 3 failed. Present:
+1. **Fix issues** (will restart from Gate 1)
+2. **Skip** runtime verification
+3. **Abort** pipeline
+
+Based on choice:
+- Fix: fix the issues, then `<qg-signal gate="3" verdict="NEEDS_RESTART" summary="Fixed runtime issues" files_changed="list,of,changed,files" />`
+- Skip: `<qg-signal gate="3" verdict="SKIP" summary="User chose to skip" files_changed="" />`
+- Abort: `<qg-signal action="abort" reason="User chose to abort" />`
 
 ## Final Summary
 
-When all gates pass (or are accepted), output:
+When the Stop hook signals this is the last gate (no more gates after this),
+output the final pipeline summary:
 
 ```
-## Quality Gates Pipeline — Complete ✓
-
-**Total Iterations:** N
-**Duration:** Xm Ys
+## Quality Gates Pipeline — Complete
 
 ### Gate Results
 | Gate | Status | Details |
 |------|--------|---------|
-| 1. Plan Verification | PASS | 24/24 items (100%) |
-| 2. PR Review | PASS (iter 2) | 2 issues fixed |
-| 3. Runtime Verification | PASS | Web app verified |
+| 1. Plan Verification | [status] | [details] |
+| 2. PR Review | [status] | [details] |
+| 3. Runtime Verification | [status] | [details] |
 
 ### Summary of Changes Made
-- [file1]: fixed null check (Gate 2)
-- [file2]: added error handling (Gate 2)
+- [file]: [what was changed] (Gate N)
 
 PR is ready for merge.
 ```
 
+## Signal Tag Rules
+
+After each gate completes, you **MUST** output a signal tag. This is how the Stop
+hook knows what happened and what to do next.
+
+**Gate completion signals:**
+```xml
+<qg-signal gate="N" verdict="VERDICT" summary="one-line summary" files_changed="comma,separated,list" />
+```
+
+Verdict values:
+- `PASS` — Gate succeeded, no issues
+- `FAIL` — Gate failed, issues remain
+- `SKIP` — Gate skipped (no plan file, non-web project, etc.)
+- `NEEDS_RESTART` — Code was changed, pipeline should restart from Gate 1
+- `PASS_WITH_WARNINGS` — Gate passed with non-blocking warnings
+- `RETRY` — Gate needs to re-run (Gate 1 implemented missing items)
+
+For Gate 2, include the `iteration` attribute:
+```xml
+<qg-signal gate="2" verdict="PASS" iteration="3" summary="All issues resolved" files_changed="" />
+```
+
+**Pipeline control signals:**
+```xml
+<qg-signal action="complete" />
+<qg-signal action="abort" reason="description" />
+<qg-signal action="extend" additional="3" />
+```
+
 ## Rules
 
-- ALWAYS create/update the state file — it prevents double-triggering from the hook
-- ALWAYS delete the state file when pipeline completes or is aborted
-- When restarting from Gate 1, increment total_iterations and update state
-- Output each gate's result to the user immediately after completion — do not wait until the end
-- Pass context between gates — Gate 2 should know Gate 1's findings, Gate 3 should know the plan
-- If ANY gate's agent dispatch fails (error), report the error and ask user how to proceed
-- Track ALL code changes across all gates — the final summary should list every file modified
-- Update the state file after each gate to track pipeline progress
+- NEVER write to or read from `.claude/quality-gates.local.md` — the Stop hook manages it
+- ALWAYS emit exactly one `<qg-signal>` tag at the end of your response
+- Output each gate's result to the user immediately
+- If an agent dispatch fails (error), report the error and emit signal with verdict="FAIL"
+- The `files_changed` attribute must list every file modified during this gate (comma-separated), or empty string if none
+- The `summary` attribute should be a concise one-line description of the gate result

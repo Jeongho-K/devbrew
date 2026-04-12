@@ -1,0 +1,610 @@
+#!/usr/bin/env python3
+"""Stop hook for quality-gates pipeline.
+
+Manages pipeline progression by parsing <qg-signal> tags from the transcript,
+computing state transitions, updating the state file, and injecting the next
+gate's prompt. All file I/O happens in this script (not through Claude's Write
+tool), so no permission prompts are triggered.
+
+State machine:
+  gate1_running → gate2_running → gate3_running → completed
+                    ↑                                  |
+                    └──── NEEDS_RESTART ───────────────┘
+"""
+
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+
+# --- Constants ---
+
+STATE_FILE = ".claude/quality-gates.local.md"
+
+GATE_NAMES = {
+    "1": "Plan Verification",
+    "2": "PR Review",
+    "3": "Runtime Verification",
+}
+
+
+# --- State File Parsing ---
+
+def parse_state_file(path):
+    """Parse YAML frontmatter and body from state file."""
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+    except (IOError, OSError) as e:
+        print(f"⚠️  Quality Gates: Cannot read state file: {e}", file=sys.stderr)
+        return None, None
+
+    # Extract frontmatter between --- markers
+    match = re.match(r"^---\n(.*?)\n---\n(.*)", content, re.DOTALL)
+    if not match:
+        print("⚠️  Quality Gates: State file has invalid format", file=sys.stderr)
+        return None, None
+
+    frontmatter_text = match.group(1)
+    body = match.group(2)
+
+    # Parse YAML-like frontmatter (simple key: value pairs)
+    state = {}
+    for line in frontmatter_text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            key, _, value = line.partition(":")
+            value = value.strip().strip('"')
+            state[key.strip()] = value
+
+    # Convert numeric fields
+    for field in ("current_gate", "total_iterations", "gate2_iteration",
+                  "max_total_iterations", "max_gate2_iterations"):
+        val = state.get(field, "0")
+        if not val.isdigit():
+            print(f"⚠️  Quality Gates: Invalid numeric field '{field}': {val}",
+                  file=sys.stderr)
+            return None, None
+        state[field] = int(val)
+
+    # Convert boolean fields
+    for field in ("skip_runtime",):
+        state[field] = state.get(field, "false").lower() == "true"
+
+    # Normalize null
+    if state.get("single_gate") == "null":
+        state["single_gate"] = None
+
+    return state, body
+
+
+def extract_gate_results(body):
+    """Extract previous gate results from the state file body."""
+    if not body:
+        return ""
+    results_match = re.search(
+        r"## Gate Results\n(.*?)(?=\n## Pipeline History|\Z)", body, re.DOTALL
+    )
+    return results_match.group(1).strip() if results_match else ""
+
+
+# --- Transcript Parsing ---
+
+def extract_last_signal(transcript_path):
+    """Extract the last <qg-signal> tag from the transcript.
+
+    Reads the transcript as JSONL, extracts the last 100 assistant text blocks,
+    and searches for <qg-signal .../> tags.
+    """
+    if not transcript_path or not os.path.exists(transcript_path):
+        return None
+
+    try:
+        with open(transcript_path, "r") as f:
+            lines = f.readlines()
+    except (IOError, OSError):
+        return None
+
+    # Filter assistant lines (last 100 for bounded processing)
+    assistant_lines = [
+        line for line in lines
+        if '"role":"assistant"' in line or '"role": "assistant"' in line
+    ]
+    assistant_lines = assistant_lines[-100:]
+
+    if not assistant_lines:
+        return None
+
+    # Extract text content from assistant messages
+    all_text = []
+    for line in assistant_lines:
+        try:
+            msg = json.loads(line.strip())
+            content = msg.get("message", {}).get("content", [])
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        all_text.append(block.get("text", ""))
+        except (json.JSONDecodeError, AttributeError):
+            continue
+
+    if not all_text:
+        return None
+
+    # Search for <qg-signal> tags in all text (use last match)
+    combined_text = "\n".join(all_text)
+    matches = re.findall(r"<qg-signal\s+([^/]*?)/>", combined_text)
+
+    if not matches:
+        return None
+
+    # Parse attributes from the last match
+    last_attrs_str = matches[-1]
+    attrs = dict(re.findall(r'(\w+)="([^"]*)"', last_attrs_str))
+    return attrs
+
+
+# --- State Transitions ---
+
+def compute_transition(state, signal):
+    """Compute the next state based on current state and signal.
+
+    Returns a dict describing the transition:
+      type: next_gate | retry_gate | restart | complete | abort |
+            max_total_exceeded | max_gate2_exceeded | gate3_fail
+      + relevant fields for each type
+    """
+    action = signal.get("action")
+    gate = signal.get("gate")
+    verdict = signal.get("verdict", "")
+
+    # Pipeline control signals
+    if action == "complete":
+        return {"type": "complete"}
+    if action == "abort":
+        return {"type": "abort"}
+    if action == "extend":
+        additional = int(signal.get("additional", "3"))
+        return {"type": "extend", "additional": additional}
+
+    # Single-gate mode: done after one gate completes
+    if state.get("single_gate"):
+        return {"type": "complete"}
+
+    # Gate 1 transitions
+    if gate == "1":
+        if verdict in ("PASS", "SKIP", "PASS_WITH_WARNINGS"):
+            return {"type": "next_gate", "next_gate": 2, "gate2_iteration": 1}
+        if verdict == "RETRY":
+            return {"type": "retry_gate", "gate": 1}
+        # FAIL = user chose to abort
+        return {"type": "abort"}
+
+    # Gate 2 transitions
+    if gate == "2":
+        if verdict == "PASS":
+            if state.get("skip_runtime"):
+                return {"type": "complete"}
+            return {"type": "next_gate", "next_gate": 3}
+        if verdict == "NEEDS_RESTART":
+            if state["total_iterations"] >= state["max_total_iterations"]:
+                return {"type": "max_total_exceeded"}
+            return {
+                "type": "restart",
+                "total_iterations": state["total_iterations"] + 1,
+            }
+        if verdict == "FAIL":
+            if state["gate2_iteration"] < state["max_gate2_iterations"]:
+                return {
+                    "type": "retry_gate",
+                    "gate": 2,
+                    "gate2_iteration": state["gate2_iteration"] + 1,
+                }
+            return {"type": "max_gate2_exceeded"}
+
+    # Gate 3 transitions
+    if gate == "3":
+        if verdict in ("PASS", "SKIP"):
+            return {"type": "complete"}
+        if verdict == "NEEDS_RESTART":
+            if state["total_iterations"] >= state["max_total_iterations"]:
+                return {"type": "max_total_exceeded"}
+            return {
+                "type": "restart",
+                "total_iterations": state["total_iterations"] + 1,
+            }
+        if verdict == "FAIL":
+            return {"type": "gate3_fail"}
+
+    # Unknown state — abort safely
+    return {"type": "abort"}
+
+
+# --- State File Update ---
+
+def update_state_file(path, state, signal, transition):
+    """Update the state file with new state and history entry."""
+    try:
+        with open(path, "r") as f:
+            content = f.read()
+    except (IOError, OSError):
+        return
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    gate = signal.get("gate", "?")
+    verdict = signal.get("verdict", signal.get("action", "?"))
+    summary = signal.get("summary", "")
+    iteration = signal.get("iteration", "")
+    files_changed = signal.get("files_changed", "")
+
+    # --- Update frontmatter fields ---
+
+    new_status = state.get("status", "gate1_running")
+    new_gate = state.get("current_gate", 1)
+    new_total = state.get("total_iterations", 1)
+    new_gate2_iter = state.get("gate2_iteration", 0)
+    new_max_total = state.get("max_total_iterations", 5)
+
+    t_type = transition["type"]
+    if t_type == "next_gate":
+        new_gate = transition["next_gate"]
+        new_status = f"gate{new_gate}_running"
+        if new_gate == 2:
+            new_gate2_iter = transition.get("gate2_iteration", 1)
+    elif t_type == "retry_gate":
+        retry_gate = transition.get("gate", new_gate)
+        new_status = f"gate{retry_gate}_running"
+        if retry_gate == 2:
+            new_gate2_iter = transition.get("gate2_iteration", new_gate2_iter)
+    elif t_type == "restart":
+        new_gate = 1
+        new_total = transition["total_iterations"]
+        new_gate2_iter = 0
+        new_status = "gate1_running"
+    elif t_type == "extend":
+        new_max_total += transition.get("additional", 3)
+    elif t_type in ("complete", "abort"):
+        new_status = "completed" if t_type == "complete" else "aborted"
+
+    # Apply frontmatter updates via string replacement
+    replacements = {
+        "status": new_status,
+        "current_gate": str(new_gate),
+        "total_iterations": str(new_total),
+        "gate2_iteration": str(new_gate2_iter),
+        "max_total_iterations": str(new_max_total),
+    }
+    for key, val in replacements.items():
+        content = re.sub(
+            rf"^{key}:.*$", f"{key}: {val}", content, count=1, flags=re.MULTILINE
+        )
+
+    # --- Append gate result ---
+
+    iter_suffix = f" Iteration {iteration}" if iteration else ""
+    result_entry = f"\n### Gate {gate}{iter_suffix}\n"
+    result_entry += f"**Verdict:** {verdict}\n"
+    if summary:
+        result_entry += f"**Summary:** {summary}\n"
+    if files_changed:
+        result_entry += f"**Files Changed:** {files_changed}\n"
+
+    content = content.replace(
+        "## Pipeline History",
+        f"{result_entry}\n## Pipeline History",
+        1,
+    )
+
+    # --- Append history entry ---
+
+    iter_label = f" iter {iteration}" if iteration else ""
+    history_line = f"- [{now}] Gate {gate}{iter_label}: {verdict}"
+    if t_type == "restart":
+        history_line += f"\n- [{now}] Restarting from Gate 1 (iteration {new_total})"
+
+    content = content.replace(
+        "## Pipeline History\n",
+        f"## Pipeline History\n{history_line}\n",
+        1,
+    )
+
+    # --- Atomic write ---
+
+    dir_name = os.path.dirname(path)
+    fd, temp_path = tempfile.mkstemp(dir=dir_name, prefix=".qg-state-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+        os.replace(temp_path, path)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+
+
+# --- Prompt Construction ---
+
+def build_gate_prompt(gate_num, state, gate_results):
+    """Build the prompt for the next gate execution."""
+    plan_file = state.get("plan_file", "auto")
+    pr_url = state.get("pr_url", "")
+    available_plugins = state.get("available_plugins", "")
+    gate2_iteration = state.get("gate2_iteration", 1)
+    max_gate2 = state.get("max_gate2_iterations", 5)
+
+    prompt_parts = []
+
+    if gate_num == 1:
+        prompt_parts.append(
+            "Execute Quality Gates - Gate 1 (Plan Verification).\n\n"
+            "Parameters:\n"
+            f"  gate: 1\n"
+            f"  plan_path: {plan_file}\n"
+            f"  available_plugins: {available_plugins}\n"
+        )
+    elif gate_num == 2:
+        # Extract previous Gate 2 findings if available
+        prev_findings = "none"
+        g2_matches = re.findall(
+            r"### Gate 2.*?\n\*\*Summary:\*\* (.*?)(?:\n|$)",
+            gate_results,
+        )
+        if g2_matches:
+            prev_findings = g2_matches[-1]
+
+        prompt_parts.append(
+            f"Execute Quality Gates - Gate 2 (PR Review), "
+            f"iteration {gate2_iteration}/{max_gate2}.\n\n"
+            "Parameters:\n"
+            f"  gate: 2\n"
+            f"  pr_url: {pr_url}\n"
+            f"  iteration: {gate2_iteration}\n"
+            f"  max_iterations: {max_gate2}\n"
+            f"  previous_findings: {prev_findings}\n"
+            f"  available_plugins: {available_plugins}\n"
+            f"  plan_path: {plan_file}\n"
+        )
+    elif gate_num == 3:
+        prompt_parts.append(
+            "Execute Quality Gates - Gate 3 (Runtime Verification).\n\n"
+            "Parameters:\n"
+            f"  gate: 3\n"
+            f"  plan_path: {plan_file}\n"
+            f"  project_type: auto\n"
+            f"  app_start_command: auto\n"
+            f"  app_url: auto\n"
+        )
+
+    # Add previous gate results context
+    if gate_results.strip():
+        prompt_parts.append(
+            f"\nPrevious gate results:\n{gate_results}\n"
+        )
+
+    prompt_parts.append(
+        '\nInvoke Skill("quality-gates:quality-pipeline") with the above parameters.\n'
+        "After the gate completes, emit a <qg-signal> tag with your verdict."
+    )
+
+    return "".join(prompt_parts)
+
+
+def build_special_prompt(transition_type, state, gate_results):
+    """Build prompts for special situations (max exceeded, gate3 fail)."""
+    if transition_type == "max_total_exceeded":
+        return (
+            "MAX_TOTAL_ITERATIONS_EXCEEDED\n\n"
+            f"Quality pipeline exceeded maximum total iterations "
+            f"({state['max_total_iterations']}).\n\n"
+            "Present these options to the user:\n"
+            "1. Extend (add 3 more iterations)\n"
+            "2. Accept as-is (proceed with current state)\n"
+            "3. Abort (stop pipeline)\n\n"
+            "Based on user choice:\n"
+            '- Extend: emit <qg-signal action="extend" additional="3" />\n'
+            '- Accept: emit <qg-signal action="complete" />\n'
+            '- Abort: emit <qg-signal action="abort" reason="User chose to abort" />\n'
+            f"\nPipeline context:\n{gate_results}"
+        )
+
+    if transition_type == "max_gate2_exceeded":
+        return (
+            "GATE2_MAX_EXCEEDED\n\n"
+            f"Gate 2 (PR Review) exceeded maximum iterations "
+            f"({state['max_gate2_iterations']}).\n\n"
+            "Report remaining issues to the user and present options:\n"
+            "1. Proceed to Gate 3 anyway\n"
+            "2. Abort pipeline\n\n"
+            "Based on user choice:\n"
+            '- Proceed: emit <qg-signal gate="2" verdict="PASS_WITH_WARNINGS" '
+            'summary="Proceeding with remaining issues" files_changed="" />\n'
+            '- Abort: emit <qg-signal action="abort" reason="User chose to abort" />\n'
+            f"\nPipeline context:\n{gate_results}"
+        )
+
+    if transition_type == "gate3_fail":
+        return (
+            "GATE3_FAIL\n\n"
+            "Gate 3 (Runtime Verification) failed.\n\n"
+            "Present options to the user:\n"
+            "1. Fix the issues (will restart from Gate 1)\n"
+            "2. Skip runtime verification and accept\n"
+            "3. Abort pipeline\n\n"
+            "Based on user choice:\n"
+            '- Fix: fix the issues, then emit <qg-signal gate="3" '
+            'verdict="NEEDS_RESTART" summary="Fixed runtime issues" '
+            'files_changed="list,of,files" />\n'
+            '- Skip: emit <qg-signal gate="3" verdict="SKIP" '
+            'summary="User chose to skip runtime verification" files_changed="" />\n'
+            '- Abort: emit <qg-signal action="abort" reason="User chose to abort" />\n'
+            f"\nPipeline context:\n{gate_results}"
+        )
+
+    return ""
+
+
+def build_system_message(state, transition):
+    """Build the system message shown to the user."""
+    t_type = transition["type"]
+    gate = state.get("current_gate", 1)
+    total = state.get("total_iterations", 1)
+    max_total = state.get("max_total_iterations", 5)
+
+    if t_type == "next_gate":
+        gate = transition["next_gate"]
+    elif t_type == "restart":
+        gate = 1
+        total = transition["total_iterations"]
+
+    gate_name = GATE_NAMES.get(str(gate), f"Gate {gate}")
+
+    if t_type in ("max_total_exceeded", "max_gate2_exceeded", "gate3_fail"):
+        return f"⚠️ Quality Gates: Action required | /cancel-qg to stop"
+
+    return (
+        f"🔄 Quality Gates: Gate {gate} ({gate_name}) | "
+        f"iteration {total}/{max_total} | /cancel-qg to stop"
+    )
+
+
+# --- Main ---
+
+def main():
+    try:
+        hook_input = json.load(sys.stdin)
+    except (json.JSONDecodeError, EOFError):
+        sys.exit(0)
+
+    # 1. Check state file exists
+    if not os.path.exists(STATE_FILE):
+        sys.exit(0)
+
+    # 2. Parse state file
+    state, body = parse_state_file(STATE_FILE)
+    if state is None:
+        # Corrupted state file ��� delete and allow exit
+        try:
+            os.unlink(STATE_FILE)
+        except OSError:
+            pass
+        sys.exit(0)
+
+    # 3. Session isolation
+    state_session = state.get("session_id", "")
+    hook_session = hook_input.get("session_id", "")
+    if state_session and hook_session and state_session != hook_session:
+        sys.exit(0)
+
+    # 4. Extract signal from transcript
+    transcript_path = hook_input.get("transcript_path", "")
+    signal = extract_last_signal(transcript_path)
+
+    # 5. Get gate results from state file body
+    gate_results = extract_gate_results(body)
+
+    # 6. If no signal found, re-inject current gate prompt (ralph-loop pattern)
+    if not signal:
+        current_gate = state["current_gate"]
+        prompt = build_gate_prompt(current_gate, state, gate_results)
+        sys_msg = build_system_message(state, {"type": "retry_gate"})
+        print(json.dumps({
+            "decision": "block",
+            "reason": prompt,
+            "systemMessage": sys_msg,
+        }))
+        sys.exit(0)
+
+    # 7. Compute state transition
+    transition = compute_transition(state, signal)
+
+    # 8. Update state file with signal results
+    try:
+        update_state_file(STATE_FILE, state, signal, transition)
+    except Exception as e:
+        print(f"⚠️  Quality Gates: Failed to update state file: {e}",
+              file=sys.stderr)
+
+    # 9. Handle completion/abort — delete state file and allow exit
+    if transition["type"] in ("complete", "abort"):
+        try:
+            os.unlink(STATE_FILE)
+        except OSError:
+            pass
+        sys.exit(0)
+
+    # 10. Handle special prompts
+    if transition["type"] in ("max_total_exceeded", "max_gate2_exceeded",
+                               "gate3_fail"):
+        prompt = build_special_prompt(transition["type"], state, gate_results)
+        sys_msg = build_system_message(state, transition)
+        print(json.dumps({
+            "decision": "block",
+            "reason": prompt,
+            "systemMessage": sys_msg,
+        }))
+        sys.exit(0)
+
+    # 11. Handle extend — update max and re-inject current gate prompt
+    if transition["type"] == "extend":
+        current_gate = state["current_gate"]
+        # State file already updated with new max
+        updated_state, updated_body = parse_state_file(STATE_FILE)
+        if updated_state:
+            updated_results = extract_gate_results(updated_body)
+            prompt = build_gate_prompt(current_gate, updated_state, updated_results)
+            sys_msg = build_system_message(updated_state, {"type": "retry_gate"})
+            print(json.dumps({
+                "decision": "block",
+                "reason": prompt,
+                "systemMessage": sys_msg,
+            }))
+        sys.exit(0)
+
+    # 12. Build next gate prompt
+    if transition["type"] == "next_gate":
+        next_gate = transition["next_gate"]
+        # Re-read state file to get updated gate results
+        updated_state, updated_body = parse_state_file(STATE_FILE)
+        if updated_state:
+            updated_results = extract_gate_results(updated_body)
+            prompt = build_gate_prompt(next_gate, updated_state, updated_results)
+        else:
+            prompt = build_gate_prompt(next_gate, state, gate_results)
+    elif transition["type"] in ("retry_gate", "restart"):
+        retry_gate = transition.get("gate", 1)
+        if transition["type"] == "restart":
+            retry_gate = 1
+        updated_state, updated_body = parse_state_file(STATE_FILE)
+        if updated_state:
+            updated_results = extract_gate_results(updated_body)
+            prompt = build_gate_prompt(retry_gate, updated_state, updated_results)
+        else:
+            prompt = build_gate_prompt(retry_gate, state, gate_results)
+    else:
+        # Fallback: re-inject current gate
+        prompt = build_gate_prompt(state["current_gate"], state, gate_results)
+
+    sys_msg = build_system_message(state, transition)
+
+    print(json.dumps({
+        "decision": "block",
+        "reason": prompt,
+        "systemMessage": sys_msg,
+    }))
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        # Safety net: if anything goes wrong, allow session to exit
+        print(f"⚠️  Quality Gates stop hook error: {e}", file=sys.stderr)
+        sys.exit(0)
