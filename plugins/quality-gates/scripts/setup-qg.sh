@@ -1,0 +1,207 @@
+#!/bin/bash
+
+# Quality Gates Pipeline Setup Script
+# Creates state file for Stop hook-based pipeline progression.
+# All file I/O happens here (bash), not through Claude's Write tool,
+# so no permission prompts are triggered.
+
+set -euo pipefail
+
+# --- Argument Parsing ---
+
+SINGLE_GATE=""
+SKIP_RUNTIME="false"
+PLAN_FILE="auto"
+PR_URL=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    gate1|gate2|gate3)
+      SINGLE_GATE="$1"
+      shift
+      ;;
+    --skip-runtime)
+      SKIP_RUNTIME="true"
+      shift
+      ;;
+    --plan)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --plan requires a file path argument" >&2
+        exit 1
+      fi
+      PLAN_FILE="$2"
+      shift 2
+      ;;
+    --pr-url)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ Error: --pr-url requires a URL argument" >&2
+        exit 1
+      fi
+      PR_URL="$2"
+      shift 2
+      ;;
+    -h|--help)
+      cat << 'HELP_EOF'
+Quality Gates Pipeline Setup
+
+USAGE:
+  /qg [gate1|gate2|gate3] [OPTIONS]
+
+ARGUMENTS:
+  gate1          Run Plan Verification only
+  gate2          Run PR Review only
+  gate3          Run Runtime Verification only
+  (none)         Run full pipeline (Gate 1 → 2 → 3)
+
+OPTIONS:
+  --skip-runtime       Skip Gate 3 (runtime verification)
+  --plan <path>        Specify plan file path (default: auto-detect)
+  --pr-url <url>       Specify PR URL
+  -h, --help           Show this help message
+
+PIPELINE:
+  Gate 1: Plan Verification — checks all planned items are implemented
+  Gate 2: PR Review — iterative code review (review → fix → re-review)
+  Gate 3: Runtime Verification — launches app and verifies behavior
+
+STOPPING:
+  Use /cancel-qg to cancel an active pipeline
+HELP_EOF
+      exit 0
+      ;;
+    *)
+      echo "❌ Error: Unknown argument: $1" >&2
+      echo "   Use --help for usage information" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# --- Active Pipeline Check ---
+
+STATE_FILE=".claude/quality-gates.local.md"
+
+if [[ -f "$STATE_FILE" ]]; then
+  echo "❌ Error: A quality gates pipeline is already active" >&2
+  echo "   State file: $STATE_FILE" >&2
+  echo "" >&2
+  echo "   To cancel the active pipeline: /cancel-qg" >&2
+  echo "   Then re-run: /qg" >&2
+  exit 1
+fi
+
+# --- Dependency Check ---
+
+AVAILABLE_PLUGINS=""
+
+# Check pr-review-toolkit (required for Gate 2)
+PR_REVIEW_FOUND=false
+if ls ~/.claude/plugins/ 2>/dev/null | grep -q "pr-review-toolkit" || \
+   ([ -f ".claude-plugin/marketplace.json" ] && grep -q "pr-review-toolkit" ".claude-plugin/marketplace.json" 2>/dev/null); then
+  PR_REVIEW_FOUND=true
+  AVAILABLE_PLUGINS="pr-review-toolkit"
+fi
+
+if [[ "$PR_REVIEW_FOUND" == "false" ]]; then
+  echo "⚠️  Warning: pr-review-toolkit plugin not found" >&2
+  echo "   Gate 2 (PR Review) requires this plugin for code review agents" >&2
+  echo "   Pipeline will continue but Gate 2 may have limited functionality" >&2
+  echo "" >&2
+fi
+
+# Check feature-dev (optional)
+if ls ~/.claude/plugins/ 2>/dev/null | grep -q "feature-dev" || \
+   ([ -f ".claude-plugin/marketplace.json" ] && grep -q "feature-dev" ".claude-plugin/marketplace.json" 2>/dev/null); then
+  if [[ -n "$AVAILABLE_PLUGINS" ]]; then
+    AVAILABLE_PLUGINS="$AVAILABLE_PLUGINS,feature-dev"
+  else
+    AVAILABLE_PLUGINS="feature-dev"
+  fi
+fi
+
+# Check superpowers (optional)
+if ls ~/.claude/plugins/ 2>/dev/null | grep -q "superpowers" || \
+   ([ -f ".claude-plugin/marketplace.json" ] && grep -q "superpowers" ".claude-plugin/marketplace.json" 2>/dev/null); then
+  if [[ -n "$AVAILABLE_PLUGINS" ]]; then
+    AVAILABLE_PLUGINS="$AVAILABLE_PLUGINS,superpowers"
+  else
+    AVAILABLE_PLUGINS="superpowers"
+  fi
+fi
+
+# --- Determine Initial State ---
+
+CURRENT_GATE=1
+STATUS="gate1_running"
+
+if [[ -n "$SINGLE_GATE" ]]; then
+  case $SINGLE_GATE in
+    gate1) CURRENT_GATE=1; STATUS="gate1_running" ;;
+    gate2) CURRENT_GATE=2; STATUS="gate2_running" ;;
+    gate3) CURRENT_GATE=3; STATUS="gate3_running" ;;
+  esac
+fi
+
+# --- Create State File ---
+
+mkdir -p .claude
+
+TEMP_FILE="${STATE_FILE}.tmp.$$"
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+cat > "$TEMP_FILE" << EOF
+---
+status: $STATUS
+current_gate: $CURRENT_GATE
+total_iterations: 1
+gate2_iteration: 0
+max_total_iterations: 5
+max_gate2_iterations: 5
+skip_runtime: $SKIP_RUNTIME
+single_gate: ${SINGLE_GATE:-null}
+plan_file: "$PLAN_FILE"
+pr_url: "$PR_URL"
+available_plugins: "$AVAILABLE_PLUGINS"
+session_id: "${CLAUDE_CODE_SESSION_ID:-}"
+started_at: "$TIMESTAMP"
+---
+
+# Quality Gates Pipeline State
+
+## Gate Results
+
+## Pipeline History
+- [$TIMESTAMP] Pipeline started (iteration 1)
+EOF
+
+mv "$TEMP_FILE" "$STATE_FILE"
+
+# --- Output Setup Message ---
+
+GATE_NAMES=("" "Plan Verification" "PR Review" "Runtime Verification")
+
+if [[ -n "$SINGLE_GATE" ]]; then
+  GATE_NUM=${SINGLE_GATE//gate/}
+  echo "🔄 Quality Gates Pipeline — Single Gate Mode"
+  echo ""
+  echo "Gate: ${GATE_NUM} (${GATE_NAMES[$GATE_NUM]})"
+else
+  echo "🔄 Quality Gates Pipeline — Full Pipeline"
+  echo ""
+  echo "Gates: 1 (Plan Verification) → 2 (PR Review) → 3 (Runtime Verification)"
+  if [[ "$SKIP_RUNTIME" == "true" ]]; then
+    echo "       Gate 3 skipped (--skip-runtime)"
+  fi
+fi
+
+echo ""
+echo "Available plugins: ${AVAILABLE_PLUGINS:-none}"
+if [[ -n "$PR_URL" ]]; then
+  echo "PR URL: $PR_URL"
+fi
+if [[ "$PLAN_FILE" != "auto" ]]; then
+  echo "Plan file: $PLAN_FILE"
+fi
+echo ""
+echo "Stop hook is active. Pipeline progression is automatic."
+echo "To cancel: /cancel-qg"

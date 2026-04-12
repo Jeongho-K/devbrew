@@ -13,13 +13,17 @@ quality-gates/
 │   ├── pr-reviewer.md      # Gate 2
 │   └── runtime-verifier.md # Gate 3
 ├── commands/
-│   └── qg.md               # /qg slash command
+│   ├── qg.md               # /qg slash command
+│   └── cancel-qg.md        # /cancel-qg command
 ├── hooks/
-│   ├── hooks.json           # Hook configuration
-│   └── post-tool-use.py     # Auto-trigger on PR creation
+│   ├── hooks.json           # Hook configuration (PostToolUse + Stop)
+│   ├── post-tool-use.py     # Auto-trigger on PR creation
+│   └── stop-hook.py         # Pipeline progression (state machine)
+├── scripts/
+│   └── setup-qg.sh          # Pipeline initialization
 └── skills/
     └── quality-pipeline/
-        ├── SKILL.md         # Pipeline orchestrator
+        ├── SKILL.md         # Single-gate executor
         └── references/
             ├── dependency-check.md   # Pre-flight dependency checks
             └── state-file-format.md  # Pipeline state file format
@@ -29,7 +33,7 @@ quality-gates/
 
 | Gate | Agent | Purpose | Delegates To |
 |------|-------|---------|-------------|
-| 1 | plan-verifier | Cross-references plan checkboxes with git diff | feature-dev:code-explorer (impl trace), superpowers:verification-before-completion (evidence, via pipeline) |
+| 1 | plan-verifier | Cross-references plan checkboxes with git diff | feature-dev:code-explorer (impl trace), superpowers:verification-before-completion (evidence) |
 | 2 | pr-reviewer | Orchestrates multi-plugin review agents iteratively | pr-review-toolkit (core review), feature-dev (conventions, architecture), superpowers (plan alignment) |
 | 3 | runtime-verifier | Starts the app, checks console errors, takes screenshots | chrome-devtools-mcp or playwright |
 
@@ -54,127 +58,84 @@ Phase 3 (Polish, non-blocking):
 
 ## Pipeline Flow
 
-The pipeline runs gates sequentially. If code changes are made during review, it **loops back** to Gate 1 to re-verify — ensuring fixes don't break earlier checks. Each gate's result is output to the user immediately upon completion.
+The pipeline uses a **Stop hook** for automatic gate progression. Each gate runs as a
+separate turn; the Stop hook reads the `<qg-signal>` tag emitted by the gate executor,
+computes the next state, and injects the next gate's prompt.
+
+```
+/qg → setup-qg.sh → SKILL.md (Gate 1) → Stop hook → SKILL.md (Gate 2) → Stop hook → SKILL.md (Gate 3) → done
+```
+
+If code changes are made during review, it **loops back** to Gate 1 to re-verify.
 
 ```mermaid
 flowchart TD
-    Start(["/qg or gh pr create"]) --> DepCheck{"Dependency\nCheck"}
-    DepCheck -->|OK| G1
-    DepCheck -->|Missing| Warn["Warn & ask\nto continue"]
-    Warn --> G1
+    Start(["/qg or gh pr create"]) --> Setup["setup-qg.sh\n(create state file)"]
+    Setup --> G1
 
-    subgraph Pipeline ["Pipeline Loop (max 5 iterations)"]
+    subgraph Pipeline ["Stop Hook Pipeline Loop"]
         G1["Gate 1\nPlan Verification"]
-        G1 -->|PASS| G2
-        G1 -->|FAIL| Fix1["Implement\nmissing items"]
-        Fix1 --> G1
+        G1 -->|signal: PASS| StopH1["Stop Hook\n→ Gate 2 prompt"]
+        G1 -->|signal: RETRY| G1
+        StopH1 --> G2
 
         G2["Gate 2\nPR Review"]
-        G2 -->|PASS| G3
-        G2 -->|Code changed| Restart["Restart\nfrom Gate 1"]
-        Restart --> G1
-
-        subgraph G2Loop ["Review-Fix Loop (max 5 iterations)"]
-            G2
-        end
+        G2 -->|signal: PASS| StopH2["Stop Hook\n→ Gate 3 prompt"]
+        G2 -->|signal: NEEDS_RESTART| StopH3["Stop Hook\n→ Gate 1 prompt"]
+        StopH3 --> G1
+        StopH2 --> G3
 
         G3["Gate 3\nRuntime Verification"]
-        G3 -->|Code changed| Restart
+        G3 -->|signal: NEEDS_RESTART| StopH3
     end
 
-    G3 -->|PASS| Done(["All Gates Passed\nPR ready for merge"])
-    G3 -->|SKIP| Done
+    G3 -->|signal: PASS| Done(["Stop Hook\ndeletes state file\nPR ready for merge"])
 ```
 
 ## Auto-trigger Flow
 
-When a PR is created via `gh pr create`, the hook automatically triggers the pipeline:
+When a PR is created via `gh pr create`, the PostToolUse hook triggers the pipeline:
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Claude as Claude Code
-    participant Hook as post-tool-use.py
-    participant QG as Quality Pipeline
+    participant PTU as post-tool-use.py
+    participant Setup as setup-qg.sh
+    participant Skill as SKILL.md
+    participant Stop as stop-hook.py
 
     User->>Claude: gh pr create
-    Claude->>Claude: Bash tool executes
-    Claude->>Hook: PostToolUse event
-    Hook->>Hook: Detect "gh pr create"
-    Hook->>Hook: Check state file (prevent double-trigger)
-    Hook->>Hook: Extract PR URL from output
-    Hook-->>Claude: systemMessage: "Run quality pipeline"
-    Claude->>QG: Invoke quality-pipeline skill
-    QG->>QG: Gate 1 → 2 → 3
-    QG-->>Claude: Final report
+    Claude->>PTU: PostToolUse event
+    PTU->>PTU: Detect "gh pr create"
+    PTU-->>Claude: systemMessage: "Run setup + skill"
+    Claude->>Setup: Bash: setup-qg.sh --pr-url <url>
+    Setup->>Setup: Create state file
+    Claude->>Skill: Gate 1 execution
+    Skill-->>Claude: Gate result + <qg-signal>
+    Claude->>Stop: Stop event (exit attempt)
+    Stop->>Stop: Parse signal, update state
+    Stop-->>Claude: Block + inject Gate 2 prompt
+    Claude->>Skill: Gate 2 execution
+    Note over Claude,Stop: Repeats until all gates pass
+    Stop-->>Claude: Allow exit (pipeline complete)
     Claude-->>User: Quality Gates Complete
 ```
 
-## Installation
+## Usage
 
-### 1. Clone the plugin
-
-```bash
-git clone https://github.com/Jeongho-K/quality-gates ~/.claude/plugins/quality-gates
+```
+/qg                          # Full pipeline: Gate 1 → 2 → 3
+/qg gate1                    # Plan verification only
+/qg gate2                    # PR review only
+/qg gate3                    # Runtime verification only
+/qg --skip-runtime           # Gates 1 & 2 only
+/qg --plan <path>            # Use specific plan file
+/qg --pr-url <url>           # Specify PR URL
+/cancel-qg                   # Cancel active pipeline
 ```
 
-### 2. Register with Claude Code
-
-```bash
-claude plugin add ~/.claude/plugins/quality-gates
-```
-
-If `claude plugin add` is not available, manually add to `~/.claude/settings.json`:
-
-```json
-{
-  "enabledPlugins": {
-    "quality-gates@local-qg": true
-  },
-  "extraKnownMarketplaces": {
-    "local-qg": {
-      "source": {
-        "source": "directory",
-        "path": "~/.claude/plugins/quality-gates"
-      }
-    }
-  }
-}
-```
-
-> Replace `~` with your actual home directory path (e.g., `/home/username`).
-
-### 3. Install required plugins
-
-**pr-review-toolkit** (required for Gate 2 — core review):
-
-```bash
-claude plugin add pr-review-toolkit
-```
-
-### 4. Install optional plugins
-
-These plugins enhance the pipeline with additional review perspectives:
-
-**feature-dev** (optional — convention review, architecture validation, implementation trace):
-```bash
-claude plugin add feature-dev
-```
-
-**superpowers** (optional — plan-aligned review, evidence-based verification):
-```bash
-claude plugin add superpowers
-```
-
-**Browser automation** (optional for Gate 3 — runtime verification), install one of:
-
-```bash
-# Option A: Chrome DevTools MCP
-claude plugin add chrome-devtools-mcp
-
-# Option B: Playwright
-claude plugin add playwright
-```
+**Auto-trigger:** Create a PR with `gh pr create` and the pipeline starts automatically.
 
 ## Prerequisites
 
@@ -185,12 +146,6 @@ claude plugin add playwright
 | superpowers | No | Gate 1, 2 | Plan alignment, evidence verification |
 | chrome-devtools-mcp / playwright | No | Gate 3 | Browser automation |
 
-## Usage
-
-**Manual:** `/qg` or `/qg gate2` or `/qg --skip-runtime`
-
-**Auto-trigger:** Creates PR with `gh pr create` -> hook injects pipeline automatically.
-
 ## Configuration
 
 - `MAX_TOTAL_ITERATIONS`: 5 (full pipeline restarts)
@@ -198,4 +153,4 @@ claude plugin add playwright
 
 ## State File
 
-Pipeline state is tracked in `.claude/quality-gates.local.md` (auto-created, auto-deleted).
+Pipeline state is tracked in `.claude/quality-gates.local.md` (auto-created by setup script, auto-deleted by stop hook on completion).

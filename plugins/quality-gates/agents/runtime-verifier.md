@@ -1,6 +1,5 @@
 ---
 name: runtime-verifier
-model: opus
 color: green
 description: >
   Use this agent for runtime verification of applications as Gate 3 of the

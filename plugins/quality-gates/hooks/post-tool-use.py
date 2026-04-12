@@ -54,12 +54,17 @@ def main():
         print(json.dumps({}))
         sys.exit(0)
 
+    # Compute plugin root from this script's location
+    plugin_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    setup_script = os.path.join(plugin_root, "scripts", "setup-qg.sh")
+
     result = {
         "systemMessage": (
             f"Quality Gates: PR created at {pr_url}. "
-            "You MUST now run the quality-gates pipeline. "
-            "Use the Skill tool to invoke 'quality-gates:quality-pipeline' "
-            f"with args '--pr-url {pr_url}'."
+            "You MUST now initialize the quality-gates pipeline. "
+            f'Run: Bash("{setup_script} --pr-url {pr_url}") '
+            "Then invoke Skill(\"quality-gates:quality-pipeline\") with gate=1 "
+            "to begin Gate 1."
         )
     }
 

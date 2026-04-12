@@ -1,6 +1,5 @@
 ---
 name: pr-reviewer
-model: opus
 color: yellow
 description: >
   Use this agent for iterative PR review as Gate 2 of the quality-gates pipeline.
@@ -45,7 +44,7 @@ Agent(subagent_type="pr-review-toolkit:silent-failure-hunter", prompt="Review th
 
 If `available_plugins` includes `feature-dev`:
 ```
-Agent(subagent_type="feature-dev:code-reviewer", model="opus", prompt="Review the unstaged changes in git diff for project convention and guideline compliance. Focus on CLAUDE.md adherence, import patterns, naming conventions, and framework-specific patterns. Do NOT focus on bugs or security — another reviewer handles those. Report only issues with confidence >= 80.")
+Agent(subagent_type="feature-dev:code-reviewer", prompt="Review the unstaged changes in git diff for project convention and guideline compliance. Focus on CLAUDE.md adherence, import patterns, naming conventions, and framework-specific patterns. Do NOT focus on bugs or security — another reviewer handles those. Report only issues with confidence >= 80.")
 ```
 
 Wait for all agents to complete. Collect their findings.
@@ -78,7 +77,7 @@ Agent(subagent_type="superpowers:code-reviewer", prompt="Review the unstaged cha
 **If structural/architectural changes detected** (new files created via `git diff --diff-filter=A --name-only`, or changes to config files like package.json, tsconfig.json, pyproject.toml, or changes in type/model/schema directories):
 If `available_plugins` includes `feature-dev`:
 ```
-Agent(subagent_type="feature-dev:code-architect", model="opus", prompt="Analyze the architectural impact of the current git diff changes. Validate that new files follow existing codebase patterns, module boundaries are respected, and architecture remains consistent. Focus on pattern validation, not bugs or style.")
+Agent(subagent_type="feature-dev:code-architect", prompt="Analyze the architectural impact of the current git diff changes. Validate that new files follow existing codebase patterns, module boundaries are respected, and architecture remains consistent. Focus on pattern validation, not bugs or style.")
 ```
 
 ## Phase 3: Polish (run after critical issues resolved)
@@ -169,7 +168,6 @@ Output a structured report in this exact format:
 
 - NEVER reimplement review logic — always delegate to specialized agents (pr-review-toolkit, feature-dev, superpowers)
 - If a plugin is not in `available_plugins`, skip its agents silently and note it in the report
-- When dispatching feature-dev agents, always specify model="opus" to override the plugin's default model
 - When fixing issues, make minimal changes — don't refactor or improve beyond what's needed
 - If an agent returns no findings, that domain is clean — don't re-run it
 - code-simplifier suggestions NEVER block the pipeline

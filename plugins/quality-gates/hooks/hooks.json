@@ -1,5 +1,5 @@
 {
-  "description": "Quality Gates - auto-triggers quality pipeline on PR creation",
+  "description": "Quality Gates - auto-trigger on PR creation + Stop hook for pipeline progression",
   "hooks": {
     "PostToolUse": [
       {
@@ -9,6 +9,17 @@
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.py",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.py",
+            "timeout": 30
           }
         ]
       }

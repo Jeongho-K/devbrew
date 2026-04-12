@@ -1,6 +1,5 @@
 ---
 name: plan-verifier
-model: opus
 color: cyan
 description: >
   Use this agent to verify implementation completeness against a plan file.
@@ -85,7 +84,7 @@ If `available_plugins` includes `feature-dev` AND there are blocking items class
 
 Dispatch the code-explorer agent to trace whether these items are actually wired up and functional:
 
-Agent(subagent_type="feature-dev:code-explorer", model="opus",
+Agent(subagent_type="feature-dev:code-explorer",
   prompt="The implementation plan is at {plan_path}. Read it first to understand
     the full scope of planned features.
     Then trace the implementation of the following items that appear to have
@@ -141,4 +140,3 @@ Output a structured report in this exact format:
 - Be conservative: when in doubt, classify as blocking
 - Always output the structured report format above — the orchestrator parses it
 - If `feature-dev` is not in `available_plugins`, skip Step 4.5 silently and note "Skipped" in the report
-- When dispatching feature-dev:code-explorer, always use model="opus" to override the plugin's default sonnet model
