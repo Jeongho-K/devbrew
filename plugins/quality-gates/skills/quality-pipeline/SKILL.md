@@ -14,6 +14,54 @@ You are executing a **single gate** of the quality pipeline. The Stop hook manag
 pipeline progression (gate-to-gate transitions, iteration counting, loop-back on
 code changes). You do NOT manage state files or pipeline flow.
 
+## Preflight
+
+Before parsing arguments or dispatching agents, do this in order:
+
+**1. Detect continuation vs. first invocation.** Look at the current turn's user
+prompt. If it contains the literal string `# QG-STOP-HOOK-CONTINUATION` on its
+own line, this is a Stop-hook-injected continuation → go to step 2a. Otherwise
+it is a first invocation (via `/qg`, PR auto-trigger, or direct skill call) →
+go to step 2b.
+
+**2a. Continuation path.** The state file MUST exist. Verify:
+
+```bash
+test -f .claude/quality-gates.local.md
+```
+
+- Exit 0 → proceed to the Arguments section below.
+- Non-zero → this is an invariant violation (Stop hook continued a pipeline
+  whose state file vanished). Output the following to the user and stop the
+  pipeline immediately — do NOT call `setup-qg.sh`, as fresh state would mask
+  the real bug:
+
+  > ❌ Pipeline state file disappeared mid-run (`.claude/quality-gates.local.md`).
+  > This indicates state corruption or an accidental deletion.
+  > Run `/cancel-qg` to clear residual state, then `/qg` to restart.
+
+**2b. First-invocation path.** Bootstrap or validate state by running:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/scripts/setup-qg.sh" --ensure
+```
+
+`setup-qg.sh --ensure` handles all cases: creates state if missing, no-ops if
+fresh state for this session already exists, overwrites stale state from a
+prior (crashed) session, and errors if a concurrent pipeline is genuinely
+active.
+
+- Exit 0 → state is valid and session-matched. Proceed to the Arguments section.
+- Exit non-zero → surface the script's stderr output to the user verbatim and
+  abort. The error is already actionable (e.g. "already active — run
+  `/cancel-qg`"); do not attempt recovery.
+
+**Note on the continuation marker.** `# QG-STOP-HOOK-CONTINUATION` is a
+deliberate machine-readable sentinel emitted only by
+`stop-hook.py:build_gate_prompt()`. If a user types it literally, preflight
+will incorrectly take the continuation path — this is an acceptable limitation
+for the threat model.
+
 ## Arguments
 
 Parse the following from the prompt parameters:
@@ -245,7 +293,7 @@ For Gate 2, include the `iteration` attribute:
 
 ## Rules
 
-- NEVER write to or read from `.claude/quality-gates.local.md` — the Stop hook manages it
+- NEVER directly read or write the contents of `.claude/quality-gates.local.md`. All state creation, validation, and stale-state cleanup is delegated to `setup-qg.sh`; mutation is the Stop hook's job. The skill may probe existence with `test -f` (Preflight only) and invoke `setup-qg.sh --ensure` via Bash. No other interaction is permitted.
 - ALWAYS emit exactly one `<qg-signal>` tag at the end of your response
 - Output each gate's result to the user immediately
 - If an agent dispatch fails (error), report the error and emit signal with verdict="FAIL"
