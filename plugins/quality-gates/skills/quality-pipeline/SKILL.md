@@ -140,6 +140,13 @@ Note: This step executes commands but does NOT modify any code.
 
 ### Gate 2: PR Review
 
+Before dispatching pr-reviewer, derive `plan_path_source`:
+
+- If `plan_path` is literally `"auto"` or empty → `plan_path_source = "auto"`
+- Otherwise (user passed an explicit path via `/qg --plan=<path>`, or SKILL.md received a concrete resolved path) → `plan_path_source = "explicit"`
+
+pr-reviewer uses this flag to decide whether to unconditionally dispatch `superpowers:code-reviewer` (explicit intent, Path A) or gate it on diff characteristics (auto, Path B). See `agents/pr-reviewer.md` for the dispatch rules.
+
 Dispatch the pr-reviewer agent:
 
 ```
@@ -152,7 +159,8 @@ Agent(
     project_dir: <current working directory>
     previous_findings: <previous_findings or 'none'>
     available_plugins: <available_plugins list>
-    plan_path: <plan_path or empty>"
+    plan_path: <plan_path or empty>
+    plan_path_source: <'auto' | 'explicit'>"
 )
 ```
 
