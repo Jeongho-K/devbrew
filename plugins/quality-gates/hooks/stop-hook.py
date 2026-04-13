@@ -370,7 +370,7 @@ def build_gate_prompt(gate_num, state, gate_results):
     gate2_iteration = state.get("gate2_iteration", 1)
     max_gate2 = state.get("max_gate2_iterations", 5)
 
-    prompt_parts = []
+    prompt_parts = ["# QG-STOP-HOOK-CONTINUATION\n"]
 
     if gate_num == 1:
         prompt_parts.append(

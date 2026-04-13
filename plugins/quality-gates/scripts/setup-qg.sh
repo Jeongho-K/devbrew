@@ -13,6 +13,7 @@ SINGLE_GATE=""
 SKIP_RUNTIME="false"
 PLAN_FILE="auto"
 PR_URL=""
+ENSURE_MODE="false"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -22,6 +23,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-runtime)
       SKIP_RUNTIME="true"
+      shift
+      ;;
+    --ensure)
+      ENSURE_MODE="true"
       shift
       ;;
     --plan)
@@ -57,6 +62,8 @@ OPTIONS:
   --skip-runtime       Skip Gate 3 (runtime verification)
   --plan <path>        Specify plan file path (default: auto-detect)
   --pr-url <url>       Specify PR URL
+  --ensure             Idempotent mode: no-op if state from this session
+                       already exists (used by skill preflight, not /qg).
   -h, --help           Show this help message
 
 PIPELINE:
@@ -82,12 +89,22 @@ done
 STATE_FILE=".claude/quality-gates.local.md"
 
 if [[ -f "$STATE_FILE" ]]; then
-  echo "❌ Error: A quality gates pipeline is already active" >&2
-  echo "   State file: $STATE_FILE" >&2
-  echo "" >&2
-  echo "   To cancel the active pipeline: /cancel-qg" >&2
-  echo "   Then re-run: /qg" >&2
-  exit 1
+  existing_session=$(awk -F'"' '/^session_id:/ {print $2; exit}' "$STATE_FILE" 2>/dev/null || echo "")
+  current_session="${CLAUDE_CODE_SESSION_ID:-}"
+
+  if [[ -n "$existing_session" && -n "$current_session" && "$existing_session" != "$current_session" ]]; then
+    echo "⚠️  Stale quality-gates state from session $existing_session detected; overwriting." >&2
+    rm -f "$STATE_FILE"
+  elif [[ "$ENSURE_MODE" == "true" ]]; then
+    exit 0
+  else
+    echo "❌ Error: A quality gates pipeline is already active" >&2
+    echo "   State file: $STATE_FILE" >&2
+    echo "" >&2
+    echo "   To cancel the active pipeline: /cancel-qg" >&2
+    echo "   Then re-run: /qg" >&2
+    exit 1
+  fi
 fi
 
 # --- Dependency Check ---
