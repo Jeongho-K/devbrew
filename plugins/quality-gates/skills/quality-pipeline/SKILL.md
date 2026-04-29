@@ -108,6 +108,23 @@ After the check, if `result == cleared_*`, do NOT use any prior
 `quality-gates-session.local.md` data — proceed as if `--branch` mode is
 implied (full diff against `main`).
 
+### Trivia escape (§E)
+
+Run the trivia detector before Gate 1 dispatch:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/scripts/check-trivia.sh"
+```
+
+If exit code is `0`:
+- Read the stdout line `trivia: <kind>` (kind ∈ `whitespace | rename`).
+- Update `.claude/quality-gates.local.md` with `status: completed`,
+  `outcome: trivia-skipped`, `trivia_kind: <kind>`.
+- Emit `<qg-signal verdict="trivia-skipped" reason="<kind>" />` and stop.
+- Tell the user: "Trivia change (`<kind>`); review skipped."
+
+If exit code is non-zero, proceed to Gate 1.
+
 ### Gate 1: Plan Verification
 
 Dispatch the plan-verifier agent:
@@ -238,9 +255,22 @@ Then run this **single consolidated bash block**. It captures the diff once, wri
 ```bash
 set -e
 
-DIFF_CONTENT=$(git diff)
-
+# Docs filter (§D): exclude *.md, *.txt, *.rst, docs/**, CHANGELOG*, README*
+# from the scope passed to code-reviewer-style agents. Gate 1 plan-verifier
+# already saw the unfiltered diff above; from here on, agents see code paths only.
 mkdir -p .claude
+git diff --name-only \
+  | "${CLAUDE_PLUGIN_ROOT}/scripts/filter-docs.sh" \
+  > .claude/qg-code-paths.tmp
+
+if [ -s .claude/qg-code-paths.tmp ]; then
+  # shellcheck disable=SC2046
+  DIFF_CONTENT=$(git diff -- $(cat .claude/qg-code-paths.tmp))
+else
+  # Docs-only change (rare after trivia escape and Gate 1 PASS): empty diff for code reviewers
+  DIFF_CONTENT=""
+fi
+
 printf '%s' "$DIFF_CONTENT" > .claude/qg-diff-cache.txt
 
 DIFF_CHARS=${#DIFF_CONTENT}
