@@ -29,9 +29,10 @@ class TestForwardOnlyStateMachine(unittest.TestCase):
         }
         signal = {"gate": "2", "verdict": "NEEDS_RESTART", "summary": "fix needed"}
         transition = stop_hook.compute_transition(state, signal)
-        self.assertNotEqual(transition["type"], "restart")
-        # Should be gate2_user_choice (new forward-only behaviour)
-        self.assertIn(transition["type"], {"gate2_user_choice", "retry_gate"})
+        # Forward-only contract: NEEDS_RESTART must NOT trigger fix-loop or restart;
+        # it always escalates to user-choice with the canonical prompt key.
+        self.assertEqual(transition["type"], "gate2_user_choice")
+        self.assertEqual(transition["prompt_key"], "gate2_needs_restart")
 
     def test_gate3_needs_restart_terminates_with_user_choice(self):
         state = {

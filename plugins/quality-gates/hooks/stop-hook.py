@@ -260,10 +260,9 @@ def compute_transition(state, signal):
     if gate == "3":
         if verdict in ("PASS", "SKIP"):
             return {"type": "complete"}
-        if verdict == "NEEDS_RESTART":
-            # Forward-only: no auto-restart to Gate 1.
-            return {"type": "gate3_fail", "prompt_key": "gate3_runtime_fail"}
-        if verdict == "FAIL":
+        if verdict in ("NEEDS_RESTART", "FAIL"):
+            # Forward-only: Gate 3 issues require user attention; no auto-restart.
+            # build_special_prompt("gate3_fail") covers both paths uniformly.
             return {"type": "gate3_fail"}
 
     # Unknown state — abort safely
