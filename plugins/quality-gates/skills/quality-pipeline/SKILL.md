@@ -510,6 +510,71 @@ Dispatch prompt (immutable head):
 >
 > If the prompt contains a `## Current Diff` section, operate on that diff verbatim. **Do NOT run `git diff` yourself** — the full unified diff is already provided.
 
+#### Phase 1.5: Adversarial (Standard/Deep only)
+
+If `scout.depth ∈ {standard, deep}` AND Phase 1 produced any findings:
+
+Dispatch:
+
+```
+Agent(
+  subagent_type="quality-gates:adversarial",
+  model="opus",
+  prompt="<all Phase 1 + Phase 2 findings as structured YAML>
+  filtered_diff: <verbatim from cache>"
+)
+```
+
+Apply Adversarial verdicts (`confirm` / `downgrade` / `reject`) to the
+finding set BEFORE passing to Synthesizer.
+
+**Conditional re-run on iteration**: when Gate 2 enters a new iteration of
+the within-loop fix-loop, compute the hash of the current Phase 1 finding
+set as `(file, line, severity, summary)` tuples. Compare to previous
+iteration's hash:
+- Same hash → SKIP adversarial (already verified).
+- Different hash → run adversarial.
+
+#### Phase 1.6: Synthesizer (always when Phase 1 ran)
+
+Dispatch:
+
+```
+Agent(
+  subagent_type="quality-gates:synthesizer",
+  model="sonnet",
+  prompt="<all Phase 1 findings + Phase 2 findings + Adversarial verdicts>"
+)
+```
+
+The synthesizer's Markdown output is what the user sees as "Gate 2 Findings"
+(it replaces the raw aggregator dump in the legacy Output Report section).
+
+#### Within-Gate-2 loop — efficient form
+
+The fix-loop (max 5 iterations, preserved) runs scout once per iteration on
+**delta diff** rather than the full diff:
+
+1. Identify changed file set since last iteration: `git diff <last-iter-sha> HEAD --name-only`.
+2. Re-run Scout with only those files in scope.
+3. Dispatch only what scout newly recommends; reuse prior findings for
+   unchanged files.
+4. Apply Phase 1.5 conditional adversarial re-run rule above.
+5. Always run synthesizer.
+
+#### Repeat-detection (no-progress check)
+
+After each iteration, compute:
+- `dispatch_hash = sha256(json(scout_output_minimal))` (depth + phase1_agents + phase2_agents only)
+- `synth_hash = sha256(synthesizer_markdown)`
+
+If both `dispatch_hash` and `synth_hash` are equal to the previous iteration's:
+- Emit `<qg-signal verdict="repeat-detected" />`.
+- Stop hook injects user choice (`gate2_repeat_detected` prompt): proceed (accept findings) / abort.
+
+This guards philosophy AP15 ("loop without repeat detection") even though
+`max_gate2_iterations=5` provides the hard upper bound.
+
 #### Classifying Findings
 
 From each agent's output, classify findings:
