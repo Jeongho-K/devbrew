@@ -64,15 +64,24 @@ def parse_state_file(path):
             value = value.strip().strip('"')
             state[key.strip()] = value
 
-    # Convert numeric fields
-    for field in ("current_gate", "total_iterations", "gate2_iteration",
-                  "max_total_iterations", "max_gate2_iterations"):
+    # Convert numeric fields (forward-only: total_iterations / max_total_iterations
+    # are no longer written by setup-qg.sh; tolerate their absence on read).
+    required_numeric = ("current_gate", "gate2_iteration", "max_gate2_iterations")
+    optional_numeric = ("total_iterations", "max_total_iterations")
+    for field in required_numeric:
         val = state.get(field, "0")
         if not val.isdigit():
             print(f"⚠️  Quality Gates: Invalid numeric field '{field}': {val}",
                   file=sys.stderr)
             return None, None
         state[field] = int(val)
+    for field in optional_numeric:
+        val = state.get(field)
+        if val is None:
+            continue
+        if val.isdigit():
+            state[field] = int(val)
+        # else: leave as-is; nothing reads it after forward-only refactor
 
     # Convert boolean fields
     for field in ("skip_runtime",):
@@ -310,13 +319,14 @@ def update_state_file(path, state, signal, transition):
     elif t_type in ("complete", "abort"):
         new_status = "completed" if t_type == "complete" else "aborted"
 
-    # Apply frontmatter updates via string replacement
+    # Apply frontmatter updates via string replacement.
+    # Forward-only: total_iterations / max_total_iterations are no longer
+    # persisted (setup-qg.sh stopped writing them in v1.5.0). Stale fields
+    # in old state files are tolerated on read but not refreshed.
     replacements = {
         "status": new_status,
         "current_gate": str(new_gate),
-        "total_iterations": str(new_total),
         "gate2_iteration": str(new_gate2_iter),
-        "max_total_iterations": str(new_max_total),
     }
     for key, val in replacements.items():
         content = re.sub(
@@ -526,8 +536,8 @@ def build_system_message(state, transition):
     """Build the system message shown to the user."""
     t_type = transition["type"]
     gate = state.get("current_gate", 1)
-    total = state.get("total_iterations", 1)
-    max_total = state.get("max_total_iterations", 5)
+    gate2_iter = state.get("gate2_iteration", 0)
+    max_gate2 = state.get("max_gate2_iterations", 5)
 
     if t_type == "next_gate":
         gate = transition["next_gate"]
@@ -537,9 +547,15 @@ def build_system_message(state, transition):
     if t_type in ("max_gate2_exceeded", "gate3_fail", "gate2_user_choice"):
         return "⚠️ Quality Gates: Action required | /cancel-qg to stop"
 
+    # Forward-only: show within-Gate-2 iteration progress when applicable;
+    # otherwise just the gate name. (Cross-gate restart counter removed.)
+    if gate == 2 and gate2_iter > 0:
+        return (
+            f"🔄 Quality Gates: Gate 2 ({gate_name}) | "
+            f"iter {gate2_iter}/{max_gate2} | /cancel-qg to stop"
+        )
     return (
-        f"🔄 Quality Gates: Gate {gate} ({gate_name}) | "
-        f"iteration {total}/{max_total} | /cancel-qg to stop"
+        f"🔄 Quality Gates: Gate {gate} ({gate_name}) | /cancel-qg to stop"
     )
 
 
