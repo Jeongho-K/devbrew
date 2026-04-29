@@ -781,16 +781,25 @@ Read the agent's report. Check the Verdict line.
 The Stop hook may inject special prompts that start with keywords.
 Handle them as follows:
 
-### MAX_TOTAL_ITERATIONS_EXCEEDED
+### GATE2_NEEDS_RESTART (forward-only, replaces former MAX_TOTAL_ITERATIONS path)
 
-Pipeline exceeded maximum total iterations. Present to user:
-1. **Extend** — add 3 more iterations
-2. **Accept as-is** — proceed with current state
-3. **Abort** — stop pipeline
+Gate 2 emitted `NEEDS_RESTART` (code-level changes required). Present:
+1. **Proceed** — accept current findings as-is and continue to Gate 3
+2. **Abort** — stop pipeline; user will apply changes and re-run `/qg`
 
 Based on choice:
-- Extend: `<qg-signal action="extend" additional="3" />`
-- Accept: `<qg-signal action="complete" />`
+- Proceed: `<qg-signal gate="2" verdict="PASS_WITH_WARNINGS" summary="User accepted findings" files_changed="" />`
+- Abort: `<qg-signal action="abort" reason="User chose to abort" />`
+
+### GATE2_REPEAT_DETECTED
+
+Gate 2 within-loop is not converging (same dispatch plan + synthesizer
+output for two iterations in a row). Present:
+1. **Proceed** — accept findings as-is
+2. **Abort** — stop pipeline
+
+Based on choice:
+- Proceed: `<qg-signal gate="2" verdict="PASS_WITH_WARNINGS" summary="Repeat detected; user accepted" files_changed="" />`
 - Abort: `<qg-signal action="abort" reason="User chose to abort" />`
 
 ### GATE2_MAX_EXCEEDED
