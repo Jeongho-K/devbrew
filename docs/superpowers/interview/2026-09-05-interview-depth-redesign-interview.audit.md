@@ -63,6 +63,12 @@ b 가능하면 native 우선
 
 해석 확인(복수 선택): 한 브랜치에서 다 진행되지만 brainstorming 이 설계 writeplan이 계획 그 이후 구현 이라는 역할 분담 건 이해 했지?,「2」= seed 에 가벼운 구조 (범위 안),「늘어도 돼」= 라운드·dispatch·web·codex 전부,「a」= 한 브랜치에서 분석→설계→구현,B 는 세션 고정 대가를 알고 고른 것
 
+### 라운드 5 — proceed 게이트 2차 답변 (원문)
+
+/compact 후 /interview <seed 전문> (권장)
+
+(선택 ①. seed v3 확정. «framing-requests 이쪽이 더 좋다»의 지시 대상은 추가 언급 없음 → seed 문구 유지, critic r3 1번은 미해결로 남음.)
+
 ## 2. 라운드 기록
 
 (라운드마다 아래에 append)
