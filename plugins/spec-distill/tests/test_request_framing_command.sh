@@ -87,4 +87,24 @@ grep -qF '(사용자 확인)' <<<"$tpl_ex" && ok "AC11: seed 템플릿 예시에
 [[ -z "$(git -C "$ROOT" diff --name-only main -- plugins/spec-distill/scripts/check_seed.py)" ]] \
   && ok "AC11: check_seed.py 무변경 (diff 0 vs main)" || no "AC11: check_seed.py 가 변경됐다"
 
+# --- v0.55.0 AC12: 워크트리 (블록 스코프) -------------------------------------------------
+wt_block="$(awk '/^## 워크트리 — 진입 직후/{f=1;print;next} /^## /{f=0} f' "$SK")"
+wt_flat="$(tr '\n' ' ' <<<"$wt_block" | tr -s ' ')"
+{ [[ -n "$wt_block" ]] && grep -qF 'AskUserQuestion(' <<<"$wt_block"; } && ok "AC12: 워크트리 절 + 단독 AskUserQuestion" || no "AC12: 워크트리 절/질문 부재"
+grep -qE 'audit[^.]{0,20}첫 write[^.]{0,10}전|첫 write 전' <<<"$wt_flat" && ok "AC12: audit 첫 write 전에 묻는다" || no "AC12: 시점(첫 write 전) 부재"
+grep -qF 'feature/<kebab-topic>' <<<"$wt_block" && ok "AC12: feature/<kebab-topic> 이름" || no "AC12: 브랜치 이름 규약 부재"
+[[ "$(grep -cE '^[1-5]\. ' <<<"$wt_block")" -eq 5 ]] && ok "AC12: 5단계 절차" || no "AC12: 5단계가 아니다 ($(grep -cE '^[1-5]\. ' <<<"$wt_block"))"
+grep -qF 'DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE' <<<"$wt_block" && ok "AC12: kill switch 를 절이 본다" || no "AC12: 절에 kill switch 부재"
+grep -qF '워크트리 없음 —' <<<"$wt_block" && ok "AC12: 거절/부재 시 audit §5 문구" || no "AC12: 강등 문구 부재"
+grep -qE '(거절|부재|스위치)[^.]{0,60}seed[^.]{0,20}막지 않' <<<"$wt_flat" && ok "AC12: 어느 경우도 seed 작성을 막지 않는다" || no "AC12: 비차단 선언 부재"
+ks_block="$(awk '/^## kill switch/{f=1;print;next} /^## /{f=0} f' "$SK")"
+grep -qF 'DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1' <<<"$ks_block" && ok "AC12: kill switch 목록 등재" || no "AC12: kill switch 목록에 없다"
+gate_block="$(awk '/^## 확정 — proceed 게이트/{f=1;print;next} /^## /{f=0} f' "$SK")"
+gate_flat="$(tr '\n' ' ' <<<"$gate_block" | tr -s ' ')"
+grep -qF 'docs(interview): <topic> interview seed + audit' <<<"$gate_block" && ok "AC12: 커밋 메시지 리터럴 (C10 과 동일)" || no "AC12: 커밋 메시지 리터럴 부재/불일치"
+grep -qE '(①|②)[^.]{0,80}handoff 직전[^.]{0,40}커밋' <<<"$gate_flat" && ok "AC12: ①/② 에서 handoff 직전 커밋" || no "AC12: 커밋 시점 규칙 부재"
+grep -qE '(③|④)[^.]{0,40}커밋하지 않' <<<"$gate_flat" && ok "AC12: ③/④ 는 커밋 없음" || no "AC12: ③/④ 비커밋 규칙 부재"
+grep -qE '워크트리 절대경로|절대경로' <<<"$gate_flat" && ok "AC12: 게이트 텍스트에 워크트리 경로" || no "AC12: 게이트 경로 안내 부재"
+grep -qF 'git commit -q -F' <<<"$gate_block" && ok "AC12: 커밋은 -F 파일 한 줄 명령" || no "AC12: 커밋 명령 모양 부재"
+
 finish

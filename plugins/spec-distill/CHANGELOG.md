@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.55.0] — 2026-09-06
+
+### Added
+
+- **`framing-requests` — 진입 직후 워크트리 질문 + 5단계 절차 + handoff 직전 커밋 +
+  kill switch (AC12·AC13).** `## 확산` 앞에 `## 워크트리 — 진입 직후` 절을 추가했다 —
+  이 skill 에 들어온 첫 행동으로 단독 `AskUserQuestion` 하나를 띄우고(승낙 시
+  `EnterWorktree` → `git branch -m` → audit·seed 를 그 안에 쓰기 → proceed 게이트
+  ①/②에서 handoff 직전 커밋 1회 → 게이트 텍스트에 워크트리 절대경로), 거절·도구
+  부재·kill switch(`DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1`) 는 현재 디렉토리로
+  진행하며 audit §5 에 «워크트리 없음 — <이유>» 한 줄을 남긴다(어느 경우도 seed
+  작성을 막지 않는다). 커밋 메시지 리터럴은 `docs(interview): <topic> interview
+  seed + audit`.
+  **실측 근거**: 격리 헤드리스 probe(`.claude/spec-distill/idr-scratch/v6/results.md`,
+  Task 1) — `EnterWorktree(name=X)` 는 브랜치명에 `worktree-` 접두를 붙인다(요청한
+  이름 그대로가 아니다, 디렉토리명은 접두 없음) → 그래서 절차가 항상 `git branch -m`
+  으로 명시적으로 rename 한다(슬래시 포함 이름을 넣어 접두를 우회하는 것은 실측
+  범위 밖이라 가정하지 않았다). `git branch -m` · `git commit -F` 는 실측에서 거부
+  없이 성공했다. **기본 base 는 origin 의 기본 브랜치이고 로컬 전용 커밋은 빠진다**
+  (`worktree.baseRef=head` 로 바꿀 수 있음) — 이 절은 그 설정을 자동으로 바꾸지
+  않고 사실만 알린다. 종료 후 워크트리·브랜치가 lock 이 걸린 채 잔존한다는 관측은
+  근거 등급이 한 단계 낮고(raw 파일 없이 전사한 기록) 사람의 정상 `ExitWorktree`
+  종료까지 재현되는지는 미확인이라 이번 절차(진입·rename·커밋·경로 안내)에는
+  반영하지 않았다 — Task 15(e2e) 관찰 항목.
+  `templates/interview-seed-audit-template.md` §5 설명에도 같은 문구를 추가해
+  producer(SKILL.md)와 exemplar(template)를 동기화했다.
+  Test: `tests/test_request_framing_command.sh` (AC12 블록, 삭제-방향 뮤테이션으로
+  이빨 확인).
+
 ## [0.54.0] — 2026-09-06
 
 ### Changed

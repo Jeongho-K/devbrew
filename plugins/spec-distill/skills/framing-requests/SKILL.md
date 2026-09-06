@@ -53,6 +53,46 @@ seed 는 태그를 쓰지 않습니다(`check_seed.py` 가 본문 태그를 금�
 리뷰의 격리 critic(`seed-critic`) **축 4**입니다 — 초안·원문·`CLAUDE.md` 를 함께 받아
 «사용자 결정처럼 표현된 에이전트 추론 — 누가 정했는지가 뒤바뀐 문장»을 봅니다.
 
+## 워크트리 — 진입 직후
+
+이 skill 에 들어온 **첫 행동**이다 — `## 확산` 1번(audit 첫 write) **전**에 묻는다. 그래야 audit 이
+처음부터 워크트리 안에 쓰이고 «main 에 쓴 audit 을 옮기는» 절차가 필요 없다. 이름 파일
+(`interview-basename`)은 세션 디렉토리(main repo 의 state root)에 있어 cwd 이동과 무관하다.
+
+`DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` 이거나 `EnterWorktree` 도구가 없으면 **묻지 않고** 현재
+디렉토리에서 진행한다. 그 밖에는 단독 `AskUserQuestion` 하나:
+
+```javascript
+AskUserQuestion({ questions: [{
+  header: "워크트리",
+  question: "`feature/<kebab-topic>` 워크트리를 만들고 거기서 시작할까요? 이 브랜치 하나에서 인터뷰·설계·계획·구현까지 갑니다. 거절하면 현재 디렉토리에서 진행합니다.",
+  options: [
+    {label: "만들고 시작 (권장)", description: "고르면 이 세션의 cwd 가 그 워크트리로 옮겨지고 audit·seed 가 그 안에 쓰인다"},
+    {label: "현재 디렉토리에서", description: "고르면 워크트리 없이 지금 위치에 쓴다 — 자료는 현재 브랜치에 남는다"}],
+  multiSelect: false }] })
+```
+
+승낙 시 절차 — 순서 고정, **각 단계는 단순 명령 하나**(격리 세션의 git 가드가 복합 명령을 막는다):
+
+1. `EnterWorktree(name=<kebab-topic>)` — native 도구 우선(superpowers `using-git-worktrees` 와 같은 원칙). 실측(v6): 요청한 이름 그대로가 아니라 `worktree-` 접두가 붙은 브랜치가 된다 — 그래서 2단계의 rename 이 항상 필요하다.
+2. `git branch -m feature/<kebab-topic>` — project-init 검증기가 제안하는 바로 그 형태. 실측(v6): rename 은 거부되지 않았다.
+3. audit·seed 를 그 워크트리 안의 `docs/superpowers/interview/` 에 쓴다(`## 상태` 의 경로 그대로).
+4. proceed 게이트에서 ①/② 를 고르면 **handoff 직전** 커밋 1회(`## 확정 — proceed 게이트` 의 절차).
+5. 게이트 텍스트의 «다음 세션 첫 턴» 안내에 워크트리 **절대경로**를 함께 낸다 — 사람이 그 디렉토리에서
+   새 세션을 열어 `/interview <seed 전문>` 을 친다.
+
+거절·도구 부재·스위치 → 현재 디렉토리에서 진행하고, audit §5 에 «워크트리 없음 — <거절|EnterWorktree 부재|
+DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE>» 한 줄을 남기며, 어느 경우도 seed 작성을 막지 않는다.
+
+**기본 base 는 origin 의 기본 브랜치다 — 로컬에만 있는 커밋은 들어오지 않는다** (v6 실측: rename
+전 `EnterWorktree` 직후의 base 가 origin 기준이었고, 로컬 전용 커밋은 빠졌다). 사용자에게 아직
+push 하지 않은 로컬 작업이 있으면 그 워크트리는 그 작업을 보지 못한다 — 필요하면 사용자 설정
+`worktree.baseRef=head` 로 로컬 HEAD 기준으로 바꾼다. 이 절은 그 설정을 자동으로 바꾸지 않는다:
+언제 로컬-전용 커밋이 있는지는 이 skill 이 판단할 수 없고, 잘못 바꾸면 반대 방향의 놀람(불필요한
+커밋까지 딸려 온다)이 생긴다.
+
+이 절은 native 도구의 동작을 단정하지 않는다 — 실측 결과는 CHANGELOG `[0.55.0]` 에 있다.
+
 ## 확산
 
 1. **원문 보존** — 사용자가 준 원문(요청·생각·대화 로그·자료)을 **`$AUDIT` 파일의
@@ -500,10 +540,25 @@ Step A 도 그것을 읽습니다. 승인이 여는 것은 파일 쓰기가 아�
 
 | # | 이 skill 의 옵션 |
 |---|---|
-| ① | `/compact` 후 `/interview <seed 전문>` (권장) — verbatim `/compact` 명령을 노출하고 **턴 종료** |
-| ② | 바로 `/interview <seed 전문>` — compact 없이 즉시 진행 |
+| ① | `/compact` 후 `/interview <seed 전문>` (권장, 커밋 후) — verbatim `/compact` 명령을 노출하고 **턴 종료** |
+| ② | 바로 `/interview <seed 전문>` (커밋 후) — compact 없이 즉시 진행 |
 | ③ | 수정 필요 — 압축을 다시 깎고 이 게이트로 돌아옵니다 |
 | ④ | 멈춤 — seed 와 audit 을 남기고 종료 |
+
+**handoff 직전 커밋(①/② 에서만).** 워크트리 안이면 ①/② 를 고른 직후 handoff 직전
+커밋을 한 번 합니다 — `/compact` 노출(①) 또는 `/interview` 진입(②) 바로 앞입니다.
+③(수정)·④(멈춤)에서는 커밋하지 않습니다 — 수정마다 커밋이 늘고 멈춤에도 커밋이 남는
+것을 막기 위해서입니다. 단순 명령 셋, 메시지는 파일로:
+
+```bash
+printf 'docs(interview): <topic> interview seed + audit\n' > "$SEED_DIR/commit-msg.txt"
+git add "$AUDIT" "$SEED"
+git commit -q -F "$SEED_DIR/commit-msg.txt"
+```
+
+워크트리가 아니면(거절·부재·스위치) 커밋하지 않고 «미커밋 — 현재 디렉토리» 를 게이트 텍스트에
+적습니다. ①/② 의 «다음 세션 첫 턴» 안내에는 **워크트리 절대경로**(`pwd`)를 함께 냅니다 —
+사람이 그 디렉토리에서 새 세션을 열어야 하기 때문입니다.
 
 게이트를 띄우기 **직전에** 구조 검사를 돌립니다:
 
@@ -543,3 +598,4 @@ payload 를 양식으로 만드는 유일한 경로이고, `tests/test_seed_one_
 
 - `DEVBREW_SPEC_DISTILL_DISABLE=1` — 즉시 abort, state 보존.
 - `DEVBREW_SPEC_DISTILL_DISABLE_CODEX=1` — codex 억제 축만 skip, 격리 critic 은 정상.
+- `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` — 워크트리 질문·생성을 건너뛰고 현재 디렉토리에서 진행(audit §5 에 사유).
