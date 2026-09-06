@@ -174,7 +174,7 @@ done
 
 note "── 컴프리헨션 회귀 축 — 요구가 아니라 baseline"
 comp="$(printf '%s\n' "$SCAN" | sed -n 's/^comprehensions=//p')"
-COMP_BASELINE=33   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_review.py
+COMP_BASELINE=38   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_review.py
                    # `merged["report"]["counts"]`를 만드는 `{k: 0 for k in
                    # _MERGED_COUNT_KEYS}`. 항목을 버리는 자리가 아니라 값 0
                    # 으로 카운터를 초기화하는 자리라 처분 호출이 필요 없다.
@@ -184,6 +184,21 @@ COMP_BASELINE=33   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_re
                    # 커서 계산·선택(:270-271, select_keys 의 라운드로빈). 넷 다
                    # 설정 파싱·목록 회전이지 처분 대상을 버리는 자리가 아니다
                    # (코드 확인 완료).
+                   # v0.55.0 Task 8 이 5 늘림(33→38) — `Ledger` import 로 ㉮ 에
+                   # 새로 들어온 depth_record.py 의 컴프리헨션 다섯. 하나씩 «항목을
+                   # 버리는 자리»가 아니라 «세거나 목록을 만드는 자리»임을 코드를
+                   # 열어 확인했다:
+                   #  :118 `{key: int(counts[key]) for key in PAIR_KEYS}` — 측정
+                   #       파일 §3.3 의 다섯 칸 투영. 키가 없으면 KeyError 가 나
+                   #       «기록 불가» 로 가지, 0 으로 기록하지 않는다(거짓 clean 방지).
+                   #  :119 `[s["s"] for s in ...human_sample]` — 표본 S 목록. 필터 없음.
+                   #  :120 `{p["s"] for p in ...pairs}` — 짝 S 집합. 필터 없음.
+                   #  :141 `{lab: … for lab in LABELS}` + 그 안의 `sum(1 for x in
+                   #       labels.values() if x == lab)` — 라벨별 계수. 안쪽 `if` 는
+                   #       버리는 술어가 아니다: parse_auditor() 가 어휘 밖 라벨을
+                   #       이미 `hold()` 로 빼내므로 `labels` 의 모든 값이 LABELS
+                   #       셋 중 정확히 하나에 든다(어느 항목도 세 칸 밖으로
+                   #       빠지지 않는다).
 if [ "${comp:-0}" -le "$COMP_BASELINE" ] 2>/dev/null; then
   ok "컴프리헨션 내포 $comp <= baseline $COMP_BASELINE"
 else
