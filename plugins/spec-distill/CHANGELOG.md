@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.56.0] — 2026-09-06
+## [0.56.0] — 2026-09-07
 
 ### Added
 
@@ -12,8 +12,9 @@
 - **닫힘 = 사용자 발화 앵커** — `check_brief.py` 에 `coverage_anchor_failures`(닫힌 행 evidence 의
   `S<N>` 실재, floor·derived·박제 전부)와 `budget_mapper_failures`(§2 `coverage-mapper <k>` k≥1,
   `0 (unavailable: …)` 은 advisory). **0.56.0 이전 brief 는 새 게이트를 통과하지 않는다** — 아카이브는
-  재게이트 대상이 아니다. 기존 fixture 86개는 `tests/fixtures/sweep_anchor_fixtures.py` 로 정합했다
-  (실행 전후 `test_check_brief.sh` ok/no 집합 동일).
+  재게이트 대상이 아니다. 기존 fixture 93개는 `tests/fixtures/sweep_anchor_fixtures.py` 로 정합했다
+  (`*.audit.md` 95개 중 seed audit 2개는 원장이 없어 대상 밖. 실행 전후 `test_check_brief.sh`
+  ok/no 집합 동일).
 - **재개방** — `closed → open`, `reopened`/`reopen_log`, 상충 줄 «→ <차원> 재개방», audit §1 접미
   `(재개방 n회 — 사유)`. 상한 없음(사용자가 시계).
 - **사후 깊이 측정 세 층** — `scripts/depth_pairs.py`(짝·표본 ≤4·rc 3 측정 불가), `agents/depth-auditor.md`
@@ -98,6 +99,37 @@
 
 ### Fixed
 
+- **최종 리뷰 fix wave** (좌석 둘 — 같은 계열 whole-branch · codex cross-family — 이 서로 blind 로
+  돌아 거의 다른 것을 찾았다. 아래는 판정 후 고친 것):
+  - **AC3 닫힘 게이트 fail-open** — `coverage_ledger_failures`(derived 를 `startswith` 로만 셈)와
+    `coverage_anchor_failures`(세 부분 요구, 매치 실패는 조용히 `continue`)의 **엄격도 비대칭**으로,
+    derived 닫힘 행에서 근거 «필드 자체»를 지우면 게이트가 `{"pass": true}` rc=0 을 냈다. 두 함수가
+    하나의 `LEDGER_ROW_RE` 를 공유하게 하고, `floor:`/`derived:` 로 시작하는데 그 형태로 안 읽히는
+    줄을 그 자체로 failure 로 만들었다. 구분자 앞 공백을 요구해(`\s+—`) 이름에 em-dash 가 든 행이
+    **오파싱되어 닫힌 행이 열린 행으로 재분류**되던 두 번째 증상도 닫는다.
+  - **Step A.7 측정 원장이 영영 안 써지던 것** — 두 번째 bash 블록이 첫 블록에서만 정의된
+    `$PR`·`$PAIRS`·`$AUD_RAW`·`$ROOT`·`$harness_sid` 를 썼다. 두 블록 사이에 `Agent` dispatch 와
+    `AskUserQuestion` 이 있어 반드시 새 셸이다(`can't open file '/scripts/depth_record.py'` rc=2).
+    Step B-0 과 같은 관례로 블록 머리에서 재도출한다.
+  - **출하 audit 템플릿이 게이트의 답을 미리 채우던 것** — `coverage-mapper` 만 리터럴 통과값 `1` 을
+    달고 있어 dispatch 0 회 턴이 그대로 옮겨 적으면 게이트가 조용히 통과했다. `<k>` 로 되돌리고,
+    R18 이 막던 것(산문이 판정을 짐)은 **숫자를 치환한 합성 사본**에 대해 잰다.
+  - **측정이 거짓말하던 자리 넷** — 파손된 auditor 펜스가 「측정했고 0」으로 기록되던 것(이제
+    못 읽은 줄을 계수하고 항목 0 이면 unavailable) · 같은 S 의 상충 판정이 무공시 흡수되던 것(이제
+    hold, 같은 라벨 중복은 흡수로 계수) · `user_statements` 항목의 **필드 순서**만 달라도 한 답의
+    본문이 다른 S 에 붙던 것(이제 불릿이 항목 경계, id 부재는 rc 3) · 중간 라운드 결번이 terminal 로
+    오계수돼 적격 답이 사람 표본에서 사라지던 것(spec §3.2 의 정의대로 «뒤에 라운드가 없을 때»만
+    terminal). `agreement` 이형 값이 uncaught `ValueError` 로 「항상 exit 0」 계약을 깨던 것도 닫았다.
+    `depth_pairs.py` 가 늘 세던 `skipped` 를 영구 기록·표시 **양쪽에** 실어 누락이 하류에서 보이게 했다.
+  - **산문이 코드와 어긋나던 여섯** — 필수 첫 coverage-mapper dispatch 가 계약이 요구한 seed 입력을
+    안 싣던 것(슬롯 `seed`·`reverify` 추가 — 첫 dispatch 는 R1 전이라 원장만으로는 **주제를 못 본다**) ·
+    migration 이 «직전 released 스키마»(구조는 있고 새 키 셋만 없음)를 안 덮던 것(판정을 키 단위로) ·
+    워크트리 발산 경고가 tracking branch 를 재던 것(워크트리가 실제 쓰는 origin 기본 브랜치 기준으로) ·
+    README 안의 `4-path`/`3-path` 자기모순 · 삭제된 C51 5-type 규칙의 거짓 인용 ·
+    `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE` 의 README 등재부 누락.
+  - **이빨 없던 락 둘** — Step A.7 락이 `grep -qF '<파일명>'` 이라 산문·처분 줄이 만족시켜 **호출 두
+    줄을 지워도 GREEN** 이었다(bash 펜스 안 호출 «형태»로 교체). AC10 템플릿 락이 깊이 줄 셋만 세어
+    `- 판정자 조건:` 줄을 지워도 GREEN 이었다(넷 다 센다).
 - steelman dispatch 의 web kill switch 확인이 dispatch **뒤**에 놓여 있어(`SKILL.md` R3, 선재 결함), 위에서
   아래로 읽는 모델이 `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 인 채로 dispatch 할 수 있었다. `test_web_kill_switch.sh`
   의 guard-window 락(dispatch 줄 위 40줄 안에 스위치 확인)은 이것을 잡지 못했다 — steelman dispatch 바로
