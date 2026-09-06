@@ -12,7 +12,7 @@ source: spec-distill conducting-interview v0.23.0
 
 - floor:root_problem — closed — §1 Goal (ROOT_CAUSE) (@S1)
 - floor:landscape — closed — §4 Next.js SSR 인용 (@S1)
-- floor:skepticism — closed — §5 islands steelman defended (@S1)
+- floor:skepticism — closed — §5 islands steelman kept (@S1)
 - floor:blind_spot — closed — §5 cold-start 위험 (@S1)
 - floor:open_questions — closed — §3 OQ1 (@S1)
 - derived: N/A
