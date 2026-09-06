@@ -292,23 +292,43 @@ grep -q 'interview_round' <<<"$term_block" \
 
 # --- v0.22.0: teach-beat + blind-spot/coverage-mapper dispatch (AC6/AC7/AC8/AC9/C11/C12) ---
 
-# teach-beat 섹션 (scoped — feedback_grep_lock_header_satisfiable teeth)
-teach_block="$(awk '/^## teach-beat/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
-{ [[ -n "$teach_block" ]] && grep -qi 'teach-lite' <<<"$teach_block"; } \
-  && ok "AC8: teach-beat section present (teach-lite)" \
-  || no "AC8: teach-beat section present (teach-lite)"
-grep -qE '≤1문장' <<<"$teach_block" \
-  && ok "AC8: teach-lite size bound (<=1 sentence)" \
-  || no "AC8: teach-lite size bound (<=1 sentence)"
-{ grep -q 'teach-heavy' <<<"$teach_block" && grep -q '≥1' <<<"$teach_block" && grep -q 'URL' <<<"$teach_block"; } \
-  && ok "AC8: teach-heavy needs >=1 URL" \
-  || no "AC8: teach-heavy needs >=1 URL"
-grep -qE '단정이 아닌 질문 형태|질문 형태' <<<"$teach_block" \
-  && ok "C3: teach as question, not assertion" \
-  || no "C3: teach as question, not assertion"
-grep -qE '모델 판단|non-goal' <<<"$teach_block" \
-  && ok "C12: firing time is model-judged, not mechanized" \
-  || no "C12: firing time is model-judged, not mechanized"
+# --- v0.55.0 §1 라운드 규약 (블록 스코프 — 4-block·teach-beat 대체) ---------------------
+# 스코프 안의 예시 fenced block 이 `## R<n>`(depth_pairs 계약이 요구하는 실제 헤딩 리터럴)을
+# 담고 있어 — 단순 "다음 `## ` 헤딩에서 닫는다" idiom 이 예시 자체를 다음 섹션 시작으로
+# 오판한다(fence 미인식). 그래서 이 스코프만 ``` 토글로 fence 안쪽을 닫힘-판정에서 뺀다.
+round_block="$(awk '/^```/{c=!c} /^## 라운드 규약/{f=1;print;next} !c && /^## /{f=0} f' "$SKILL")"
+round_flat="$(tr '\n' ' ' <<<"$round_block" | tr -s ' ')"
+{ [[ -n "$round_block" ]] && grep -qF '### 직전 답에서 — S<k>' <<<"$round_block"; } \
+  && ok "AC1: 라운드 규약 절 + «### 직전 답에서 — S<k>» 블록 형식" || no "AC1: 라운드 규약 절/블록 형식 부재"
+for key in '- 함의:' '- 상충:' '- 확인한 사실:' '- 위험:'; do
+  grep -qF -- "$key" <<<"$round_block" && ok "AC1: 네 줄 키 $key" || no "AC1: 네 줄 키 $key 부재"
+done
+grep -qF '## R<n>' <<<"$round_block" && ok "AC1: state 본문 헤딩 ## R<n> (depth_pairs 계약)" || no "AC1: ## R<n> 헤딩 부재"
+grep -qF 'Q1 은 생략할 수 없다' <<<"$round_flat" && ok "AC1: «Q1 은 생략할 수 없다»" || no "AC1: Q1 불가생략 문장 부재"
+grep -qF 'R1 은 S1 을 되비춘다' <<<"$round_flat" && ok "AC1: «R1 은 S1 을 되비춘다»" || no "AC1: R1/S1 문장 부재"
+grep -qE '넷 다 «없음»[^.]{0,60}되묻기|전부 «없음»[^.]{0,60}되묻기' <<<"$round_flat" && ok "AC1: 전부 «없음» → Q1 되묻기 (G1 이행 규칙)" || no "AC1: 전부-없음 규칙 부재"
+# 실측(round 산문): «/interview» 와 «R2 부터» 사이 간격이 101자 — 원안 {0,80} 은 이 정확한
+# 산문(브리프가 지정한 리터럴 그대로, 임의로 줄이지 않음)에 대해 너무 좁아 자기모순이었다.
+# 120으로 넓혀 현재 문장 + 사소한 리라이트 여유를 함께 잡는다(부재 판정용이 아니라 「한
+# 문장 안의 관계」결속이 목적이므로 상한 자체를 없애지 않는다 — 무관한 문장까지 걸리는
+# vacuous 매치를 막는 것이 이 축의 역할이다).
+grep -qE '인자 없이[^.]{0,40}/interview[^.]{0,120}R2 부터' <<<"$round_flat" && ok "AC1: 비-seed 경로의 R1 예외" || no "AC1: 비-seed R1 규약 부재"
+q_js="$(awk '/^## 라운드 규약/{f=1} f&&/^```javascript/{j=1;next} j&&/^```/{exit} j' "$SKILL")"
+[[ "$(grep -c 'header:' <<<"$q_js")" -eq 2 ]] && grep -q 'AskUserQuestion(' <<<"$q_js" \
+  && ok "AC2: AskUserQuestion 한 번에 질문 둘(header 2개)" || no "AC2: AskUserQuestion 질문 수가 2가 아니다"
+grep -qF '(권장)' <<<"$q_js" && ok "AC2: 첫 선택지가 추천 (권장)" || no "AC2: 추천 선택지 부재"
+grep -qF '고르면 무엇이 달라지는가' <<<"$round_flat" && ok "AC2: description = 고르면 무엇이 달라지는가" || no "AC2: description 규칙 부재"
+grep -qE 'Q1 의 선택지는 둘|«맞다» / «모르겠다»' <<<"$round_flat" && ok "AC2: Q1 선택지 둘(맞다/모르겠다), 수정은 기타" || no "AC2: Q1 선택지 규칙 부재"
+grep -qF 'provisional_on' <<<"$round_flat" && ok "AC2: Q2 의 provisional_on 규칙" || no "AC2: provisional_on 부재"
+reask_block="$(awk '/^## 되묻기로 바뀌는 조건/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+{ [[ -n "$reask_block" ]] && grep -q '이유' <<<"$reask_block" && grep -q '사례' <<<"$reask_block" && grep -q '실패 조건' <<<"$reask_block"; } \
+  && ok "C1: 되묻기 세 축(이유·사례·실패 조건)" || no "C1: 되묻기 절/세 축 부재"
+grep -qE '추측[^.]{0,20}첫 선택지' <<<"$(tr '\n' ' ' <<<"$reask_block")" && ok "C1: 인터뷰어 추측이 첫 선택지" || no "C1: 추측-첫-선택지 규칙 부재"
+# 제거 (G7·AC1·AC14) — 존재 검사가 아니라 부재 검사이므로 CI_ALL 전체
+for tok in 'teach-lite' 'teach-heavy' 'teach-beat' '4-block' '막힌 결정' 'general-purpose'; do
+  grep -qF -- "$tok" "${CI_ALL[@]}" && no "G7: «${tok}» 잔존" || ok "G7: «${tok}» 제거됨"
+done
+[[ "$(wc -l < "$SKILL")" -lt 408 ]] && ok "G7: SKILL.md 줄 수 $(wc -l < "$SKILL") < 408 (순감)" || no "G7: SKILL.md 줄 수 $(wc -l < "$SKILL") ≥ 408"
 
 # coverage-mapper dispatch (C11/AC7, scoped)
 covmap_block="$(awk '/^## coverage-mapper dispatch/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
@@ -412,8 +432,8 @@ grep -qE '§[68] OQ' <<<"$r3_block" \
 # E10 (오케스트레이터 미러) — R3 dispatch 지시에 병렬·투기적 금지 문구 부재.
 # steelman-builder.md 에이전트 persona에서 삭제한 것과 같은 억제가 이 SKILL의 dispatch
 # 지시문에도 있었다(C5/AP9 인용 둘 다 근거 없음 — fix round 1). 전-파일 grep은 잘못이다:
-# :122 'teach-beat 최대 1회'와 :438 '2회까지'가 이 SKILL에 legitimately 남아있으므로
-# "$r3_block"(위에서 정의한 R3 섹션 윈도우)으로 스코프한다.
+# (v0.55.0 에서 teach-beat 절 제거 — 이 스코프 근거는 R3 절 자체) :438 '2회까지'가 이 SKILL에
+# legitimately 남아있으므로 "$r3_block"(위에서 정의한 R3 섹션 윈도우)으로 스코프한다.
 grep -qE '병렬.{0,8}금지|투기적.{0,8}금지' <<<"$r3_block" \
   && no "E10: R3 dispatch에 병렬·투기적 금지 문구 잔존 (scoped to R3)" \
   || ok "E10: R3 dispatch에 병렬 금지 문구 없음 (scoped to R3)"

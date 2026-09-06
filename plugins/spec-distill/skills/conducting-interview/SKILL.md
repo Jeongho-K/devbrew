@@ -14,7 +14,8 @@ user-invocable: false
 
 당신은 spec-distill의 인터뷰 stage를 진행 중입니다. 이 stage는 *받아적는* 인터뷰가
 아니라 **강한 문제공간 stage**입니다(Double Diamond 1st diamond — brainstorming 해답공간
-앞단, 상보적·비중복). 4-block Korean Socratic format으로 round를 진행하되, 종료는
+앞단, 상보적·비중복). 매 라운드를 «직전 답에서» 블록으로 시작하고 AskUserQuestion 질문
+둘로 묻되, 종료는
 **커버리지 원장의 floor 5차원**(root-problem/landscape/skepticism/blind-spot/open-questions)이
 **모두 `closed`**일 때만 허용됩니다 — landscape·skepticism 등 통과 의례 메커니즘이 각 차원을
 채우는 수단이며, `check_brief.py`가 이를 기계적으로 검증합니다(Law 1 구조 게이트).
@@ -56,7 +57,7 @@ confirm_repost_count: 0              # 종료 확정 확인 재제시 횟수 (�
 ---
 ```
 
-State body: 각 round의 4-block 출력 + 사용자 답변 + (있다면) coverage-mapper 출력 transcript.
+State body: 각 라운드의 §1.1 기록(`## R<n>` 형식 그대로 — `depth_pairs.py` 가 읽는 계약) + coverage-mapper 출력 transcript.
 
 **Secret 기록 금지** (P21): 사용자 답변에 token/key/credential 패턴 감지 시 placeholder로 치환 후
 기록합니다. **치환 토큰은 `<REDACTED>` 또는 `<REDACTED:라벨>` 형태**로 씁니다(다른 허용 형태:
@@ -78,23 +79,95 @@ STATE="$ROOT/<session-id>/state.local.md"
 
 **brief는 예외**: `docs/superpowers/interview/`는 워크트리 *안*이라 `Write` tool로 정상 작성.
 
-## 4-block Korean format (devbrother2024 deep-interview 흡수)
+## 라운드 규약 — «직전 답에서» 블록 + 질문 둘
 
-매 round마다 다음 4 block을 출력하십시오:
+인터뷰어의 다음 행동은 사용자의 직전 답에서 나온다. 사용자에게 보이는 출력과 state 본문 기록이
+**같은 형식**이다 — 측정 스크립트(`depth_pairs.py`)가 state 본문을 읽기 때문이다.
 
 ```markdown
-**현재 이해:**
-(지금까지 인터뷰로 파악한 사용자 요청의 *현재 이해*를 한두 문장으로 요약. 1라운드는 사용자 prompt에서 추출.)
+## R<n>
 
-**막힌 결정:**
-(가장 큰 단일 불확실성 — goal/scope/constraints/AC 중 가장 모호한 한 가지를 명시.)
+### 직전 답에서 — S<k>
+- 함의: <이 답이 사실이면 따라오는 것>
+- 상충: <이전 답 S<j> / 외부 근거 / 코드 사실과 부딪히는 점 — 재개방이면 «→ <차원> 재개방: <사유>»> (없으면 «없음»)
+- 확인한 사실: <답을 받고 코드·문서에서 찾아본 것> (없으면 «없음»)
+- 위험: <이 답대로 가면 무너질 수 있는 것> (없으면 «없음»)
 
-**추천 답안:**
-(막힌 결정에 대한 *내 추천 답*. 사용자가 No만 골라도 진행 가능하게.)
+### 지금 이해
+<문제의 현재 재구성 — 바뀐 부분만 한두 문장>
 
-**질문:**
-(한 번에 하나의 질문. 다지선다 형태 권장. open-ended는 신중히.)
+### 다음 결정
+<무엇을 정하는지 한 줄> · 추천: <첫 선택지> · 트레이드오프: <선택지별 한 줄>
+
+### 질문
+Q1 (되비추기 확인 | 되묻기): <본문>
+Q2: <본문>
+
+### 답
+→ S<m>[, S<m+1>]
 ```
+
+- `## R<n>` 은 1부터 순증. 직전 라운드가 발화를 둘 만들었으면(Q1·Q2) **`### 직전 답에서 — S<k>`
+  블록을 발화마다 하나씩** 둔다 — 한 블록에 두 S 를 섞으면 어느 답에서 무엇이 나왔는지가 사라진다.
+  각 블록의 네 줄은 **그 S 에서** 따라 나오는 것만 적는다(다른 답·무관한 정보는 «없음»).
+- **R1 은 S1 을 되비춘다** — S1 이 seed(`round: 0`)이면 seed 의 «다시 검증할 것» 문단 항목이 R1 의
+  함의·상충·위험 줄을 채운다. **인자 없이 `/interview` 를 부른 경로**(S1 이 없고 첫 사용자 답이 S1 이
+  되는 호환 경로)에서는 R1 이 «직전 답에서» 블록 없이 «지금 이해 + 다음 결정 + Q2» 만으로 성립하고
+  규약은 R2 부터 적용된다; coverage-mapper 첫 dispatch 도 R1 답을 받은 뒤 R2 전에 일어난다.
+- 네 줄 중 하나라도 «없음»이 아니어야 «형식 층에서 성립»이다. **넷 다 «없음»이면** 그 라운드는
+  «S<k> 에서 아무것도 못 끌어냈다»는 기록이 되고 **그 라운드의 Q1 은 되묻기여야 한다**(아래 절).
+  블록을 아예 쓰지 않는 것만이 라운드 불성립이다.
+- «상충» 줄이 외부 근거(landscape·steelman·premortem 출력)를 싣는다 — 열린 질문으로 흘려보내지 않고
+  «맞나?»로 사용자 처분을 받는다. 경로 (a)(코드·문서에서 찾을 수 있는 것)는 «확인한 사실» 줄로
+  들어간다 — 묻기 전에 찾을 수 있는 것을 먼저 찾는다.
+
+### 질문 — AskUserQuestion 한 번, 질문 둘
+
+```javascript
+AskUserQuestion({
+  questions: [
+    { header: "직전 답",  question: "<S<k> 에서 끌어낸 것을 한 절로 — 용어와 기술 사실을 풀어서>. 맞나요?",
+      options: [
+        {label: "맞다",     description: "이대로 <차원> 을 진행/닫는다 — <고르면 달라지는 것>"},
+        {label: "모르겠다", description: "판단불가로 기록하고 Open Question 후보로 둔다"}],
+      multiSelect: false },
+    { header: "<결정 이름>", question: "<무엇을 정하는지 한 줄> · <용어 풀이> · <관련 기술 사실> · 추천은 첫 선택지",
+      options: [
+        {label: "<추천> (권장)", description: "고르면 <결과>"},
+        {label: "<대안 1>",      description: "고르면 <결과>"},
+        {label: "<대안 2>",      description: "고르면 <결과>"}],
+      multiSelect: false }
+  ]
+})
+```
+
+- **Q1 은 생략할 수 없다.** Q1 이 항상 먼저고 Q2 는 새 결정 하나다.
+- **Q1 의 선택지는 둘뿐이다**(«맞다» / «모르겠다»). 틀린 부분은 사용자가 «기타» 자유 입력에 적는다 —
+  선택지를 고르면서 동시에 자유 입력을 남기는 동작은 도구에 없다. «기타» 텍스트는 `verbatim` S 로
+  기록되고 다음 라운드 Q1 이 그것을 다시 되비춘다(같은 주제 최대 2회 — 3회째는 §3 Open Questions 로
+  박제하고 넘어간다).
+- **Q2 는 Q1 의 확인과 독립이어야 한다.** Q2 가 Q1 이 되비춘 해석에 기대면 그 라운드는 Q1 만 낸다.
+  독립인데도 Q1 이 «모르겠다»·«기타(수정)» 이면 Q2 의 답은 state 에 `provisional_on: S<k>` 를 달고,
+  그 표시가 해소(다음 라운드 되비추기 «맞다»)되기 전에는 어느 차원의 닫힘 근거로도 쓰지 않는다.
+- 각 선택지의 `description` 은 «고르면 무엇이 달라지는가»를 담고, question 본문은 무엇을 정하는지·
+  용어·기술 사실을 푼다. 기계 검사는 없다 — 사람 e2e 가 본다.
+- 두 답은 `user_statements` 에 `S<m>`·`S<m+1>` 로 append 된다(`source: chosen`, «기타» 입력은
+  `verbatim`). 번호 공식은 «사용자 발화 기록» 절 그대로.
+
+## 되묻기로 바뀌는 조건
+
+되비추기가 **성립하지 않는 답**에서 Q1 은 되묻기가 된다 — 보류(«모르겠다/둘 다/아무거나»), 한 단어 답,
+추천안 즉시 동의(이유 없이 «추천»), 근거 없는 단정(휴리스틱, 기계화 안 함). Q1 본문은 **이유·사례·
+실패 조건** 중 하나를 묻고 인터뷰어의 추측을 첫 선택지로 둔다:
+
+```
+Q1 (되묻기): «<S<k>>»라고 답하셨는데, 왜 그렇게 봤는지가 <차원> 을 닫는 데 필요합니다.
+  - «내 추측: <이유 A>» (권장)  — 고르면 <결과>
+  - «<이유 B>»                 — 고르면 <결과>
+  - «잘 모르겠다»              — 판단불가로 기록, OQ 후보
+```
+
+세 축이 도구상자의 전부다. 목록을 더 두지 않는다.
 
 ## C43 4-path routing
 
@@ -103,30 +176,10 @@ STATE="$ROOT/<session-id>/state.local.md"
 | Path | When | Action |
 |---|---|---|
 | (a) **factual / landscape** | 답이 codebase/git history *또는 외부 prior-art*에 있는 경우 | codebase는 grep/Read *auto-confirm*; 외부는 web sweep(아래 R2). 마커 `[from-code][auto-confirmed]` 또는 `[from-web]`. streak +1. |
-| (b) **judgment** | 사용자 선호/우선순위/제약 | 사용자에게 묻기 (default path). 4-block 출력. |
-| (c) **ambiguity** | 여러 해석 가능한 핵심 가정 | sub-agent에 adversarial draft 요청 (`general-purpose` agent에 "이 가정이 잘못됐다면 어떤 시나리오가 가능한가?" 형태로 dispatch). 답을 그대로 사용자에게 보여주고 confirm. |
-| (d) **ontological** | "이게 무엇인가" 종류 (essence/root cause 등) | C51 5-type framework 사용 — ESSENCE / ROOT_CAUSE / PREREQUISITES / HIDDEN_ASSUMPTIONS / EXISTING_CONTEXT 중 하나로 라벨링 후 사용자에게 묻기. |
+| (b) **judgment** | 사용자 선호/우선순위/제약 | 사용자에게 묻기 (default path). |
+| (d) **ontological** | "이게 무엇인가" 종류 (essence/root cause 등) | essence/root cause 류 — 라벨 강제 없음. 사용자에게 묻기. |
 
-매 round의 4-block에서 어떤 path로 routing했는지 transcript에 명시하십시오.
-
-## teach-beat (C3/C12 — 미지를 드러내 가르치기)
-
-매 probe에 **teach-lite**를 붙인다: prior-art/trade-off를 **≤1문장**, **web 호출 없이**, 그리고
-**단정이 아닌 질문 형태**로 제시해 사용자가 모르는 지형을 살짝 연다(C3 — 공유된 전제가 사용자 답을
-오염시키지 않게).
-
-다음 **열거 신호** 중 하나가 발화하면 그 probe의 teach-lite를 **teach-heavy**로 *대체*한다
-(추가 아님 — probe당 teach-beat 최대 1회). teach-heavy = **≥1 prior-art/URL 또는 landscape 인용**:
-
-1. 사용자 답이 `## External Landscape` 한 항목과 모순.
-2. hold·satisficing 답("모르겠음/둘 다/아무거나" — 발화 기록 표의 "보류" 행 재사용).
-3. floor 차원의 첫 open→in-progress 전이(그 차원에 첫 probe 착수).
-4. coverage-mapper/blind-spot-prober 출력이 비어있지 않음.
-
-복수 신호 동시 발화 시 heavy beat 1회로 합친다. **발화 시점은 모델 판단 적응 행동**이다(C12 —
-결정론 게이트로 기계화하지 않는다; 위 신호는 결정 규칙이 아니라 휴리스틱 가이드). 검증 가능한 것은
-이 신호 목록 + 크기 한도(teach-lite ≤1문장 / teach-heavy ≥1 URL)뿐이며, 각 발화의 per-firing
-결정성은 non-goal(모델 판단을 결정론으로 대체하지 않음 — 이 재구성의 핵심 논지).
+매 라운드의 «확인한 사실»·«질문» 에 어떤 path 인지 transcript에 명시하십시오.
 
 ## 사용자 발화 기록 (G1, AC1)
 
@@ -140,7 +193,6 @@ STATE="$ROOT/<session-id>/state.local.md"
 | 선택지 선택 | b, d | ✅ | `chosen` |
 | 보류 ("잘 모르겠음", "둘 다 괜찮음") | b, d | ✅ — §3 Open Questions로도 이월 | `verbatim` |
 | factual auto-confirm | a | ❌ (사용자 발화 아님) | — |
-| sub-agent ambiguity 답안 | c | ✅ ONLY IF 사용자 confirm — **confirm 발화**를 기록 | `verbatim` |
 
 ```yaml
 - id: S<N>                 # N = user_statements.length + 1 + (최초 요청 원문 있으면 1, 없으면 0 — finishing.md S1 예약과 합의)
@@ -160,7 +212,6 @@ STATE="$ROOT/<session-id>/state.local.md"
 `non_user_streak` 카운터 — 직전 N probe 동안 *사용자 답변이 없었던* 횟수.
 
 - (a) factual auto-confirm: streak +1
-- (c) sub-agent adversarial: streak +1
 - (b) 사용자 답변 받음: streak = 0
 - (d) ontological 사용자 답변 받음: streak = 0
 - (a) web auto-research: streak +1 (과도하면 강제 (b)로 사용자를 loop에 유지 — AP16).
@@ -298,8 +349,8 @@ fi
            prompt: "의심 방향: <direction>${SUSPECT_DIRECTION}</direction>. trigger: <trigger>${TRIGGER}</trigger>. 대안의 강한 케이스를 웹근거와 함께." })
    // **처분** — consumer=orchestrator · fail-open · disclosure=loud advisory
    ```
-2. builder 출력(`alternative_statement` + `evidence[].url`)을 **verbatim**으로 4-block에 반대
-   케이스로 제시 — conducting-interview는 이를 **약화·편집하지 않습니다**.
+2. builder 출력(`alternative_statement` + `evidence[].url`)을 **verbatim**으로 다음 라운드의
+   «상충» 줄에 반대 케이스로 제시 — conducting-interview는 이를 **약화·편집하지 않습니다**.
 3. **게이트**(P17): 사용자가 (방어 → 원안 유지 / 전환 → 대안 채택, 원안은 R4로 / 보류 → §3 OQ) 중 하나를 선택한다.
 4. 판정을 payload §5의 **`verdict:` 항목**으로 기록 — 각 항목은 (대안 statement + 웹근거 URL + `verdict ∈ {defended | switched | deferred}` + audit §3의 `ST<N>` 참조). 게이트 매핑: 방어→`defended`, 전환→`switched`, 보류→`deferred`(§3 OQ에도 박제). builder 출력 verbatim은 audit §3에 `#### ST<N>` 헤딩으로 남고, payload §5와 audit §3은 이 `ST<N>` id로 맞물린다(bijection A) — frontmatter에는 별도 필드를 두지 않는다.
 5. 한 방향당 steelman 1회(새 근거 없으면 재steelman 금지 — AP16 harassment 방지).
