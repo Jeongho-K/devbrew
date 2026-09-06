@@ -77,25 +77,60 @@ def parse_statements(fm):
             break
         if ln.strip():
             saw_content = True
-        m = re.match(r"^\s*-\s+id\s*:\s*(\S+)", ln)
-        if m:
-            cur = {"id": m.group(1).rstrip(","), "round": None, "text": ""}
-            items.append(cur); i += 1; continue
-        m = re.match(r"^(\s*)(round|text)\s*:\s*(.*)$", ln)
-        if m and cur is not None:
-            key, raw = m.group(2), m.group(3).strip()
-            if key == "round":
-                cur["round"] = int(raw) if re.fullmatch(r"-?\d+", raw) else _unquote(raw)
-                i += 1; continue
-            if raw in ("|", "|-", "|+", ">", ">-", ">+"):
-                indent = len(m.group(1)); buf = []; i += 1
-                while i < len(lines) and (not lines[i].strip() or len(lines[i]) - len(lines[i].lstrip()) > indent):
-                    buf.append(lines[i].strip()); i += 1
-                cur["text"] = "\n".join(buf).strip(); continue
-            cur["text"] = _unquote(raw)
+        # 새 항목의 시작은 **불릿**이지 `- id:` 라는 «특정 키» 가 아니다. `- id:` 만 항목
+        # 시작으로 보면 필드 순서가 다른 항목(`- source: …` / `  id: …`)에서 새 항목이
+        # 열리지 않고 `cur` 가 앞 항목을 계속 가리켜, 뒤따르는 `round`·`text` 가 **앞 S 의
+        # 필드를 덮어쓴다**. 실측(필드 순서만 바꾼 fixture): S4 가 통째로 사라지고 그 본문이
+        # S3 에 붙었다 — 오류 없이. 조용한 오배정은 누락보다 나쁘다(측정이 틀린 값을 자신
+        # 있게 낸다). 그래서 불릿을 경계로 삼고 `id` 는 다른 필드와 같은 자격으로 읽는다.
+        bm = re.match(r"^(\s*)-\s+(.*)$", ln)
+        if bm:
+            cur = {"id": None, "round": None, "text": ""}
+            items.append(cur)
+            indent = len(bm.group(1))
+            fm = re.match(r"^(id|round|text)\s*:\s*(.*)$", bm.group(2))
+            if not fm:
+                i += 1
+                continue
+            key, raw = fm.group(1), fm.group(2).strip()
+        else:
+            fm = re.match(r"^(\s*)(id|round|text)\s*:\s*(.*)$", ln)
+            if not fm or cur is None:
+                i += 1
+                continue
+            indent, key, raw = len(fm.group(1)), fm.group(2), fm.group(3).strip()
+        if key == "id":
+            # 주석은 데이터가 아니다 — 키 줄에서 이미 떼고 있는 것과 같은 관례.
+            cur["id"] = _unquote(_strip_inline_comment(raw).strip().rstrip(",").strip()) or None
+            i += 1
+            continue
+        if key == "round":
+            # `round: 1 # answered R1` 을 문자열로 읽으면 그 S 가 조용히 짝에서 빠진다.
+            # round 는 정수 자리이므로 주석을 떼는 것이 안전하다(text 에는 하지 않는다 —
+            # 사용자 원문에 `#` 가 정당하게 들어간다).
+            raw = _strip_inline_comment(raw).strip()
+            cur["round"] = int(raw) if re.fullmatch(r"-?\d+", raw) else _unquote(raw)
+            i += 1
+            continue
+        if raw in ("|", "|-", "|+", ">", ">-", ">+"):
+            buf = []
+            i += 1
+            while i < len(lines) and (not lines[i].strip()
+                                      or len(lines[i]) - len(lines[i].lstrip()) > indent):
+                buf.append(lines[i].strip()); i += 1
+            cur["text"] = "\n".join(buf).strip()
+            continue
+        cur["text"] = _unquote(raw)
         i += 1
     if not items and saw_content:
         raise ValueError("user_statements 파싱 실패 — 리스트 형식이 아니거나 항목을 읽을 수 없다")
+    # id 없는 항목은 «빈 항목» 이 아니라 «읽지 못한 항목» 이다. 통째로 버리면 total 만
+    # 줄어 「그런 답은 없었다」로 기록되므로, 측정 불가로 올려 rc 3 으로 구분되게 한다.
+    nameless = [n for n, it in enumerate(items, 1) if not it["id"]]
+    if nameless:
+        raise ValueError(
+            "user_statements 항목 %s 에 id 가 없다 — 본문이 다른 S 에 붙을 수 있어 "
+            "«측정 불가» 로 낸다" % (nameless,))
     return items
 
 
@@ -146,13 +181,23 @@ def measure(text, sample_n, seed):
     rounds = split_rounds(body)
     if not rounds:
         raise ValueError("본문에 `## R<n>` 헤딩이 없다 — 라운드 기록 형식(§1.1) 미준수 또는 구세션")
+    # spec §3.2: 「**마지막 라운드**의 답은 다음 라운드가 없으므로 짝에서 제외하고 terminal
+    # 로 센다」. `nxt not in rounds` 는 그 정의가 아니다 — **중간 라운드 결번**까지 terminal
+    # 로 삼는다. 실측: `## R2` 하나만 `## Round 2` 로 바꾸면(R3·R4 는 그대로) terminal 이
+    # 1 → 3 으로 오르고 적격 답이 6 → 4 로 줄었다. 뒤 라운드의 존재가 인터뷰가 끝나지
+    # 않았음을 증명하는데도 그 답들이 「잴 것이 없는 답」으로 분류돼 사람 표본에서 사라진다
+    # — 측정이 **안전해 보이는 방향으로** 거짓말한다. terminal 은 뒤에 라운드가 하나도
+    # 없을 때만 참이다. 결번으로 블록을 못 찾은 답은 terminal 이 아니라 `with_block` 에서
+    # 빠지는 것으로 드러난다(짝은 남고 사람 표본에도 남는다).
+    last_round = max(rounds)
     pairs, skipped = [], 0
     for st in stmts:
         if not isinstance(st["round"], int) or st["round"] < 0:
             skipped += 1; continue
         nxt = st["round"] + 1
-        terminal = nxt not in rounds
-        block = None if terminal else find_block(rounds[nxt], st["id"])
+        terminal = st["round"] >= last_round
+        block = (None if terminal or nxt not in rounds
+                 else find_block(rounds[nxt], st["id"]))
         pairs.append({"s": st["id"], "round": st["round"], "next_round": nxt,
                       "user_text": st["text"], "block": block,
                       "substantive": substantive(block), "terminal": terminal,

@@ -19,24 +19,34 @@ from render_disposition import disposition_lines  # noqa: E402
 LABELS = ("dug", "not_dug", "undecidable")
 # 측정 파일 §3.3 의 `pairs` 다섯 칸. 산출자(depth_pairs.py)가 늘 함께 낸다 —
 # 하나라도 없으면 「0 으로 기록」이 아니라 KeyError 로 «기록 불가» 다(0 은 거짓 clean).
-PAIR_KEYS = ("total", "eligible", "with_block", "substantive_form", "terminal")
+PAIR_KEYS = ("total", "eligible", "with_block", "substantive_form", "terminal", "skipped")
 SENTINEL_RE = re.compile(r"```depth-audit[ \t]*\n(.*?)\n```", re.DOTALL)
 ITEM_RE = re.compile(r"^\s*-\s+s\s*:\s*(\S+)\s*$")
 FIELD_RE = re.compile(r"^\s+(label|reason)\s*:\s*(.*?)\s*$")
+# 값 없는 매핑 키 = YAML 구조 줄이지 «못 읽은 데이터»가 아니다. depth-auditor 의 출력
+# 계약 자체가 `pairs:` 를 컨테이너 키로 싣는다(agents/depth-auditor.md) — 이것을 «인식 못 한
+# 줄» 로 세면 정상 출력마다 오탐 공시가 붙는다. `- s:`(값 없는 항목)는 여기 안 걸린다:
+# 불릿으로 시작해 `[A-Za-z_]` 와 안 맞으므로 제대로 «못 읽은 줄» 로 남는다.
+CONTAINER_RE = re.compile(r"^\s*[A-Za-z_][\w-]*\s*:\s*$")
 
 
 def parse_auditor(raw, ledger):
-    """센티널 블록 → {S: label}. 블록 부재는 None(unavailable) — 0건과 구분.
+    """센티널 블록 → {S: label}. 「잴 수 없었다」(None)와 「재 보니 0」을 가른다.
 
-    수집 루프에는 `continue` 가 없다 — 항목 줄과 필드 줄은 «버리는» 자리가 아니라
-    «모으는» 자리이고, 여기에 처분을 부르면 회계가 실제로 버린 적 없는 것을 센다.
+    수집 루프에서 항목 줄·필드 줄은 «버리는» 자리가 아니라 «모으는» 자리라 처분을
+    부르지 않는다 — 거기에 처분을 부르면 회계가 실제로 버린 적 없는 것을 센다.
+    다만 **어느 쪽으로도 인식되지 않은 줄**은 다르다: 그것은 모으지도 못한 것이므로
+    세어야 한다. 「펜스를 찾았다」를 충분조건으로 보고 인식 못 한 줄을 조용히 버리면,
+    파손된 출력이 `dug 0 · not_dug 0 · held 0 · unavailable 0` 으로 — 즉 **「측정했고
+    0 건」**으로 — 기록된다(실측: `S1: dug` 처럼 항목 마커가 다른 펜스, 그리고 `*` 불릿
+    펜스 둘 다). 이 리포의 규칙: 「셀 수 없음」과 「0」은 다른 사실이다.
     """
     m = SENTINEL_RE.search(raw or "")
     if not m:
         ledger.source_failed(
             "depth-auditor", "depth-audit 센티널 블록 부재/빈 출력", primary=True)
         return None
-    items, cur = [], None
+    items, cur, unread = [], None, 0
     for ln in m.group(1).splitlines():
         im = ITEM_RE.match(ln)
         fm = FIELD_RE.match(ln)
@@ -45,14 +55,46 @@ def parse_auditor(raw, ledger):
             items.append(cur)
         elif fm and cur is not None:
             cur[fm.group(1)] = fm.group(2).strip().strip('"')
-    labels = {}
+        elif ln.strip() and not CONTAINER_RE.match(ln):
+            # 빈 줄·구조 줄은 «버린 항목» 이 아니라서 처분을 부르지 않는다. 그래서
+            # `continue` 로 먼저 걸러내지 않고 이 술어 안에 접어 둔다 — 별도 분기로 두면
+            # 「버리는 자리인데 처분이 없다」로 배선 검사에 걸리고, 면제 목록만 길어진다.
+            unread += 1
+    if unread:
+        ledger.uncountable(
+            "depth-auditor 펜스",
+            "인식 못 한 줄 %d 개 — 항목/필드 어느 형태도 아니다" % unread)
+    if not items:
+        # 내용은 있는데 항목이 0 이면 «판정 0 건» 이 아니라 «판정을 읽지 못했다» 다.
+        ledger.source_failed(
+            "depth-auditor",
+            "펜스는 있으나 항목 0 — 출력 형식이 계약과 다르다(0 건이 아니라 판독 실패)",
+            primary=True)
+        return None
+    # 같은 S 에 여러 판정이 올 수 있다. 같은 라벨의 중복은 **흡수**(계수하되 degrade 아님),
+    # 서로 **다른** 라벨은 auditor 가 자기모순한 것이므로 그 S 는 **셀 수 없다**. 뒤엣것이
+    # 앞엣것을 덮어쓰게 두면 모순이 `흡수 0 · 보류 0` 인 채로 공시 없이 사라진다(실측).
+    by_s = {}
     for it in items:
-        lab = it.get("label")
-        if lab not in LABELS:
-            ledger.hold(it.get("s", "?"), "항목 파손: label %r 는 어휘 밖" % (lab,))
+        by_s.setdefault(it.get("s", "?"), []).append(it.get("label"))
+    labels = {}
+    for s, labs in by_s.items():
+        bad = [x for x in labs if x not in LABELS]
+        if bad:
+            ledger.hold(s, "항목 파손: label %r 는 어휘 밖" % (bad[0],))
             continue
-        labels[it["s"]] = lab
-        ledger.accept(it["s"])
+        distinct = sorted(set(labs))
+        if len(distinct) > 1:
+            # 접두는 `adjudication._HOLD_CLASSES` 의 어휘를 쓴다 — 새 접두를 만들면 그
+            # 모듈이 「분류되지 않았다」 advisory 를 내고, 공시가 소음으로 읽힌다.
+            # 상충하는 두 판정은 그 S 의 «항목»을 읽을 수 없게 만든 것이므로 항목 파손이다.
+            ledger.hold(s, "항목 파손: 같은 S 에 상충하는 판정 %s — 어느 쪽도 셀 수 없다"
+                        % (" vs ".join(distinct),))
+            continue
+        if len(labs) > 1:
+            ledger.absorbed(s, "같은 판정 %d 회 중복" % len(labs))
+        labels[s] = labs[0]
+        ledger.accept(s)
     return labels
 
 
@@ -72,6 +114,12 @@ def condition_line(depth_dir, ledger):
             h = rec["human"]
             d, n = int(h["dug"]), int(h["not_dug"])
             ak, av = h["agreement"]
+            # `int()` 변환은 **언패킹과 같은 try 안**에 있어야 한다. 밖에 두면
+            # `"agreement":["bad",1]` 같은 이형 값이 아래 누산에서 uncaught ValueError 를
+            # 내고, 그때는 이미 앞의 세 줄이 출력된 뒤라 «기록 불가» 조차 남지 않는다 —
+            # 실측: rc=1 + 부분 출력. spec C5 의 「항상 exit 0 · 실패는 기록 불가로
+            # 표면화」 계약 위반이다.
+            ak, av = int(ak), int(av)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             ledger.uncountable(name, "측정 파일 판독 불가: %s" % exc)
             continue
@@ -81,8 +129,8 @@ def condition_line(depth_dir, ledger):
         e += 1
         nd += n
         tot += d + n
-        k += int(ak)
-        v += int(av)
+        k += ak
+        v += av
     if e < 5:
         return "조건 미도달 (%d/5)" % e
     parts = []
@@ -177,9 +225,14 @@ def main(argv):
 
     k, v = hum["agreement"]
     agree = "자료 부족" if v == 0 else "%d/%d" % (k, v)
+    # `skipped`(round 값이 정수가 아니어서 짝을 못 만든 S)는 **영구 기록과 표시 양쪽에**
+    # 실린다. 산출자는 늘 세고 있었는데 소비자가 둘 다에서 빼는 바람에, 그 누락이 하류에서
+    # 보이지 않았다 — 빠진 답이 있다는 사실 자체가 사라지면 «전부 쟀다» 와 구분되지 않는다.
     print("- 깊이 측정(형식): 짝 %d 중 되비추기 블록 있음 %d · 내용 있는 줄 ≥1 %d · terminal %d"
+          " · round 불명 %d"
           % (pair_counts["total"], pair_counts["with_block"],
-             pair_counts["substantive_form"], pair_counts["terminal"]))
+             pair_counts["substantive_form"], pair_counts["terminal"],
+             pair_counts["skipped"]))
     print("- 깊이 측정(auditor): dug %d · not_dug %d · undecidable %d · held %d · unavailable %d"
           % (aud["dug"], aud["not_dug"], aud["undecidable"], aud["held"],
              1 if unavailable else 0))

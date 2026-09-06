@@ -1,5 +1,6 @@
 import json
 import subprocess
+import tempfile
 import sys
 import unittest
 from pathlib import Path
@@ -154,6 +155,88 @@ class DepthPairs(unittest.TestCase):
                     self.assertEqual(d["counts"]["total"], want_total, label)
                 else:
                     self.assertIn("unmeasurable", d, label)
+
+
+class ParsingDoesNotMisassign(unittest.TestCase):
+    """v0.56.0 B2/B3 — 조용한 오배정·오계수 회귀 고정.
+
+    셋 다 «오류 없이 틀린 값을 낸다» 는 부류다. 예외도 rc≠0 도 없어서 스위트를
+    green 으로 두고 지나간다 — 그래서 값 자체를 단언한다.
+    """
+
+    def _run(self, text):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "state.md"
+            p.write_text(text, encoding="utf-8")
+            r = subprocess.run([sys.executable, str(SCRIPT), str(p)],
+                               capture_output=True, text=True,
+                               env={"PYTHONDONTWRITEBYTECODE": "1"})
+            return r.returncode, json.loads(r.stdout)
+
+    def _fixture(self):
+        return (FX / "depth-state-normal.md").read_text(encoding="utf-8")
+
+    def test_field_order_does_not_move_a_body_to_another_anchor(self):
+        """항목의 «필드 순서»만 바꿔도 결과가 같아야 한다.
+
+        `- id:` 만 항목 시작으로 보면 `- source:` 로 시작하는 항목에서 새 항목이 열리지
+        않아, 뒤따르는 `round`·`text` 가 **앞 S 를 덮어쓴다**. 실측(수정 전): S4 가 사라지고
+        그 본문이 S3 에 붙었으며 rc 는 0 이었다. 누락보다 나쁜 실패다 — 측정이 틀린 값을
+        자신 있게 낸다.
+        """
+        base = self._fixture()
+        old = ('  - id: S4\n    source: verbatim\n    round: 2\n'
+               '    text: "서버 로그에는 아무것도 없었다"\n')
+        new = ('  - source: verbatim\n    id: S4\n    round: 2\n'
+               '    text: "서버 로그에는 아무것도 없었다"\n')
+        self.assertIn(old, base, "픽스처가 바뀌었다 — 이 단언이 공허하다")
+        rc0, want = self._run(base)
+        rc1, got = self._run(base.replace(old, new, 1))
+        self.assertEqual((rc0, rc1), (0, 0))
+        self.assertEqual(got["counts"], want["counts"], "필드 순서가 계수를 바꿨다")
+        self.assertEqual({p["s"]: p["user_text"] for p in got["pairs"]},
+                         {p["s"]: p["user_text"] for p in want["pairs"]},
+                         "필드 순서가 본문을 다른 S 에 붙였다")
+
+    def test_item_without_id_is_unmeasurable_not_silently_dropped(self):
+        """id 를 못 읽은 항목은 «없던 답» 이 아니라 «못 읽은 답» 이다 → rc 3."""
+        base = self._fixture()
+        broken = base.replace('  - id: S4\n', '  - notid: S4\n', 1)
+        self.assertNotEqual(broken, base)
+        rc, d = self._run(broken)
+        self.assertEqual(rc, 3, d)
+        self.assertIn("unmeasurable", d)
+        self.assertIn("id", d["unmeasurable"])
+
+    def test_round_inline_comment_does_not_drop_the_pair(self):
+        """`round: 1 # answered R1` 이 문자열로 읽혀 그 S 가 조용히 빠지면 안 된다."""
+        base = self._fixture()
+        old = '  - id: S2\n    source: chosen\n    round: 1\n'
+        self.assertIn(old, base, "픽스처가 바뀌었다 — 이 단언이 공허하다")
+        rc, d = self._run(base.replace(old, old.rstrip('\n') + ' # answered R1\n', 1))
+        self.assertEqual(rc, 0, d)
+        self.assertIn("S2", [p["s"] for p in d["pairs"]], "주석 하나로 S2 가 사라졌다")
+        self.assertEqual(d["counts"]["skipped"], 1,
+                         "주석 달린 round 가 skipped 로 세어졌다")
+
+    def test_middle_round_gap_is_not_counted_as_terminal(self):
+        """중간 라운드 결번은 «인터뷰가 끝났다» 가 아니다 (spec §3.2).
+
+        실측(수정 전): `## R2` 만 `## Round 2` 로 바꾸면 terminal 이 1 → 3 으로 오르고
+        적격 답이 6 → 4 로 줄었다. 뒤 라운드(R3·R4)가 인터뷰가 끝나지 않았음을 증명하는데도
+        S2·S3 가 사람 표본에서 사라진다 — 측정이 **안전해 보이는 방향으로** 거짓말한다.
+        """
+        base = self._fixture()
+        self.assertIn('## R2', base, "픽스처가 바뀌었다 — 이 단언이 공허하다")
+        rc, d = self._run(base.replace('## R2', '## Round 2', 1))
+        self.assertEqual(rc, 0, d)
+        self.assertEqual(d["counts"]["terminal"], 1,
+                         "결번이 terminal 로 세어졌다 — 뒤 라운드가 존재하는데도")
+        self.assertEqual(d["counts"]["eligible"], 6,
+                         "결번이 적격 짝을 줄였다 — 그 답들이 사람 표본에서 사라진다")
+        # 그러나 «블록을 못 찾았다» 는 사실은 사라지지 않는다 — 그것이 정직한 공시 자리다.
+        self.assertEqual(d["counts"]["with_block"], 4,
+                         "결번으로 못 찾은 블록이 with_block 에서 드러나지 않는다")
 
 
 if __name__ == "__main__":

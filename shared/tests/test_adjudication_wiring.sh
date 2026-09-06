@@ -174,7 +174,7 @@ done
 
 note "── 컴프리헨션 회귀 축 — 요구가 아니라 baseline"
 comp="$(printf '%s\n' "$SCAN" | sed -n 's/^comprehensions=//p')"
-COMP_BASELINE=38   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_review.py
+COMP_BASELINE=39   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_review.py
                    # `merged["report"]["counts"]`를 만드는 `{k: 0 for k in
                    # _MERGED_COUNT_KEYS}`. 항목을 버리는 자리가 아니라 값 0
                    # 으로 카운터를 초기화하는 자리라 처분 호출이 필요 없다.
@@ -199,6 +199,14 @@ COMP_BASELINE=38   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_re
                    #       이미 `hold()` 로 빼내므로 `labels` 의 모든 값이 LABELS
                    #       셋 중 정확히 하나에 든다(어느 항목도 세 칸 밖으로
                    #       빠지지 않는다).
+                   # v0.56.0 최종 fix wave 가 1 늘림(38→39) — depth_record.py
+                   # `parse_auditor` 의 `bad = [x for x in labs if x not in
+                   # LABELS]` 하나. `ast` 로 실측해 이 하나뿐임을 확인했다
+                   # (depth_pairs.py 도 컴프리헨션이 늘었지만 adjudication 을
+                   # import 하지 않아 ㉮ 밖이다). 이 자리는 **버리는 자리의 반대**다:
+                   # 같은 S 에 온 라벨들을 모아 어휘 밖 값을 «골라내» 바로 다음 줄에서
+                   # `hold()` 로 계수한다 — 컴프리헨션이 없으면 그 항목이 조용히
+                   # 사라지던 자리를 소리 나게 만든 것이다.
 if [ "${comp:-0}" -le "$COMP_BASELINE" ] 2>/dev/null; then
   ok "컴프리헨션 내포 $comp <= baseline $COMP_BASELINE"
 else

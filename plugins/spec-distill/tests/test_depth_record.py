@@ -170,5 +170,127 @@ class DepthRecord(unittest.TestCase):
             self.assertIsNone(rec)
 
 
+class UncountableIsNotZero(unittest.TestCase):
+    """v0.56.0 B1/B2/B4 — 「셀 수 없음」이 「0」으로 둔갑하지 않는다.
+
+    넷 다 스위트를 red 로 만들지 않는 부류였다: 셋은 그럴듯한 숫자를 내고, 넷째는
+    이미 부분 출력을 낸 뒤 죽어 실패 기록조차 남기지 않았다.
+    """
+
+    def _fence(self, body):
+        return "머리말\n```depth-audit\n%s\n```\n" % body
+
+    def test_unreadable_fence_is_unavailable_not_measured_zero(self):
+        """항목을 하나도 못 읽은 펜스는 `unavailable` 이다.
+
+        실측(수정 전): `S1: dug` 처럼 항목 마커가 계약과 다른 펜스를 먹이면
+        `dug 0 · not_dug 0 · held 0 · unavailable 0` — 즉 **「재 보니 0」** 으로 기록됐다.
+        auditor 의 실제 판정 둘이 소리 없이 사라진 채로.
+        """
+        raw = self._fence("S1: dug — 새 위험을 끌어냈다\nS3: not_dug — 되풀이뿐")
+        with tempfile.TemporaryDirectory() as td:
+            rc, out, rec = run(td, auditor=raw)
+            self.assertEqual(rc, 0, out)
+            self.assertTrue(rec["auditor"]["unavailable"],
+                            "판독 실패가 «측정했고 0» 으로 기록됐다: %r" % (rec["auditor"],))
+            self.assertIn("unavailable 1", out)
+
+    def test_partially_unreadable_fence_counts_the_lines_it_dropped(self):
+        """일부만 읽힌 펜스 — 못 읽은 줄이 **계수**돼야 한다.
+
+        항목이 0 인 펜스는 위 테스트가 `unavailable` 로 잡지만, **일부** 항목이 읽히면
+        `unavailable` 은 False 다. 그때 못 읽은 줄을 그냥 버리면 auditor 의 판정 하나가
+        회계에 아무 흔적도 남기지 않고 사라진다 — 「측정했다」와 구분되지 않는다.
+        (실측: 이 케이스가 없으면 «인식 못 한 줄 계수» 를 통째로 지워도 스위트가 green.)
+        """
+        raw = self._fence('- s: S1\n  label: dug\n  reason: "ok"\n'
+                          'S3: not_dug — 형식이 다른 줄')
+        with tempfile.TemporaryDirectory() as td:
+            rc, out, rec = run(td, auditor=raw)
+            self.assertEqual(rc, 0, out)
+            self.assertFalse(rec["auditor"]["unavailable"],
+                             "일부는 읽혔는데 전체를 판독 실패로 밀었다")
+            self.assertEqual(rec["auditor"]["dug"], 1, out)
+            self.assertIn("인식 못 한 줄", out,
+                          "못 읽은 줄이 세어지지도 공시되지도 않았다:\n%s" % out)
+
+    def test_wellformed_fence_reports_no_unread_lines(self):
+        """음의 짝 — 정상 펜스에서 「인식 못 한 줄」이 뜨면 오탐이다."""
+        with tempfile.TemporaryDirectory() as td:
+            _, out, _ = run(td)
+            self.assertNotIn("인식 못 한 줄", out)
+
+    def test_empty_fence_still_unavailable(self):
+        """음의 짝 — 원래도 unavailable 이던 경로가 그대로인지."""
+        with tempfile.TemporaryDirectory() as td:
+            _, out, rec = run(td, auditor="```depth-audit\n```\n")
+            self.assertTrue(rec["auditor"]["unavailable"])
+
+    def test_wellformed_fence_is_not_falsely_unavailable(self):
+        """양의 짝 — 정상 펜스를 «판독 실패» 로 밀어 넣지 않는지.
+
+        위 둘만 두면 `return None` 을 무조건 하도록 만들어도 통과한다.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            _, out, rec = run(td)
+            self.assertFalse(rec["auditor"]["unavailable"])
+            self.assertEqual(rec["auditor"]["dug"], 2)
+
+    def test_conflicting_labels_for_one_s_are_counted_not_absorbed(self):
+        """같은 S 의 상충하는 두 판정은 흡수돼 사라지면 안 된다.
+
+        실측(수정 전): `not_dug` 뒤에 온 `dug` 가 앞엣것을 덮어써 `dug 1` 이 되고
+        회계에는 `흡수 0 · 보류 0` 이 남았다 — 모순이 공시 없이 사라졌다.
+        """
+        raw = self._fence('- s: S1\n  label: not_dug\n  reason: "첫"\n'
+                          '- s: S1\n  label: dug\n  reason: "충돌"')
+        with tempfile.TemporaryDirectory() as td:
+            rc, out, rec = run(td, auditor=raw)
+            self.assertEqual(rc, 0, out)
+            self.assertEqual(rec["auditor"]["dug"], 0, out)
+            self.assertEqual(rec["auditor"]["not_dug"], 0, out)
+            self.assertGreaterEqual(rec["auditor"]["held"], 1,
+                                    "판정 충돌이 계수되지 않았다: %r" % (rec["auditor"],))
+            self.assertIn("상충하는 판정", out)
+
+    def test_duplicate_identical_labels_are_absorbed_and_disclosed(self):
+        """같은 라벨의 중복은 흡수다 — 소실이 아니지만 **계수는 한다**."""
+        raw = self._fence('- s: S1\n  label: dug\n  reason: "첫"\n'
+                          '- s: S1\n  label: dug\n  reason: "같은 판정"')
+        with tempfile.TemporaryDirectory() as td:
+            _, out, rec = run(td, auditor=raw)
+            self.assertEqual(rec["auditor"]["dug"], 1)
+            self.assertEqual(rec["auditor"]["held"], 0)
+            self.assertIn("흡수 1", out)
+
+    def test_bad_agreement_value_keeps_the_always_exit_0_contract(self):
+        """`agreement` 이형 값이 uncaught ValueError 로 계약을 깨면 안 된다 (spec C5).
+
+        실측(수정 전): `int()` 변환이 예외 처리 «밖» 이라 `["bad",1]` 하나가
+        `condition_line()` 안에서 rc=1 을 냈고, **이미 세 줄이 출력된 뒤**라 실패 기록도
+        남지 않았다.
+        """
+        prior = [prior_record(1, 1, 1, 2) for _ in range(4)]
+        bad = prior_record(1, 1, 0, 0)
+        bad["human"]["agreement"] = ["bad", 1]
+        with tempfile.TemporaryDirectory() as td:
+            rc, out, rec = run(td, prior=prior + [bad])
+            self.assertEqual(rc, 0, "항상 exit 0 계약이 깨졌다:\n%s" % out)
+            self.assertIn("판정자 조건:", out, "조건 줄 앞에서 죽었다")
+            self.assertIn("셀 수 없음", out, "판독 불가가 표면화되지 않았다")
+
+    def test_skipped_is_visible_in_both_record_and_display(self):
+        """`skipped` 는 영구 기록과 표시 계수 **양쪽에** 실린다.
+
+        산출자는 늘 세고 있었는데 소비자가 둘 다에서 빼는 바람에, 빠진 답이 있다는
+        사실 자체가 하류에서 사라졌다 — 그러면 «전부 쟀다» 와 구분되지 않는다.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            _, out, rec = run(td)
+            self.assertEqual(rec["pairs"]["skipped"], PAIRS["counts"]["skipped"])
+            self.assertIn("- 깊이 측정(형식): 짝 7 중 되비추기 블록 있음 6 · 내용 있는 줄 ≥1 5"
+                          " · terminal 1 · round 불명 1", out)
+
+
 if __name__ == "__main__":
     unittest.main()

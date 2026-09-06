@@ -42,7 +42,7 @@ source: spec-distill conducting-interview v0.56.0
  순수 기록이며 게이트가 아니다. 스크립트가 «기록 불가»를 내면 그 한 줄을 대신 붙인다.)
 
 - 질문 라운드: <n> · agent dispatch: <n> · coverage-mapper <k> · codex 실호출: <n> (성공 <n>)
-- 깊이 측정(형식): 짝 <n> 중 되비추기 블록 있음 <m> · 내용 있는 줄 ≥1 <p> · terminal <t>
+- 깊이 측정(형식): 짝 <n> 중 되비추기 블록 있음 <m> · 내용 있는 줄 ≥1 <p> · terminal <t> · round 불명 <k2>
 - 깊이 측정(auditor): dug <a> · not_dug <b> · undecidable <c> · held <h> · unavailable <0|1>
 - 깊이 측정(사람): 표본 <s> — dug <x> · not_dug <y> · undecidable <z> · 미라벨 <w> · auditor 일치 <k>/<v> (auditor 판정 없는 표본 <u> 별도)
 - 판정자 조건: <depth_record.py 출력 한 줄>

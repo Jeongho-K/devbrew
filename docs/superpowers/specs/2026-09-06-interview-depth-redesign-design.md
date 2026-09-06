@@ -419,8 +419,14 @@ advisory 문구의 버전을 이 릴리스의 값(C12)으로.
 | 사람 | 스크립트가 뽑은 `min(4, 적격 짝 수)` 개 짝에 같은 세 라벨 | 사용자, AskUserQuestion 1회 | 이것만 근거. 인터뷰가 쌓여야 결론 |
 
 짝(pair)의 정의: `(S<k>, R<r+1> 의 «직전 답에서 — S<k>» 블록 텍스트 | None)` — 블록이 S 마다 하나이므로 짝도
-S 마다 하나다. 마지막 라운드의 답은 다음 라운드가 없으므로 짝에서 제외하고 `terminal` 로 센다. `round: 0`
+S 마다 하나다. 마지막 라운드의 답은 다음 라운드가 없으므로 짝에서 제외하고 `terminal` 로 센다 — 판정은
+**뒤에 라운드가 하나라도 있는가**이지 «바로 다음 번호의 헤딩이 있는가»가 아니다. 중간 라운드 헤딩이
+결번이면(오타·개명) 그 답은 terminal 이 **아니다**: 뒤 라운드의 존재가 인터뷰가 끝나지 않았음을 증명한다.
+그런 답은 짝으로 남되 블록을 못 찾은 것이므로 `with_block` 에서 빠지는 것으로 드러난다 — terminal 로
+삼으면 사람 표본에서 사라져 측정이 «잴 것이 없었다» 쪽으로 기운다. `round: 0`
 인 S1(seed)은 R1 과 짝을 이룬다. **적격 짝** = terminal 이 아니고 사용자 텍스트가 비어 있지 않은 짝.
+`round` 가 정수가 아니어서 짝을 못 만든 S 는 `skipped` 로 세고 audit §2·측정 파일 **양쪽에** 싣는다 —
+빠진 답이 있다는 사실이 사라지면 «전부 쟀다»와 구분되지 않는다.
 표본은 적격 짝에서 비복원 무작위(시드 = session_id)로 `min(4, 적격 짝 수)` 개 — 적격 짝이 0 이면 사람 층은
 «표본 없음»으로 기록하고 라벨 질문을 띄우지 않는다. 라벨 질문 수·audit §2·측정 파일·조건 B 의 분모는 전부
 **실제 표본 수**를 쓴다(«4» 는 상한이지 상수가 아니다).
@@ -471,7 +477,7 @@ auditor 출력 계약: `depth-audit` 센티널 YAML 블록 `{pairs: [{s: S<k>, l
 audit §2 Budget 에 세 줄이 추가된다(템플릿 갱신):
 
 ```
-- 깊이 측정(형식): 짝 <n> 중 되비추기 블록 있음 <m> · 내용 있는 줄 ≥1 <p> · terminal <t>
+- 깊이 측정(형식): 짝 <n> 중 되비추기 블록 있음 <m> · 내용 있는 줄 ≥1 <p> · terminal <t> · round 불명 <k2>
 - 깊이 측정(auditor): dug <a> · not_dug <b> · undecidable <c> · held <h> · unavailable <0|1>
 - 깊이 측정(사람): 표본 <s> — dug <x> · not_dug <y> · undecidable <z> · 미라벨 <w> · auditor 일치 <k>/<v> (v = 양쪽 라벨이 dug|not_dug 인 짝 수; auditor 판정 없는 표본 <u> 별도)
 ```
@@ -481,7 +487,7 @@ EOF append 로 두면 브랜치마다 같은 줄에서 병합 충돌이 나고 �
 
 ```json
 {"date":"2026-09-06","brief":"docs/superpowers/interview/<file>.md","session_id":"<sid>",
- "pairs":{"total":n,"eligible":e,"with_block":m,"substantive_form":p,"terminal":t},
+ "pairs":{"total":n,"eligible":e,"with_block":m,"substantive_form":p,"terminal":t,"skipped":k2},
  "auditor":{"dug":a,"not_dug":b,"undecidable":c,"held":h,"unavailable":false},
  "human":{"sampled":s,"dug":x,"not_dug":y,"undecidable":z,"unlabeled":w,
           "auditor_missing":u,"agreement":[k,v]}}
