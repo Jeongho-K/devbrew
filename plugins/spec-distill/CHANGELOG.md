@@ -17,7 +17,7 @@
 - **재개방** — `closed → open`, `reopened`/`reopen_log`, 상충 줄 «→ <차원> 재개방», audit §1 접미
   `(재개방 n회 — 사유)`. 상한 없음(사용자가 시계).
 - **사후 깊이 측정 세 층** — `scripts/depth_pairs.py`(짝·표본 ≤4·rc 3 측정 불가), `agents/depth-auditor.md`
-  (`tools: []`, `depth-audit` 센티널), `scripts/depth_record.py`(병합·audit §2 세 줄·
+  (`tools: []`, `depth-audit` 센티널), `scripts/depth_record.py`(병합·audit §2 네 줄·
   `docs/superpowers/interview/depth/<basename>.json`·판정자 조건 A 30%/B 70%/적격 5건). finishing
   Step A.7. **게이트 아님** — 어떤 결과도 종료를 막지 않는다.
 - **Phase 0 — seed 산문 규약**: seed 의 «(사용자 확인)» 표시(무표시 = 미확인)와 «다시 검증할 것 —»

@@ -78,7 +78,8 @@ handoff 직전 커밋. 독립 판정자(닫힘 거부권)는 들이지 않고, �
 - 이 브랜치(`feature/interview-depth-redesign`, 워크트리 `.claude/worktrees/interview-depth-redesign`)의
   base 는 main `5a56e4c`(spec-distill 0.53.1)이고, main 은 그 뒤 `319ed43` 에서 0.54.0 이 됐다(agent
   frontmatter 의 `model: inherit` 줄 제거). 구현 착수 전에 main 을 **merge**(rebase 아님)하고 이 PR 의
-  bump 는 0.55.0 이다. 새 agent 파일에는 `model:` 줄을 넣지 않는다.
+  bump 는 그 merge 시점 main 보다 한 minor 위다(C12 — 이 브랜치에서 그 값은 `0.56.0`). 새 agent 파일에는
+  `model:` 줄을 넣지 않는다.
 - 세션 state(`state.local.md`)는 워크트리에서도 main repo 의 `.claude/spec-distill/<session-id>/` 로
   라우팅된다(`scripts/state_path.py`, `git rev-parse --git-common-dir`). 워크트리 세션에서 그 경로는
   Write/Edit 도구가 막히므로 state 갱신은 Bash 로만 한다(현행 PN1 계약).
