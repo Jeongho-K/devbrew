@@ -490,7 +490,18 @@ sed -i.bak 's|^audit_file:.*|audit_file: tpl.audit.md|' "$TMPD/tpl.md"
 # audit의 payload 역참조도 이 쌍의 실제 이름으로 맞춘다 — 템플릿은 placeholder를 싣고 출하되고,
 # 그 placeholder는 어떤 실제 payload 이름과도 같지 않다(그게 정상이다).
 sed -i.bak 's|^payload:.*|payload: tpl.md|' "$TMPD/tpl.audit.md"
+# §2 의 `coverage-mapper <k>` 도 같은 성격의 placeholder다 — 턴이 실제 횟수로 채우는 자리이며,
+# 출하본이 숫자를 이고 나가면 **게이트의 통과값을 나눠 주는 것**이 된다: dispatch 를 한 번도
+# 안 한 턴이 그대로 옮겨 적으면 게이트가 조용히 통과한다(A3). 그래서 출하본에는 `<k>` 를 두고,
+# 「출하 쌍이 자기 게이트를 통과한다」는 이 락의 본래 축은 **채운 합성 사본**에 대해 잰다.
+# (`audit_file`·`payload` 를 이미 같은 이유로 여기서 치환하고 있다 — 새 관례가 아니다.)
+sed -i.bak 's|coverage-mapper <k>|coverage-mapper 2|' "$TMPD/tpl.audit.md"
 rm -f "$TMPD/tpl.md.bak" "$TMPD/tpl.audit.md.bak"
+# 양성 대조 — 치환이 조용히 안 먹으면 아래 rc 단언은 「미기입 템플릿」을 재는 것이 되어
+# 뒤집힌 사실을 말한다. 데이터 불릿에 숫자가 실제로 들어갔는지 «먼저» 확인한다.
+grep -qE '^- .*coverage-mapper [0-9]+' "$TMPD/tpl.audit.md" \
+  && ok "T-TPL(양성대조): <k> 치환이 데이터 불릿에 숫자를 넣었다 (아래 단언이 실재한다)" \
+  || no "T-TPL(양성대조): <k> 치환이 안 먹었다 — 아래 통과 단언이 공허하다"
 out="$(python3 "$SCRIPT" gate "$TMPD/tpl.md" 2>/dev/null)"; rc=$?
 [[ $rc -eq 0 ]] \
   && ok "T-TPL: shipping 템플릿 쌍(payload+audit)이 자기 게이트를 통과" \
@@ -1499,5 +1510,54 @@ out="$(ac3_gate m_star)"; rc=$?
 ac3_pair r_reopen
 sed -i.bak 's|^- floor:landscape — closed — \(.*\)$|- floor:landscape — closed — \1 (재개방 1회 — S1 과 충돌)|' "$TMPD/r_reopen.audit.md"; rm -f "$TMPD/r_reopen.audit.md.bak"
 ac3_gate r_reopen >/dev/null && ok "AC5: 재개방 접미가 붙은 닫힌 행 통과" || no "AC5: 재개방 접미가 원장 검사를 깬다"
+
+# --- v0.56.0 AC3 fail-open: 읽을 수 없는 원장 행은 «해당 없음» 이 아니라 실패다 ---
+# 형태 검사(`coverage_ledger_failures`)가 derived 를 `startswith("derived:")` 로만 세고,
+# 앵커 검사(`coverage_anchor_failures`)는 세 부분을 요구해 매치 실패를 `continue` 로 흘리던
+# 동안, **두 검사 사이**로 근거 없는 닫힘이 빠져나갔다. 실측: derived 닫힘 행에서 근거
+# 필드를 통째로 지우면(`- derived:x — closed`) 게이트가 `{"pass": true}` rc=0. 같은 변이를
+# floor 행에 주면 잡혔다 — **비대칭이 곧 구멍**이었다. 아래 셋이 그 비대칭을 고정한다.
+#
+# 이 락들은 **red 를 기대**하므로 통과가 정답인 단언과 달리 이빨이 모양으로 보인다. 다만
+# 「red 이기만 하면」이 아니라 **그 행을 지목한 메시지**를 요구한다 — 아래 (h) 처럼 부수적으로
+# 딸려오는 red(`derived: no derived row …`) 하나로도 rc 는 1 이 되기 때문에, rc 만 재면
+# 이 락은 이름만 다른 기존 검사를 다시 재는 것이 된다.
+ac3_unparseable() {  # $1 = stem, $2 = 기대 메시지 조각
+  out="$(ac3_gate "$1")"; rc=$?
+  { [[ $rc -ne 0 ]] && grep -qF 'ledger row unparseable' <<<"$out" && grep -qF "$2" <<<"$out"; }
+}
+
+# (g) derived 닫힘 행의 «근거 필드» 삭제 → red. 이것이 controller 가 재현한 fail-open 본체다.
+ac3_pair g_derived_2part
+sed -i.bak 's|^- derived:rendering-strategy — closed — .*$|- derived:rendering-strategy — closed|' "$TMPD/g_derived_2part.audit.md"; rm -f "$TMPD/g_derived_2part.audit.md.bak"
+grep -qxF -e '- derived:rendering-strategy — closed' "$TMPD/g_derived_2part.audit.md" \
+  && ok "AC3(g 양성대조): 변형이 derived 행을 두 부분으로 줄였다" \
+  || no "AC3(g 양성대조): 변형이 안 먹었다 — 아래 단언이 공허하다"
+ac3_unparseable g_derived_2part 'derived:rendering-strategy — closed' \
+  && ok "AC3(g): 근거 «필드» 없는 derived 닫힘 행 → red (읽을 수 없음을 지목)" \
+  || { no "AC3(g): 근거 필드 없는 derived 행이 통과 — fail-open 재발"; printf '    %s\n' "$out"; }
+
+# (h) 같은 변이를 floor 행에 → 같은 메시지로 red. 두 종류가 **대칭**인지가 이 항목의 요점이다.
+ac3_pair h_floor_2part
+sed -i.bak 's|^- floor:root_problem — closed — .*$|- floor:root_problem — closed|' "$TMPD/h_floor_2part.audit.md"; rm -f "$TMPD/h_floor_2part.audit.md.bak"
+ac3_unparseable h_floor_2part 'floor:root_problem — closed' \
+  && ok "AC3(h): 같은 변이가 floor 행에서도 같은 메시지로 red (대칭)" \
+  || { no "AC3(h): floor 와 derived 의 엄격도가 다시 갈라졌다"; printf '    %s\n' "$out"; }
+
+# (i) 이름에 em-dash 가 든 derived 닫힘 행 → red. `\s*—` 로 두면 매치 «실패» 가 아니라
+# **오파싱**돼 key=`derived:rendering`·status=`strategy` 로 읽히고, 닫힌 행이 열린 행으로
+# 재분류돼 앵커 요구를 통째로 벗어난다(근거에 S 가 없는데 pass).
+ac3_pair i_emdash
+sed -i.bak 's|^- derived:rendering-strategy — closed — .*$|- derived:rendering—strategy — closed — 앵커 없는 근거|' "$TMPD/i_emdash.audit.md"; rm -f "$TMPD/i_emdash.audit.md.bak"
+ac3_unparseable i_emdash 'derived:rendering—strategy' \
+  && ok "AC3(i): 이름에 em-dash 가 든 닫힘 행 → red (오파싱으로 열린 행 행세 금지)" \
+  || { no "AC3(i): em-dash 이름 행이 앵커 없이 통과 — 구분자가 다시 «\\s*—» 로 느슨해졌다"; printf '    %s\n' "$out"; }
+
+# (j) 음의 짝 — 뒤쪽 공백은 요구하지 않는다. 근거가 빈 행은 «읽을 수 없음» 이 아니라
+# «evidence empty» 로 잡혀야 한다. 구분자를 양쪽 다 `\s+` 로 조이면 이 단언이 red 로 뒤집힌다.
+out="$(python3 "$SCRIPT" gate "$FX/interview-brief-floor-evidence-empty.md" 2>/dev/null)"
+{ grep -qF 'evidence empty' <<<"$out" && ! grep -qF 'ledger row unparseable' <<<"$out"; } \
+  && ok "AC3(j): 근거 빈 행은 «evidence empty» 로 남는다 (조이기가 정당한 입력을 안 삼킨다)" \
+  || { no "AC3(j): 근거 빈 행이 «읽을 수 없음» 으로 재분류됐다 — 구분자를 과하게 조였다"; printf '    %s\n' "$out"; }
 
 finish

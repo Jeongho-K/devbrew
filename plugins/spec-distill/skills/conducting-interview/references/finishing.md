@@ -131,6 +131,12 @@ Skill spec-distill:reviewing-brief $PAYLOAD $AUDIT $CODEX_DIR_YAML $CODEX_FID_YA
 **어느 층의 결과도 종료를 막지 않는다 — 기록한다, 막지 않는다.** 측정 불가·unavailable·미라벨은
 전부 그렇게 **기록**된다(C5).
 
+이 단계는 `Agent` dispatch 와 `AskUserQuestion` 을 사이에 끼고 **여러 셸에 걸쳐** 돈다. Bash 도구는
+호출마다 새 셸이고 유지되는 것은 cwd 뿐이므로, **아래 어떤 명령도 앞 블록의 변수를 물려받지
+못한다** — `$PR`·`$ROOT`·`$harness_sid`·`$PAIRS`·`$AUD_RAW` 는 쓰는 자리마다 그 블록 머리에서
+다시 도출한다(Step B-0 과 같은 관례). 나르려 하면 빈 문자열로 전개돼 `'/scripts/depth_record.py'`
+같은 경로가 만들어지고, 실패는 rc≠0 하나로 지나가 **측정 원장이 영영 안 써진다**.
+
 ```bash
 PR="${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}"
 ROOT="$(python3 "$PR/scripts/state_path.py" state-root)"
@@ -184,6 +190,12 @@ AskUserQuestion({ questions: [ /* 표본마다 하나, ≤4 */ {
   rc 0 으로 내는 정상 결과이므로, 그때 스크립트의 `표본 없음` 분기가 실제로 도달한다.
 
 ```bash
+# 이 단계의 **모든** bash 블록은 머리에서 경로를 다시 도출한다 — 위 블록의 변수는 여기 없다.
+PR="${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}"
+ROOT="$(python3 "$PR/scripts/state_path.py" state-root)"
+harness_sid="$(python3 "$PR/scripts/state_path.py" session-id)"
+PAIRS="$ROOT/$harness_sid/depth-pairs.json"
+AUD_RAW="$ROOT/$harness_sid/depth-auditor-raw.txt"
 AUDIT="docs/superpowers/interview/<file>.audit.md"        # Step A 가 쓴 경로
 BASENAME="$(basename "$AUDIT" .audit.md)"
 python3 "$PR/scripts/depth_record.py" "$PAIRS" --auditor "$AUD_RAW" \

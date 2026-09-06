@@ -793,13 +793,43 @@ def tried_discarded_ok(text: str) -> bool:
     return bool(real) or sentinel
 
 
+# 원장 행의 **정본** 형태 — `키 — 상태 — 근거` 세 부분. 아래 두 소비자가 같은 규칙을 쓴다:
+# `coverage_ledger_failures`(형태)와 `coverage_anchor_failures`(앵커). 둘이 서로 다른
+# 엄격도로 행을 읽으면 근거 없는 닫힘이 그 틈으로 빠져나간다 — v0.56.0 실측: 형태 검사가
+# derived 를 `startswith("derived:")` 로만 세고 앵커 검사는 세 부분을 요구해 매치 실패를
+# 조용히 건너뛰던 동안, derived 닫힘 행에서 **근거 필드 자체**를 지우면 게이트가
+# `{"pass": true}` rc=0 을 냈다. 같은 변이를 floor 행에 주면 잡혔다 — 비대칭이 곧 구멍이었다.
+#
+# derived 이름은 `[^—]+?` 라 **em-dash 를 담을 수 없다**. 이것은 한계가 아니라 규칙이다:
+# 구분자와 같은 문자를 이름에 넣으면 `키 — 상태 — 근거` 를 가를 방법이 없다. 그런 행은
+# 파싱 실패로 떨어지고, 파싱 실패는 아래에서 **그 자체가 failure** 다 —
+# 「셀 수 없음」을 「해당 없음」으로 흘려보내지 않는다.
+#
+# 구분자는 **앞에 공백을 요구한다**(`\s+—`). `\s*` 로 두면 이름에 em-dash 가 붙은 행이
+# 「매치 실패」가 아니라 **오파싱**된다: `derived:rendering—strategy — closed — 근거` 가
+# key=`derived:rendering` · status=`strategy` · evidence=`closed — 근거` 로 읽혀,
+# **닫힌 행이 열린 행으로 재분류돼** 앵커 요구를 통째로 벗어난다(v0.56.0 실측 — 그 행만
+# 근거 없이 pass rc=0). 뒤쪽 공백은 요구하지 않는다(`—\s*`): `- floor:skepticism — closed —`
+# 처럼 근거가 빈 행은 「evidence empty」로 잡혀야지 「읽을 수 없음」이 되면 안 된다
+# (fixture `interview-brief-floor-evidence-empty.audit.md`). 리포의 원장 행은 전부 ` — ` 다.
+LEDGER_ROW_RE = re.compile(r"^(floor:\w+|derived:[^—]+?)\s+—\s+(\S+)\s+—\s*(.*)$")
+
+# `derived: N/A` sentinel 은 세 부분 형태의 예외다(상태·근거가 없는 것이 정상). 그래서
+# 아래 루프에서 **파싱 실패 판정보다 먼저** 걸러야 한다.
+DERIVED_NA_RE = re.compile(r"^derived:\s*N/?A\b", re.IGNORECASE)
+
+
 def coverage_ledger_failures(text: str) -> list[str]:
     """audit §1 Coverage Ledger form 검증 (AC10).
 
     입력은 **audit 텍스트**다 — 원장은 v0.23.0에서 payload §6을 떠나 audit §1로 옮겨갔다.
     Form-level only: floor 5행 각 존재 + status 토큰 'closed' + evidence 세그먼트
     non-empty; derived는 >=1 derived 행 OR N/A sentinel. 'closed'가 실질적으로 참인지는
-    검사하지 않는다(모델 + 독립 adversary의 몫 — 게이트는 이 한계를 숨기지 않는다)."""
+    검사하지 않는다(모델 + 독립 adversary의 몫 — 게이트는 이 한계를 숨기지 않는다).
+
+    `floor:`/`derived:` 로 시작하는데 `LEDGER_ROW_RE` 로 읽히지 않는 줄은 **그 자체가
+    failure** 다(floor·derived 대칭). 이 판정이 `coverage_anchor_failures` 의 `continue`
+    를 안전하게 만든다 — 거기서 건너뛴 행은 여기서 이미 red 다."""
     sec = _section_text(text, "1", "Coverage Ledger")
     if not sec.strip():
         return ["Coverage Ledger empty or absent"]
@@ -809,14 +839,19 @@ def coverage_ledger_failures(text: str) -> list[str]:
     derived_sentinel = False
     for ln in _entry_lines(sec):
         body = _strip_bullet(ln).strip()
-        fm = re.match(r"^floor:(\w+)\s*—\s*(\S+)\s*—\s*(.*)$", body)
-        if fm:
-            floor_rows[fm.group(1)] = (fm.group(2).strip(), fm.group(3).strip())
-            continue
-        if re.match(r"^derived:\s*N/?A\b", body, re.IGNORECASE):
+        if DERIVED_NA_RE.match(body):
             derived_sentinel = True
             continue
-        if body.startswith("derived:"):
+        if not body.startswith(("floor:", "derived:")):
+            continue
+        m = LEDGER_ROW_RE.match(body)
+        if not m:
+            fails.append(f"ledger row unparseable (키 — 상태 — 근거 아님): {body!r}")
+            continue
+        key, status, evidence = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+        if key.startswith("floor:"):
+            floor_rows[key[len("floor:"):]] = (status, evidence)
+        else:
             derived_rows += 1
     for key in FLOOR_KEYS:
         if key not in floor_rows:
@@ -835,7 +870,6 @@ def coverage_ledger_failures(text: str) -> list[str]:
 # 닫힘 근거 앵커 (v0.56.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
 # 우연 토큰이 앵커로 잡힌다 — 앞이 영문자가 아니어야 한다.
 ANCHOR_RE = re.compile(r"(?<![A-Za-z])S\d+\b")
-LEDGER_ROW_RE = re.compile(r"^(floor:\w+|derived:[^—]+?)\s*—\s*(\S+)\s*—\s*(.*)$")
 
 
 def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
@@ -844,7 +878,12 @@ def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
     Form-only: «그 S 가 닫힘을 정당화하는가»는 보지 않는다(spec §2.1 이 그 한계를
     OQ6 으로 공시한다). 인용된 앵커는 **전부** 실재해야 한다 — 재개방 접미의
     `conflicts_with` S 도 사용자 발화이므로 같은 요구를 받는다. `derived: N/A`
-    sentinel 과 open 행은 대상이 아니다(form 검사가 따로 잡는다)."""
+    sentinel 과 open 행은 대상이 아니다(form 검사가 따로 잡는다).
+
+    아래 `continue` 두 개는 **`coverage_ledger_failures` 와 짝일 때만** 안전하다:
+    `LEDGER_ROW_RE` 로 안 읽히는 `floor:`/`derived:` 행을 거기서 failure 로 잡기 때문에,
+    여기서 건너뛴 행이 판정 밖으로 사라지지 않는다. 두 함수는 **같은 `LEDGER_ROW_RE`** 를
+    쓴다 — 갈라지면 그 틈이 곧 fail-open 이다(위 regex 주석의 실측)."""
     sec = _section_text(audit_text, "1", "Coverage Ledger")
     fails: list[str] = []
     for ln in _entry_lines(sec):

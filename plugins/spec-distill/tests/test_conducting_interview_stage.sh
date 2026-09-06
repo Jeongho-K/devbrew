@@ -890,11 +890,24 @@ grep -qE '발화 전부를 payload §6|전부를 payload §6 에' "$FIN" \
 # --- v0.56.0 Step A.7 깊이 측정 (finishing.md, 블록 스코프) --------------------
 a7_block="$(awk '/^### Step A\.7/{f=1;print;next} /^### /{f=0} f' "$FIN")"
 a7_flat="$(tr '\n' ' ' <<<"$a7_block" | tr -s ' ')"
-{ [[ -n "$a7_block" ]] && grep -qF 'depth_pairs.py' <<<"$a7_block"; } \
-  && ok "A.7: 깊이 측정 절이 있고 depth_pairs.py 를 부른다" || no "A.7: 절 부재 또는 depth_pairs.py 호출 없음"
+# 「산문이 파일명을 언급하는 것」과 「실제로 호출하는 것」은 다른 사실이다. 아래 둘을
+# `grep -qF '<파일명>' <<<"$a7_block"` 로 재던 동안 락은 **이빨이 없었다**: A.7 안에서
+# `depth_pairs.py` 는 호출 줄과 산문에, `depth_record.py` 는 호출 줄·산문·처분 줄에 나와서,
+# **호출 두 줄을 통째로 지워도 스위트가 196/196 GREEN 이었다**(실측). 그래서 코퍼스를
+# **bash 펜스 안**으로 좁히고 `python3 … <스크립트>` 라는 호출 «형태» 에 건다 — 산문은
+# 그 형태를 만족시킬 수 없다(줄 머리가 `python3` 인 산문은 없다).
+a7_bash="$(awk '/^```bash/{f=1;next} f&&/^```/{f=0;next} f' <<<"$a7_block")"
+[[ -n "$a7_bash" ]] \
+  && ok "A.7(양성대조): 절 안에서 bash 펜스를 추출했다 (아래 호출 단언이 실재한다)" \
+  || no "A.7(양성대조): bash 펜스를 못 뽑았다 — 아래 호출 단언이 공허하다"
+{ [[ -n "$a7_block" ]] && grep -qE '^[[:space:]]*python3 .*depth_pairs\.py' <<<"$a7_bash"; } \
+  && ok "A.7: 깊이 측정 절이 있고 bash 펜스에서 depth_pairs.py 를 «호출»한다" \
+  || no "A.7: 절 부재 또는 depth_pairs.py 호출 줄 없음 (산문 언급은 호출이 아니다)"
 grep -qF 'spec-distill:depth-auditor' <<<"$a7_block" && ok "A.7: depth-auditor dispatch" || no "A.7: depth-auditor dispatch 없음"
 grep -qF 'consumer=plugins/spec-distill/scripts/depth_record.py' <<<"$a7_block" && ok "A.7: 처분 줄이 depth_record.py 를 소비자로" || no "A.7: 처분 줄 부재"
-grep -qF 'depth_record.py' <<<"$a7_block" && ok "A.7: depth_record.py 호출" || no "A.7: depth_record.py 호출 없음"
+grep -qE '^[[:space:]]*python3 .*depth_record\.py' <<<"$a7_bash" \
+  && ok "A.7: bash 펜스에서 depth_record.py 를 «호출»한다" \
+  || no "A.7: depth_record.py 호출 줄 없음 (산문·처분 줄 언급은 호출이 아니다)"
 grep -qE 'pairs_rc[^.]{0,40}3[^.]{0,60}측정 불가' <<<"$a7_flat" && ok "A.7: rc 3 → «측정 불가» 기록" || no "A.7: rc 3 처분 없음"
 grep -qE '기록한다[^.]{0,20}막지 않는다|막지 않는다' <<<"$a7_flat" && ok "A.7: «기록한다, 막지 않는다» (C5)" || no "A.7: 비게이트 선언 없음"
 grep -qE '표본[^.]{0,10}0[^.]{0,30}(띄우지 않는다|호출 안 함|호출하지 않는다)' <<<"$a7_flat" && ok "A.7: 표본 0 이면 라벨 질문 없음" || no "A.7: 표본 0 처분 없음"
@@ -914,10 +927,16 @@ grep -qF 'coverage-mapper <k>' <<<"$stepa4" && ok "Step A 4: §2 coverage-mapper
 TPL="$REPO_ROOT/plugins/spec-distill/templates/interview-audit-template.md"
 grep -qF '깊이 측정(형식)' "$TPL" && grep -qF '깊이 측정(auditor)' "$TPL" && grep -qF '깊이 측정(사람)' "$TPL" && ok "AC10: audit 템플릿 §2 깊이 세 줄" || no "AC10: 템플릿 §2 깊이 줄 부재"
 grep -qF '(재개방' "$TPL" && ok "AC10: 템플릿 §1 재개방 접미 예시" || no "AC10: 재개방 접미 예시 부재"
-# 템플릿의 계수는 **데이터 줄**(불릿)에 실제 숫자로 있어야 한다. `coverage-mapper <k>` 의
-# 존재만 보면 placeholder 만 남아도 통과하는데, 게이트(MAPPER_RE)는 숫자를 요구하므로
-# 그때 T-TPL 의 green 을 §2 머리 «설명 산문»의 예시 하나가 대신 지게 된다(수정 라운드 1 F4).
-grep -qE '^- .*coverage-mapper [0-9]+' "$TPL" && ok "AC10: 템플릿 §2 데이터 줄에 coverage-mapper <숫자>" || no "AC10: 템플릿 §2 데이터 줄에 숫자 계수가 없다 — 게이트 판정을 설명 산문이 진다"
+# 템플릿의 mapper 계수는 **데이터 줄**(불릿)에 있어야 하되 **숫자로 미리 채워선 안 된다**.
+# 두 요구는 R18 과 충돌했다: R18 은 「산문이 판정을 지지 않게」 데이터 줄에 실제 숫자를
+# 요구했는데, 그러면 출하 템플릿이 게이트의 통과값(`coverage-mapper 1`)을 나눠 주게 되어
+# dispatch 0 회 턴이 그대로 옮겨 적으면 게이트가 조용히 통과한다. 해소: 출하본에는 `<k>`
+# 를 두고, R18 이 막던 것은 **숫자를 치환한 합성 사본**에 대해 `check_brief.py` 의 실물
+# `budget_mapper_failures` 로 잰다 — `tests/test_audit_template_gate_shape.py`.
+# 여기서는 그 파일이 겨누는 대상(데이터 불릿)이 실재하는지만 값싸게 확인한다.
+grep -qE '^- .*coverage-mapper <k>' "$TPL" \
+  && ok "AC10: 템플릿 §2 데이터 줄의 mapper 계수가 placeholder (통과값 미배포)" \
+  || no "AC10: 템플릿 §2 mapper 계수가 «<k>» 가 아니다 — 통과값을 미리 채웠거나 줄이 사라졌다"
 grep -qE 'path \(a\|b\|c\|d\)' "$TPL" && no "AC10: 템플릿 §5 에 경로 (c) 잔존" || ok "AC10: 템플릿 §5 경로 (c) 제거"
 
 # --- v0.56.0 C43: 선언한 경로 수 == 실제 표 행 수 (블록 스코프) ------------------------
