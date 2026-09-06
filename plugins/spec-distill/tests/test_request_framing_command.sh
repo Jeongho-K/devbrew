@@ -54,7 +54,7 @@ pc="$(grep -cE '^[0-9]\. \*\*(Typo|주석-only|formatting|단일 식별자|<10 �
   && ok "5패턴 본문이 복제되지 않았다 (정본만)" \
   || no "5패턴 본문이 이 파일에 복제돼 있다 (${pc}줄) — 정본과 갈라진다"
 
-# --- v0.55.0 AC11: seed 산문 규약 (블록 스코프) -------------------------------------------
+# --- v0.56.0 AC11: seed 산문 규약 (블록 스코프) -------------------------------------------
 SK="$ROOT/plugins/spec-distill/skills/framing-requests/SKILL.md"
 CMP="$ROOT/plugins/spec-distill/references/compression.md"
 TPL="$ROOT/plugins/spec-distill/templates/interview-seed-template.md"
@@ -87,7 +87,7 @@ grep -qF '(사용자 확인)' <<<"$tpl_ex" && ok "AC11: seed 템플릿 예시에
 [[ -z "$(git -C "$ROOT" diff --name-only main -- plugins/spec-distill/scripts/check_seed.py)" ]] \
   && ok "AC11: check_seed.py 무변경 (diff 0 vs main)" || no "AC11: check_seed.py 가 변경됐다"
 
-# --- v0.55.0 AC12: 워크트리 (블록 스코프) -------------------------------------------------
+# --- v0.56.0 AC12: 워크트리 (블록 스코프) -------------------------------------------------
 wt_block="$(awk '/^## 워크트리 — 진입 직후/{f=1;print;next} /^## /{f=0} f' "$SK")"
 wt_flat="$(tr '\n' ' ' <<<"$wt_block" | tr -s ' ')"
 { [[ -n "$wt_block" ]] && grep -qF 'AskUserQuestion(' <<<"$wt_block"; } && ok "AC12: 워크트리 절 + 단독 AskUserQuestion" || no "AC12: 워크트리 절/질문 부재"

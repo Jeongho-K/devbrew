@@ -832,7 +832,7 @@ def coverage_ledger_failures(text: str) -> list[str]:
     return fails
 
 
-# 닫힘 근거 앵커 (v0.55.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
+# 닫힘 근거 앵커 (v0.56.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
 # 우연 토큰이 앵커로 잡힌다 — 앞이 영문자가 아니어야 한다.
 ANCHOR_RE = re.compile(r"(?<![A-Za-z])S\d+\b")
 LEDGER_ROW_RE = re.compile(r"^(floor:\w+|derived:[^—]+?)\s*—\s*(\S+)\s*—\s*(.*)$")
@@ -866,7 +866,7 @@ def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
 # **불릿(데이터) 줄에 앵커한다.** 앵커가 없으면 §2 머리 «설명 산문»의 예시
 # (`coverage-mapper 0 (unavailable: <사유>)`)가 데이터 줄보다 먼저 매치돼 판정을 대신
 # 진다 — 실측: 출하 템플릿의 T-TPL green 을 그 설명 문장 하나가 전부 지고 있었고,
-# 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.55.0 수정 라운드 1 F4).
+# 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.56.0 수정 라운드 1 F4).
 # 산문은 그대로 둔다: 판정에 참여하지 않은 채 퇴화 모양을 계속 가르친다.
 #
 # 불릿 문자는 `[-*]` — 이 파일의 형제 둘(`ENTRY_BULLET_RE`·`BODY_ITEM_RE`)과 **같은 어휘**여야
@@ -880,7 +880,7 @@ MAPPER_RE = re.compile(
 
 
 def budget_mapper_failures(audit_text: str) -> tuple[list[str], list[str]]:
-    """audit §2 Budget 의 `coverage-mapper <k>` (v0.55.0, spec §2.3·C4).
+    """audit §2 Budget 의 `coverage-mapper <k>` (v0.56.0, spec §2.3·C4).
 
     k>=1 통과. `coverage-mapper 0 (unavailable: <이유>)` 는 advisory 통과 — 침묵과 0 을
     가른다. 대상은 §2 의 **불릿 줄**이다(`MAPPER_RE` 주석) — 머리 설명 산문의 예시는

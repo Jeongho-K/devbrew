@@ -210,8 +210,12 @@ teach-beat·blind-spot-prober 를 넣었다. 그때 steelman 은 «더 무겁게
 - **C11 (도구 사실 미단정)**: §4.2 의 native 도구 동작은 이 spec 이 단정하지 않는다. plan 첫 task 가 실측하고
   그 결과는 plan 산출물·CHANGELOG 에 남으며 framing-requests 산문이 그것을 따른다. spec 에 사후 절을 더하지
   않는다.
-- **C12 (버전·CHANGELOG)**: main 0.54.0 merge 후 `plugin.json` 0.55.0(minor: 새 surface — 스크립트 둘·
-  에이전트 하나·측정 단계) + CHANGELOG `[0.55.0]`. README «Principles Instantiated» 갱신.
+- **C12 (버전·CHANGELOG)**: 착수 전 `origin/main` 을 **merge**(rebase 아님)하고, `plugin.json` 을 그 merge
+  시점 main 보다 **한 minor 위**로 올린다(minor 인 이유: 새 surface — 스크립트 둘·에이전트 하나·측정 단계).
+  CHANGELOG 최상단 헤딩이 `plugin.json` 과 **같은 값**이어야 한다. README «Principles Instantiated» 갱신.
+  **이 브랜치에서 그 값은 `0.56.0` 이다.** 착수 시 계획했던 minor 번호는 작업 도중 upstream 이 다른
+  릴리스로 선점했다(원장 R22·R23) — 그래서 이 제약은 그때의 리터럴이 아니라 «한 minor 위 + 최상단 일치»
+  라는 불변식을 잰다. 하류 AC·V 항목이 «CHANGELOG 최상단 절» 이라고만 쓰는 것도 같은 이유다.
 - **C13 (락은 블록 스코프 + mutation)**: 산문 락은 헤더가 아니라 본문 고유 문구를 블록 스코프로 잡고,
   통째 삭제·부정문·값 변경 mutation 으로 이빨을 확인한다. 제거 어휘는 stale-term 락에 등재.
 
@@ -400,7 +404,7 @@ orchestration:
 
 구세션 마이그레이션은 현행 «non-mutating read promote + resume 직후 1회 full-write» 패턴 그대로 —
 부재 키는 기본값으로 추가, 제거된 키는 그 write 에서 자연 소멸, 다른 필드는 손대지 않는다.
-advisory 문구의 버전을 0.55.0 으로.
+advisory 문구의 버전을 이 릴리스의 값(C12)으로.
 
 ## 3. 사후 측정
 
@@ -549,7 +553,7 @@ framing-requests 는 «확산 1. 원문 보존»에서 첫 질문 **전에** aud
 `fresh`=origin 기본 브랜치 / `head`=로컬 HEAD — 로컬에만 있는 main 커밋이 들어오는지), (c) 워크트리 안에서
 플러그인 훅·`CLAUDE_PLUGIN_ROOT` 가 해석되는지, (d) 종료 시 keep/remove 프롬프트의 모양과 «remove» 가
 브랜치까지 지우는지, (e) 격리 세션의 git 가드가 `git branch -m` 과 `git commit -F` 를 허용하는지. 결과는
-**plan task 의 산출물과 CHANGELOG `[0.55.0]`** 에 남기고 framing-requests 산문을 그 사실에 맞춘다 — 이 spec
+**plan task 의 산출물과 CHANGELOG 최상단 절(C12)** 에 남기고 framing-requests 산문을 그 사실에 맞춘다 — 이 spec
 에는 나중에 절을 더하지 않는다(리뷰 후 커밋된 설계문서는 Stop 훅이 다시 arm 하지 않아 그 절이 Law 2 리뷰를
 영구히 비켜간다). 위 1~5 단계 중 (a)·(e) 에 걸린 것은 실측 결과에 따라 plan 이 명령을 바꾼다.
 
@@ -601,7 +605,8 @@ brief §5 의 premortem(HA6·FM6 계열)이 든 함정과 확인 결과:
   쓰는 값으로 게이트를 끄는 길이 된다). 그러므로 **기존 fixture 86개의 audit §1 닫힌 행 전부에 실재 S 앵커를,
   §2 에 `coverage-mapper 1` 을 스크립트로 일괄 주입**하고, 그 스윕 뒤 각 fixture 가 원래 목적의 판정(red 는
   red, green 은 green)을 그대로 내는지 `test_check_brief.sh` 전체로 확인한다. 아카이브의 옛 brief 는
-  재게이트 대상이 아니다 — CHANGELOG 에 «0.55.0 이전 brief 는 새 게이트를 통과하지 않는다»를 적는다.
+  재게이트 대상이 아니다 — CHANGELOG 최상단 절(C12)에 «이 릴리스 이전 brief 는 새 게이트를 통과하지
+  않는다»를 그 절의 버전 값으로 적는다.
 - **AC4 (coverage-mapper ≥1)**: audit §2 에 `coverage-mapper <k>` k≥1 없으면 exit 1; `coverage-mapper 0
   (unavailable: …)` 는 advisory 통과이고 그 advisory 가 Step B 게이트 텍스트에 실린다(finishing.md 락).
   fixture 양·음·unavailable 셋. 기존 fixture 스윕은 AC3 과 같은 스크립트가 한다.
@@ -632,13 +637,15 @@ brief §5 의 premortem(HA6·FM6 계열)이 든 함정과 확인 결과:
 - **AC12 (워크트리)**: framing-requests 진입 직후·audit 첫 write 전의 단독 워크트리 질문, 5단계 절차, 거절·
   부재·`DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE` 강등, ①/② 에서만 handoff 직전 커밋(C10 과 같은 메시지
   리터럴), 게이트 텍스트에 경로. kill switch 는 SKILL 의 `## kill switch` 목록에 등재.
-- **AC13 (실측 반영)**: §4.2 의 (a)~(e) 실측 결과가 plan task 산출물과 CHANGELOG `[0.55.0]` 에 있고,
+- **AC13 (실측 반영)**: §4.2 의 (a)~(e) 실측 결과가 plan task 산출물과 CHANGELOG 최상단 절(C12)에 있고,
   framing-requests 산문의 명령 다섯 단계가 그 결과와 모순되지 않는다. 이 spec 은 편집하지 않는다.
 - **AC14 (순감·stale-term)**: `no_progress_streak`·`stall_episode`·`coverage_mapper_dispatched_episode`·
   `teach-lite`·`teach-heavy`·`teach-beat` 가 production 표면(SKILL·references·agents·templates)에 없다
   (`test_stale_terms.sh` 등재). CHANGELOG 에 Removed 항목.
-- **AC15 (버전)**: main 0.54.0 merge 커밋이 브랜치에 있고, `plugin.json` 0.55.0, CHANGELOG `[0.55.0]`,
-  README «Principles Instantiated» 에 Law 3(측정 원장)·P17(사용자가 시계) 한 줄씩.
+- **AC15 (버전)**: `origin/main` merge 커밋이 브랜치에 있고, `plugin.json` 이 그 merge 시점 main 보다 한
+  minor 위이며, CHANGELOG 최상단 헤딩이 `plugin.json` 과 같은 값이고 그 절이 이 릴리스 전체(Added·
+  Changed·Removed·Verification)를 담는다. README «Principles Instantiated» 에 Law 3(측정 원장)·
+  P17(사용자가 시계) 한 줄씩. **이 브랜치의 그 값은 `0.56.0`**(C12 — 리터럴이 아니라 불변식으로 재는 이유).
 - **AC16 (사람 e2e)**: 새 SKILL 로 실제 인터뷰 1회 — 매 라운드 «직전 답에서» 블록이 출력·state 에 남고,
   Q2 본문이 무엇을 정하는지·용어·기술 사실·선택의 결과를 풀었는지(G5)를 사용자가 보며, 종료 시 라벨 질문
   `min(4, 적격)` 개가 뜨고, `depth/<basename>.json` 이 생긴다. 사용자가 확인하고 결과를 CHANGELOG 에 한
@@ -647,8 +654,8 @@ brief §5 의 premortem(HA6·FM6 계열)이 든 함정과 확인 결과:
 ## Files to Modify
 
 ```
-plugins/spec-distill/.claude-plugin/plugin.json                     0.54.0 → 0.55.0 (main merge 후)
-plugins/spec-distill/CHANGELOG.md                                   [0.55.0] Added/Changed/Removed
+plugins/spec-distill/.claude-plugin/plugin.json                     main merge 후 한 minor 위로 (C12)
+plugins/spec-distill/CHANGELOG.md                                   최상단에 그 버전 절 — Added/Changed/Removed
 plugins/spec-distill/README.md                                      skill 설명·Principles Instantiated·측정 원장 안내
 plugins/spec-distill/skills/conducting-interview/SKILL.md           §1·§2 (라운드 규약·닫힘·재개방·dispatch), 순감
 plugins/spec-distill/skills/conducting-interview/references/finishing.md
@@ -703,7 +710,7 @@ reviewing-spec · `hooks/*` · steelman-builder · blind-spot-prober 본문 · b
   framing-requests 산문을 확정하지 않는다.
 - **V7 (사람 e2e, AC16)**: 이 브랜치의 플러그인으로(`--plugin-dir` 또는 격리 설치) 실제 인터뷰 1회.
   관찰 항목: 라운드마다 «직전 답에서» 블록 / Q1·Q2 모양 / 종료 시 라벨 ≤4개 / audit §2 세 줄 / depth/<basename>.json 1개.
-  결과를 CHANGELOG `[0.55.0]` 의 Verification 줄에 남긴다.
+  결과를 CHANGELOG 최상단 절(C12)의 Verification 줄에 남긴다.
 - **V8 (리뷰)**: 설계문서 — Stop 훅의 `spec-distill:spec-reviewer`(Law 2 분리, codex 병렬). 구현 —
   subagent-driven + whole-branch 리뷰 + codex. 커밋은 리뷰 뒤.
 

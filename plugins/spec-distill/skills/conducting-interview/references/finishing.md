@@ -124,7 +124,7 @@ Skill spec-distill:reviewing-brief $PAYLOAD $AUDIT $CODEX_DIR_YAML $CODEX_FID_YA
 - 산출물 4종(확정 후보 / 방향성 C4 항목 / readback 요약 + gap / 모든 degrade record)이
   Step B 게이트로 넘어옵니다.
 
-### Step A.7 — 깊이 측정 (세 층, 게이트 아님 · v0.55.0)
+### Step A.7 — 깊이 측정 (세 층, 게이트 아님 · v0.56.0)
 
 «답 직후 파고들었는가»를 스크립트(형식)·`depth-auditor`(내용)·사람(≤4개 라벨)이 각각 세고,
 결과는 audit §2 네 줄과 `docs/superpowers/interview/depth/<brief-basename>.json` 하나로 남는다.

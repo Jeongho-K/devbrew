@@ -2176,22 +2176,71 @@ Expected: diff 는 **줄이 줄어드는 방향만**(새 ✗ 0 — 선재 ✗ �
 
 ## 부록 A — V6 실측 결과 (Task 1 이 채운다)
 
-| 항목 | 기본 baseRef | baseRef=head | 근거 파일 |
-|---|---|---|---|
-| (a) 브랜치명 | (미실측) | | |
-| (b) base ref — 로컬 전용 커밋 포함? | | | |
-| (c) 훅 발화 · CLAUDE_PLUGIN_ROOT | | | |
-| (d) 종료 후 워크트리/브랜치 잔존 | | | |
-| (d') keep/remove 프롬프트 모양 | 헤드리스 실측 불가 | 〃 | — |
-| (e) `git branch -m` / `git commit -F` | | | |
-| tool_available | | | |
+출처: `$SCR/v6/results.md`(표 + raw `PROBE-RESULT` 블록 + 이탈 기록). 실행 3종 — Run A(기본 baseRef) ·
+Run B(`worktree.baseRef=head`) · Run C(훅 전용 보충, safe-mode 미사용). Run A·B 는 `--safe-mode
+--plugin-dir <probe>` 로 돌았다 — `CLAUDE_CONFIG_DIR` 격리는 그 프로필이 미인증이라 실행 자체가
+`"Not logged in"` 으로 죽었고(재현 rc=1: `$SCR/v6/auth-isolated-FAIL.{json,note.txt}`), 격리의 **의도**
+(이 리포의 설치 플러그인이 native 동작 측정에 섞이지 않게)를 safe-mode 로 대신 만족시켰다.
 
-Task 13 분기 결정: (미기록)
+| 항목 | 기본 baseRef (Run A) | baseRef=head (Run B) | 근거 파일 |
+|---|---|---|---|
+| (a) 브랜치명 | `worktree-probe-topic` — 요청한 이름 `probe-topic` 앞에 `worktree-` 접두가 붙는다. 워크트리 **디렉토리**는 접두 없이 `repo/.claude/worktrees/probe-topic` | 동일 접두 규칙 | `run-default.json`·`run-head.json` 의 `branch_after_enter` |
+| (b) base ref — 로컬 전용 커밋 포함? | **no** — `head_after_enter=2e89140 c1`(origin/main 기준, `c2-local-only` 미포함) | **yes** — `head_after_enter=b2f1ca9 c2-local-only` | `run-*.json` 의 `head_after_enter` + §5 의 `git log` 실측 |
+| (c) 훅 발화 · CLAUDE_PLUGIN_ROOT | safe-mode 조건에서는 **측정 불가** — `hook-default.log` 미생성(PostToolUse 0회), `plugin_root=unset`. 보충 Run C(safe-mode 미사용)에서: 훅은 워크트리 안에서도 **정상 발화**하고 훅 커맨드 문자열의 `${CLAUDE_PLUGIN_ROOT}` 는 플러그인 절대경로로 치환된다. 그러나 에이전트가 실행하는 **일반 Bash 세션에는 export 되지 않는다**(여전히 `unset`) — 두 컨텍스트를 하나로 뭉뚱그리지 말 것 | 동일(`hook-head.log` 미생성) | `hook-nosafe.log`(3줄) · `hook-*.log` 부재 · `run-*.json` 의 `plugin_root` |
+| (d) 종료 후 워크트리/브랜치 잔존 | **잔존, lock 걸림** (헤드리스·`ExitWorktree` 미호출 조건 한정). `git worktree list` 에 `locked` 표시, `git worktree remove --force` 는 `fatal: cannot remove a locked working tree` 로 거부돼 `-f -f` 필요. 브랜치 `feature/probe-topic` 도 잔존 | 동일 패턴 | **근거 등급 한 단계 낮음** — `git worktree list`/`git branch -a` 출력을 raw 파일로 남기지 않고 results.md §5 에 수기로 전사한 것이 유일한 근거다(거기 적힌 해시가 `run-*.json` 의 `head_after_commit` 과 교차검증되긴 한다) |
+| (d') keep/remove 프롬프트 모양 | 헤드리스 실측 불가 | 〃 | — |
+| (e) `git branch -m` / `git commit -F` | **둘 다 ok** — `rename_result=ok`, `branch_after_rename=feature/probe-topic`, `commit_result=ok`. 1차 커밋 시도의 `fatal: could not read log file 'msg.txt'` 는 **git 가드의 거부가 아니라 파일 부재**였다(원본 리포의 untracked 파일이라 워크트리에 안 옮겨짐; 프롬프트가 지정한 폴백으로 성공) | `rename_result=ok`, `commit_result=ok`(1차부터) | `run-*.json` 의 `rename_result`/`commit_result`/`head_after_commit` |
+| tool_available | **yes** | **yes** | `run-*.json` 의 `tool_available` |
+
+**미측정 — 단정하지 않는다** (results.md §7 이 명시한 셋):
+
+1. **슬래시 포함 브랜치명** — `EnterWorktree(name="feature/<topic>")` 이 무엇이 되는지는 테스트하지
+   않았다. `worktree-feature/<topic>` 이 될 것으로 *예상*될 뿐이라 «이름에 접두를 넣어 rename 생략»
+   경로는 검증 없이 가정하지 않는다.
+2. **사람의 정상 `ExitWorktree` 종료 후 정리 여부** — (d) 의 lock 잔존은 헤드리스(`ExitWorktree` 미호출)
+   조건의 관측이다. 대화형 정상 종료까지 재현되는지는 **확인되지 않았을 뿐**, «안 그럴 것»이라고 단정한
+   것도 아니다. Task 15(사람 e2e) 관찰 항목.
+3. **keep/remove 프롬프트의 모양** — 대화형 UI 라 `-p` 헤드리스에서 트리거되지 않는다.
+
+부수 관측: 실제 사용자 세션(플러그인 다수 로드)에서는 `EnterWorktree` 가 **deferred tool** 이라
+`ToolSearch(select:EnterWorktree)` 선행이 필요했다(Run C). safe-mode 실행에는 그 단계가 없었다 —
+`tool_available=yes` 하나로 «스키마 없이 즉시 호출 가능»까지 보장되지는 않는다.
+
+Task 13 분기 결정: **spec §4.2 의 1~5 단계를 그대로 쓴다**(`tool_available=yes`, (e) 무거부). 단
+(a) 때문에 «rename 생략» 대신 «`EnterWorktree` 후 항상 `git branch -m`» 이 주 경로이고, 산문은 (b) 의
+기본값(로컬 전용 커밋 누락)을 **알리되 설정을 자동으로 바꾸지 않으며**, (d) 는 근거 등급이 낮고 (2) 가
+미확인이라 이번 절차에 «정리 단계»로 반영하지 않았다.
 
 ## 부록 B — V5 baseline (Task 2·14 가 채운다)
 
-- 착수 전(main merge 직후): ✗ 줄 수 <n> · `PY:` <요약>
-- 완료 후: ✗ 줄 수 <m> · `PY:` <요약> · 새 실패 0 / 사라진 선재 실패 <목록>
+측정: `bash $SCR/run_all_locks.sh`(셸 락 전수의 실패 줄 + 죽은 락 합성 줄 + `python3 -m unittest discover`
+의 실패 식별자 + 요약). **rc 가 아니라 실패 «줄»을 센다** — rc 만 보면 이미 RED 인 파일 안의 새 실패가
+원리적으로 안 보인다.
+
+- 착수 전(main merge 직후): ✗ 줄 수 **3** · `PY: FAILED (failures=1)`
+- 완료 후: ✗ 줄 수 **3** · `PY: FAILED (failures=1)` · 새 실패 0 / 사라진 선재 실패 없음
+
+세 줄은 바이트 그대로 아래이고, **셋 다 이 브랜치와 무관한 선재 RED** 다 — Task 14a 가 clean
+`origin/main` 체크아웃에서 같은 러너를 돌려 세 줄이 바이트 동일함을 대조했다(우리 diff 가 만든 것이
+아니라는 직접 증거).
+
+```
+plugins/spec-distill/tests/test_no_write_matcher_hooks_repo.sh	  ✗ 양성 대조 실패: Bash matcher 훅이 1개뿐
+PY_FAIL	FAIL: test_python_and_bash_resolvers_agree (test_hook_output_schema.TestCrossResolverAdvisory)
+PY: FAILED (failures=1)
+```
+
+**왜 면제인가** (이름만 올리고 이유를 빼면 그 질문이 영구히 닫힌다):
+
+- `test_no_write_matcher_hooks_repo.sh` 의 ✗ 는 **락의 요구가 깨진 것이 아니라 그 락의 양성 대조가
+  깨진 것**이다 — 리포 전체에 `Bash` matcher 훅이 하나뿐이라 «훅이 실재해야 이 부재 검사가 vacuous
+  하지 않다»는 짝 단언이 성립하지 못한다. 우리 diff 는 훅을 하나도 더하거나 지우지 않았으므로 이
+  카운트에 닿지 않는다. (고칠 자리는 훅 코퍼스이지 이 브랜치가 아니다.)
+- `test_python_and_bash_resolvers_agree` 는 session-id 해석기 둘(python·bash)의 **advisory 교차 검증**
+  이고, 그 갈림은 이 리포에 이미 등재된 알려진 사실이다(훅 payload sid vs 스킬 env sid). 이 브랜치는
+  `scripts/state_path.py`·`resolve_session_id` 계열을 건드리지 않았다.
+- 두 줄 모두 **해소되면 이 목록에서 빼야 한다** — 여기 이름이 있다는 것은 «영원히 봐준다»가 아니라
+  «이 브랜치의 diff 가 원인이 아님이 대조로 확인됐다»는 뜻이다.
 
 ## Self-review (writing-plans 체크리스트, 작성 시 수행)
 

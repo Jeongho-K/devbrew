@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""1회용 스윕 (v0.55.0) — audit fixture 의 닫힌 원장 행에 실재 S 앵커를, §2 Budget 에
+"""1회용 스윕 (v0.56.0) — audit fixture 의 닫힌 원장 행에 실재 S 앵커를, §2 Budget 에
 `coverage-mapper 1` 을 주입한다. 판정을 바꾸지 않는다 — 실행 전후 test_check_brief.sh 의
 ok/no 집합이 같아야 한다. 재실행은 멱등이다(이미 앵커·토큰이 있으면 건드리지 않는다).
 

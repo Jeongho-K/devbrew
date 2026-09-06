@@ -102,6 +102,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 - **Law 3 (brief, v0.24.0)** — `brief-critic`의 `category` 6종과 readback gap 클래스 G1–G6가
   compounding substrate다. 리뷰가 놓친 결함류가 나오면 그 열거와 체크리스트를 편집하는 것이
   compounding 이벤트다(persona = 보안-민감 코드).
+- **Law 3 (Compounding) — 깊이 측정 원장 (v0.56.0)** — 인터뷰마다 «답→다음 행동» 짝을 세 층(스크립트·`depth-auditor`·사람 ≤4 라벨)으로 재어 `docs/superpowers/interview/depth/<basename>.json` 에 남긴다. `depth_record.py` 가 `depth/*.json` 을 읽어 판정자 투입 조건(적격 5건·not_dug 30%·일치 70%)을 audit 에 한 줄로 낸다 — 게이트 아님(spec C5).
 
 ### Principles 흡수
 
@@ -110,6 +111,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 - **P12 (Trivia escape)** — `/interview` first-step rule (typo / 주석-only / formatting / rename / <10 토큰 + 단일 action). 파일 수는 자격 기준이 아니다.
 - **P14 (State preservation)** — `.claude/spec-distill/<session-id>/state.local.md` (실패/abort 시 보존).
 - **P17 (User sovereignty)** — `needs_interview` user confirm gate, [5] Human Review, all kill switches.
+- **P17 (User sovereignty) — 사용자가 시계 (v0.56.0)** — 차원은 사용자 발화 `S<N>` 을 인용해야 닫히고(`check_brief.py` 앵커 게이트), 재개방에 상한이 없다 — 라운드는 사용자 답으로만 돈다.
 - **P18 (Stagnation detection)** — issue `raised_count ≥ 3 unresolved` 시 P18 stagnation 명시 + forced [5] escalate.
 - **P21 (Secret 기록 금지 / untrusted input)** — state.local.md token/key/credential placeholder 치환. **v0.23.0**: `audit_file`은 frontmatter에서 오는 신뢰 경계 밖 입력이므로 basename으로 제한한다(`../`·절대경로·서브경로 전부 거부).
 - **P22 (Cost class)** — 모든 skill cost_class 선언 (conducting-interview: variable / reviewing-spec: medium).
@@ -118,7 +120,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 
 ### Roadmap absorption (C-numbers)
 
-- **C43** 3-path Socratic routing (factual auto-confirm / judgment→user / ontological, 라벨 강제 없음 — v0.55.0에서 ambiguity→sub-agent 경로·5-type 라벨 요구 제거).
+- **C43** 3-path Socratic routing (factual auto-confirm / judgment→user / ontological, 라벨 강제 없음 — v0.56.0에서 ambiguity→sub-agent 경로·5-type 라벨 요구 제거).
 - **C44** Dialectic Rhythm Guard (env: `DEVBREW_SPEC_DISTILL_RHYTHM_GUARD_THRESHOLD`, default 3).
 - **C1** 사용자-발화 floor 탈출구 — Unbounded-autonomy 가드(사용자가 언제든 종료를 요청하면 미충족 floor를 사용자-승인 박제로 닫고 payload §3 Open Questions로 이월).
 - **C4** coverage-mapper agent (`tools: Read, Grep, Glob, WebSearch, WebFetch` — advisory 주제-도출 차원 제안자, dispatch 상한 2) + **blind-spot-prober** agent (`tools: Read, Grep, Glob, WebSearch, WebFetch` — 적대적 premortem, fan-out 1).
@@ -137,7 +139,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 
 ## External source absorption
 
-- **devbrother2024 deep-interview** — 초기 영향은 4-block Korean format (현재 이해 / 막힌 결정 / 추천 답안 / 질문); v0.55.0에서 «직전 답에서» 블록 + 질문 둘로 재구성.
+- **devbrother2024 deep-interview** — 초기 영향은 4-block Korean format (현재 이해 / 막힌 결정 / 추천 답안 / 질문). v0.56.0에서 **라운드 규약의** 4-block 이 «직전 답에서» 블록 + 질문 둘로 대체됐다. 형식 자체가 리포에서 사라진 것은 아니다 — **R3 steelman 게이트**는 제시 형식으로 4-block 을 그대로 쓴다(`skills/conducting-interview/references/steelman.md` Step 3). 같은 어휘를 쓰는 다른 물건이라 한쪽의 제거가 다른 쪽의 제거가 아니고, `tests/test_conducting_interview_stage.sh` 의 G7 부재 락이 그 파일 하나만 예외로 두되 그 예외가 vacuous 하지 않은지를 양성 대조로 함께 잰다.
 - **gstack** — Structural baseline (11 필수 섹션) + concrete-next-action refusal pattern + ETHOS ("AI recommends, users decide").
 - **OMC** — env-var configurable threshold (steelman antithesis는 plan-reviewer PR로 defer, v0.2.0+ 회귀 도입).
 - **superpowers** — 산출물 위치(`docs/superpowers/specs/`) + plan-document-reviewer 출력 형식 (Status / Issues / Recommendations) + brainstorming drop-in 대체.

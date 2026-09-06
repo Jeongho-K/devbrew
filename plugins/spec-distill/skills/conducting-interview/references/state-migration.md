@@ -20,7 +20,7 @@ write로 즉시 디스크에 반영합니다(PN1) — coverage-mapper 상한 카
 
 사용자에게 advisory 한 줄 출력:
 ```
-[spec-distill v0.55.0] state schema migration: reopen ledger + coverage_mapper_dispatches added (stall trigger retired).
+[spec-distill v0.56.0] state schema migration: reopen ledger + coverage_mapper_dispatches added (stall trigger retired).
 ```
 
 자동 promote 실패 시(파일 corruption 등) → "구세션 in-flight state 호환 실패 — 세션 재시작 권장"

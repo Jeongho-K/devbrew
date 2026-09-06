@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""depth_pairs.py — state 본문에서 «답→다음 행동» 짝을 뽑는다 (spec §3.1, v0.55.0).
+"""depth_pairs.py — state 본문에서 «답→다음 행동» 짝을 뽑는다 (spec §3.1, v0.56.0).
 
 usage: depth_pairs.py <state.local.md> [--sample N] [--seed STR]
   rc 0  JSON(짝·계수·사람 표본)      rc 3  {"unmeasurable": "<이유>"}      rc 2  usage
