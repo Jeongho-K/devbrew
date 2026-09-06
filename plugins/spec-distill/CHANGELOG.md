@@ -80,10 +80,17 @@
   경로 (c)(general-purpose adversarial draft, 사용 기록 0), C51 라벨 강제, 정체 트리거와 state 필드
   `no_progress_streak`·`stall_episode`·`coverage_mapper_dispatched_episode`(`test_stale_terms.sh` V12 등재).
   `conducting-interview/SKILL.md` 386줄(0.54.0: 408 — G7 락은 `< 408`).
-  **범위 — 줄 수**: 그 22줄이 전부 이 릴리스의 삭제는 아니다. **이 브랜치의 순감은 −1**(408 → 407, 위
-  Changed 의 조건부 로드 분리)이고, 나머지 21줄은 upstream 0.55.0 이 R3 절차 전문을
-  `references/steelman.md` 로 들어내며 줄인 것이다(그 시점 387). 386 과 `< 408` 둘 다 참이고 G7 락이
-  그 값을 쓰기 때문에 그대로 두되, 귀속을 여기 밝힌다.
+  **범위 — 줄 수**: 그 22줄이 전부 이 릴리스의 삭제는 아니다. 아래 수는 전부
+  `git show <ref>:plugins/spec-distill/skills/conducting-interview/SKILL.md | wc -l` 로 **직접 센 값**이다 —
+  `319ed43`(0.54.0, 이 브랜치의 main 쪽 base) **408** · `6d77183`(이 브랜치가 merge 하기 직전의 tip)
+  **405** · `353b4a6`(upstream 0.55.0) **387** · `27c596d`(merge) **386**.
+  즉 **이 브랜치 자신의 순감은 −3**(408 → 405)이고 **upstream 의 순감은 −21**(408 → 387).
+  −3 은 조건부 로드 분리 하나의 몫이 아니라 SKILL.md 를 건드린 이 브랜치 커밋 **여섯**
+  (`a82c57b`·`cc25708`·`a7af882`·`f09b321`·`8693087`·`f8a1b53`)의 합이다.
+  **그리고 두 순감은 더해지지 않는다** — 408 − 3 − 21 = 384 인데 병합 결과는 386 이다(+2). 양쪽이
+  **같은** R3/steelman 영역을 고쳐서, merge 가 독립적인 두 삭감을 합산한 것이 아니라 겹침을 해소했기
+  때문이다. 빼서 384 가 나온 독자가 changelog 를 의심하지 않도록 여기 적어 둔다 — 386 과 `< 408` 은
+  그 해소 **뒤**의 실측값이고 둘 다 참이다(G7 락이 그 값을 쓴다).
   **범위 — 4-block**: 위에서 빠진 것은 «라운드 규약의» 4-block 이고, **형식 자체는 리포에 남아 있다** —
   R3 steelman 게이트가 `references/steelman.md` Step 3 에서 제시 형식으로 그대로 쓴다. 같은 어휘를 쓰는
   다른 물건이라, `test_conducting_interview_stage.sh` 의 G7 부재 락은 그 파일 하나만 예외로 두되 그
