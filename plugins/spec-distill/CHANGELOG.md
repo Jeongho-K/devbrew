@@ -80,10 +80,14 @@
   경로 (c)(general-purpose adversarial draft, 사용 기록 0), C51 라벨 강제, 정체 트리거와 state 필드
   `no_progress_streak`·`stall_episode`·`coverage_mapper_dispatched_episode`(`test_stale_terms.sh` V12 등재).
   `conducting-interview/SKILL.md` 386줄(0.54.0: 408 — G7 락은 `< 408`).
-- **4-block 이라는 형식 자체는 리포에서 사라지지 않았다** — R3 steelman 게이트가 `references/steelman.md`
-  Step 3 에서 제시 형식으로 그대로 쓴다. 같은 어휘를 쓰는 다른 물건이라, `test_conducting_interview_stage.sh`
-  의 G7 부재 락은 그 파일 하나만 예외로 두되 그 예외가 vacuous 하지 않은지(그 파일이 실제로 그 어휘를
-  갖는지)를 양성 대조로 함께 잰다.
+  **범위 — 줄 수**: 그 22줄이 전부 이 릴리스의 삭제는 아니다. **이 브랜치의 순감은 −1**(408 → 407, 위
+  Changed 의 조건부 로드 분리)이고, 나머지 21줄은 upstream 0.55.0 이 R3 절차 전문을
+  `references/steelman.md` 로 들어내며 줄인 것이다(그 시점 387). 386 과 `< 408` 둘 다 참이고 G7 락이
+  그 값을 쓰기 때문에 그대로 두되, 귀속을 여기 밝힌다.
+  **범위 — 4-block**: 위에서 빠진 것은 «라운드 규약의» 4-block 이고, **형식 자체는 리포에 남아 있다** —
+  R3 steelman 게이트가 `references/steelman.md` Step 3 에서 제시 형식으로 그대로 쓴다. 같은 어휘를 쓰는
+  다른 물건이라, `test_conducting_interview_stage.sh` 의 G7 부재 락은 그 파일 하나만 예외로 두되 그
+  예외가 vacuous 하지 않은지(그 파일이 실제로 그 어휘를 갖는지)를 양성 대조로 함께 잰다.
 
 ### Fixed
 
@@ -91,9 +95,12 @@
   아래로 읽는 모델이 `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 인 채로 dispatch 할 수 있었다. `test_web_kill_switch.sh`
   의 guard-window 락(dispatch 줄 위 40줄 안에 스위치 확인)은 이것을 잡지 못했다 — steelman dispatch 바로
   위가 아니라 9줄 위의 R2 landscape 절 **자신의** kill switch 언급에 우연히 걸려 green 이었다. 확인 문단을
-  다른 두 dispatch 와 같은 모양으로 dispatch 직전에 옮겼다. **그 자리는 이 릴리스에서 한 번 더 움직였다** —
-  0.55.0 merge 가 R3 절차 전문을 `references/steelman.md` 로 옮겼고 upstream 이 같은 클래스의 결함을 그
-  파일에서 이미 고쳤다(아래 `[0.55.0]` 의 Fixed). 병합 후 순 표면에는 그 수정이 새 거처에 한 번 있다.
+  다른 두 dispatch 와 같은 모양으로 dispatch 직전에 옮겼다. **그런데 이 수정은 병합에서 살아남은 것이
+  아니라 더 강한 수정으로 대체됐다** — 0.55.0 merge 가 R3 절차 전문을 `references/steelman.md` 로 옮겼고,
+  upstream 은 같은 클래스를 그 파일에서 **다른 층위로** 고쳤다(아래 `[0.55.0]` 의 Fixed). 우리 것은
+  advisory **문단**을 dispatch 위로 올린 «산문 순서»였고, upstream 은 `Agent(...)` **호출 자체**를 `else`
+  가지 안에 넣어 스위치가 켜지면 dispatch 가 **구조적으로 도달 불가**가 되게 했다. 순서는 읽는 모델에
+  기대고 도달 불가는 기대지 않는다 — 병합 후 순 표면에 남는 것은 후자이고, 그것이 더 강하다.
 
 ### Verification
 

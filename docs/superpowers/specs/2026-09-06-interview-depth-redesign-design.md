@@ -211,8 +211,9 @@ teach-beat·blind-spot-prober 를 넣었다. 그때 steelman 은 «더 무겁게
 - **C11 (도구 사실 미단정)**: §4.2 의 native 도구 동작은 이 spec 이 단정하지 않는다. plan 첫 task 가 실측하고
   그 결과는 plan 산출물·CHANGELOG 에 남으며 framing-requests 산문이 그것을 따른다. spec 에 사후 절을 더하지
   않는다.
-- **C12 (버전·CHANGELOG)**: 착수 전 `origin/main` 을 **merge**(rebase 아님)하고, `plugin.json` 을 그 merge
-  시점 main 보다 **한 minor 위**로 올린다(minor 인 이유: 새 surface — 스크립트 둘·에이전트 하나·측정 단계).
+- **C12 (버전·CHANGELOG)**: 착수 전 `origin/main` 을 **merge**(rebase 아님)하고, `plugin.json` 을 **가장 최근
+  merge 시점**의 main 보다 **한 minor 위**로 올린다(minor 인 이유: 새 surface — 스크립트 둘·에이전트 하나·
+  측정 단계). 「가장 최근」이 필수다 — 이 브랜치는 merge 커밋이 둘이고 착수 전 그것으로 재면 틀린 수가 나온다.
   CHANGELOG 최상단 헤딩이 `plugin.json` 과 **같은 값**이어야 한다. README «Principles Instantiated» 갱신.
   **이 브랜치에서 그 값은 `0.56.0` 이다.** 착수 시 계획했던 minor 번호는 작업 도중 upstream 이 다른
   릴리스로 선점했다(원장 R22·R23) — 그래서 이 제약은 그때의 리터럴이 아니라 «한 minor 위 + 최상단 일치»
@@ -643,8 +644,9 @@ brief §5 의 premortem(HA6·FM6 계열)이 든 함정과 확인 결과:
 - **AC14 (순감·stale-term)**: `no_progress_streak`·`stall_episode`·`coverage_mapper_dispatched_episode`·
   `teach-lite`·`teach-heavy`·`teach-beat` 가 production 표면(SKILL·references·agents·templates)에 없다
   (`test_stale_terms.sh` 등재). CHANGELOG 에 Removed 항목.
-- **AC15 (버전)**: `origin/main` merge 커밋이 브랜치에 있고, `plugin.json` 이 그 merge 시점 main 보다 한
-  minor 위이며, CHANGELOG 최상단 헤딩이 `plugin.json` 과 같은 값이고 그 절이 이 릴리스 전체(Added·
+- **AC15 (버전)**: `origin/main` merge 커밋이 브랜치에 있고, `plugin.json` 이 **가장 최근 merge 시점**의
+  main 보다 한 minor 위이며(C12 — 이 브랜치는 merge 커밋이 둘이라 「가장 최근」이 판정을 가른다),
+  CHANGELOG 최상단 헤딩이 `plugin.json` 과 같은 값이고 그 절이 이 릴리스 전체(Added·
   Changed·Removed·Verification)를 담는다. README «Principles Instantiated» 에 Law 3(측정 원장)·
   P17(사용자가 시계) 한 줄씩. **이 브랜치의 그 값은 `0.56.0`**(C12 — 리터럴이 아니라 불변식으로 재는 이유).
 - **AC16 (사람 e2e)**: 새 SKILL 로 실제 인터뷰 1회 — 매 라운드 «직전 답에서» 블록이 출력·state 에 남고,
@@ -710,7 +712,7 @@ reviewing-spec · `hooks/*` · steelman-builder · blind-spot-prober 본문 · b
   헤드리스로 재고 결과를 plan task 산출물과 CHANGELOG 에 적는다(spec 은 편집하지 않는다). 실측 전엔
   framing-requests 산문을 확정하지 않는다.
 - **V7 (사람 e2e, AC16)**: 이 브랜치의 플러그인으로(`--plugin-dir` 또는 격리 설치) 실제 인터뷰 1회.
-  관찰 항목: 라운드마다 «직전 답에서» 블록 / Q1·Q2 모양 / 종료 시 라벨 ≤4개 / audit §2 세 줄 / depth/<basename>.json 1개.
+  관찰 항목: 라운드마다 «직전 답에서» 블록 / Q1·Q2 모양 / 종료 시 라벨 ≤4개 / audit §2 네 줄(깊이 측정 셋 + 판정자 조건) / depth/<basename>.json 1개.
   결과를 CHANGELOG 최상단 절(C12)의 Verification 줄에 남긴다.
 - **V8 (리뷰)**: 설계문서 — Stop 훅의 `spec-distill:spec-reviewer`(Law 2 분리, codex 병렬). 구현 —
   subagent-driven + whole-branch 리뷰 + codex. 커밋은 리뷰 뒤.
