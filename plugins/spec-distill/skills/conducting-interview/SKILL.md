@@ -333,6 +333,11 @@ steelman · blind-spot premortem · coverage-mapper 넷이 전부 그 장치다.
 
 의심 trigger = landscape 모순 / 알려진 anti-pattern / 기존 사용자 제약과의 충돌 / coverage-mapper neglect.
 
+**Web kill switch (dispatch 직전 확인, R2 와 동일 원칙)**: `steelman-builder`는 `WebSearch`/`WebFetch`를
+보유한다. kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 또는 web 도구 부재면 아래 dispatch 대신
+opaque 게이트-fail 없이 loud advisory 후 **수동 의심 게이트**로 전환: `[spec-distill] web 비활성 —
+steelman 자동 생략, 사용자에게 의심 방향 수동 확인 요청`. `verdict:` 항목은 사용자 판단 + URL 부재 사유로 기록.
+
 1. `steelman-builder` 에이전트를 dispatch:
    ```
    Agent({ description: "Steelman alternative", subagent_type: "spec-distill:steelman-builder",
@@ -345,11 +350,6 @@ steelman · blind-spot premortem · coverage-mapper 넷이 전부 그 장치다.
 3. **게이트**(P17): 사용자가 (방어 → 원안 유지 / 전환 → 대안 채택, 원안은 R4로 / 보류 → §3 OQ) 중 하나를 선택한다.
 4. 판정을 payload §5의 **`verdict:` 항목**으로 기록 — 각 항목은 (대안 statement + 웹근거 URL + `verdict ∈ {defended | switched | deferred}` + audit §3의 `ST<N>` 참조). 게이트 매핑: 방어→`defended`, 전환→`switched`, 보류→`deferred`(§3 OQ에도 박제). builder 출력 verbatim은 audit §3에 `#### ST<N>` 헤딩으로 남고, payload §5와 audit §3은 이 `ST<N>` id로 맞물린다(bijection A) — frontmatter에는 별도 필드를 두지 않는다.
 5. 한 방향당 steelman 1회(새 근거 없으면 재steelman 금지 — AP16 harassment 방지).
-
-**Web 부재 시(R2 와 동일 원칙)**: kill switch 또는 web 도구 부재로 steelman을 못 돌리면 opaque
-게이트-fail 대신 loud advisory 후 **수동 의심 게이트**로 전환:
-`[spec-distill] web 비활성 — steelman 자동 생략, 사용자에게 의심 방향 수동 확인 요청`. `verdict:`
-항목은 사용자 판단(방어/전환/보류) + URL 부재 사유로 기록합니다.
 
 **Law 2 경계**: steelman 게이트는 Law 2 분리 메커니즘이 *아닙니다* — Law 2 분리 reviewer는
 오직 design doc(brainstorming `-design.md`)에만 적용됩니다. steelman은 문제공간 품질을 끌어올리는
