@@ -810,7 +810,10 @@ grep -qF 'coverage-mapper <k>' <<<"$stepa4" && ok "Step A 4: §2 coverage-mapper
 TPL="$REPO_ROOT/plugins/spec-distill/templates/interview-audit-template.md"
 grep -qF '깊이 측정(형식)' "$TPL" && grep -qF '깊이 측정(auditor)' "$TPL" && grep -qF '깊이 측정(사람)' "$TPL" && ok "AC10: audit 템플릿 §2 깊이 세 줄" || no "AC10: 템플릿 §2 깊이 줄 부재"
 grep -qF '(재개방' "$TPL" && ok "AC10: 템플릿 §1 재개방 접미 예시" || no "AC10: 재개방 접미 예시 부재"
-grep -qF 'coverage-mapper <k>' "$TPL" && ok "AC10: 템플릿 §2 coverage-mapper <k>" || no "AC10: 템플릿 coverage-mapper 부재"
+# 템플릿의 계수는 **데이터 줄**(불릿)에 실제 숫자로 있어야 한다. `coverage-mapper <k>` 의
+# 존재만 보면 placeholder 만 남아도 통과하는데, 게이트(MAPPER_RE)는 숫자를 요구하므로
+# 그때 T-TPL 의 green 을 §2 머리 «설명 산문»의 예시 하나가 대신 지게 된다(수정 라운드 1 F4).
+grep -qE '^- .*coverage-mapper [0-9]+' "$TPL" && ok "AC10: 템플릿 §2 데이터 줄에 coverage-mapper <숫자>" || no "AC10: 템플릿 §2 데이터 줄에 숫자 계수가 없다 — 게이트 판정을 설명 산문이 진다"
 grep -qE 'path \(a\|b\|c\|d\)' "$TPL" && no "AC10: 템플릿 §5 에 경로 (c) 잔존" || ok "AC10: 템플릿 §5 경로 (c) 제거"
 
 finish

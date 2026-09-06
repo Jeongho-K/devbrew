@@ -77,8 +77,9 @@ audit §1 `## Coverage Ledger`에 직렬화합니다.
    실패 양식 처분 S · open_questions = OQ 목록 확인 S. 사용자-승인 박제 행은 앵커가 접두 **뒤**에
    옵니다: `사용자-승인 박제(@S12) — §Open Questions 참조`. 재개방된 차원은 행 끝에
    `(재개방 <n>회 — <마지막 사유>)` 접미를 붙입니다(state `reopen_log` 의 마지막 항목).
-   같은 시점에 **audit §2 Budget** 에 `coverage-mapper <k>` 를 씁니다(state
-   `orchestration.coverage_mapper_dispatches`). dispatch 가 불가능했던 환경이면
+   같은 시점에 **audit §2 Budget** 의 **불릿(데이터) 줄**에 `coverage-mapper <k>` 를 씁니다
+   (state `orchestration.coverage_mapper_dispatches`) — 게이트는 `- ` 로 시작하는 줄만 읽으므로
+   설명 산문에 적은 숫자는 세어지지 않습니다. dispatch 가 불가능했던 환경이면
    `coverage-mapper 0 (unavailable: <이유>)` — 게이트는 이를 advisory 로 통과시키고 Step B 가
    사람에게 보입니다.
 5. **기계적 게이트 검증** — 직렬화 직후. payload 경로만 넘기면 게이트가 `audit_file`로
@@ -175,6 +176,12 @@ AskUserQuestion({ questions: [ /* 표본마다 하나, ≤4 */ {
   «기타»에 «나중에» 류가 오거나 질문을 건너뛰면 그 표본은 **미라벨**이다. 답을
   `{"skipped": false, "labels": {"S3": "dug", …}}` (파고들었다→`dug`, 안 팠다→`not_dug`,
   판단불가→`undecidable`) 로 만들어 파일 `$ROOT/$harness_sid/depth-human.json` 에 쓴다.
+  **표본이 0 이었거나 라벨을 하나도 못 받았어도 이 파일은 반드시 쓴다** —
+  `{"skipped": true, "labels": {}}` 를 같은 경로에 둔다. 아래 호출이 `--human` 을 **무조건**
+  넘기므로 파일이 없으면 스크립트가 `기록 불가` 로 떨어지고 측정 파일이 아예 안 생긴다:
+  rc 는 0 이라 종료는 막히지 않지만 그 인터뷰가 누적 코퍼스에서 통째로 빠진다 —
+  **막지 않는 것과 재는 것은 다르다.** 적격 짝 0 은 코너가 아니라 `depth_pairs.py` 가
+  rc 0 으로 내는 정상 결과이므로, 그때 스크립트의 `표본 없음` 분기가 실제로 도달한다.
 
 ```bash
 AUDIT="docs/superpowers/interview/<file>.audit.md"        # Step A 가 쓴 경로
@@ -186,6 +193,10 @@ python3 "$PR/scripts/depth_record.py" "$PAIRS" --auditor "$AUD_RAW" \
 
   stdout 의 처음 네 줄(`- 깊이 측정(형식)…` · `(auditor)…` · `(사람)…` · `- 판정자 조건: …`)을
   **audit §2 Budget 에 그대로 붙인다**. 처분 두 줄과 `advisory:` 줄은 사용자에게 그대로 보인다.
+  **그 배관 줄의 `(차단: 예)` 는 이 단계에서 «공시»일 뿐 종료를 막지 않는다 — 보이고 그대로
+  Step B 로 간다.** 바로 위의 정상 퇴화 경로(dispatch 불가 → 빈 raw)가 곧 그 표시를 내는
+  자리다: 주 판정자 사망은 `source_failed(primary=True)` 라 렌더러가 `(차단: 예)` 를 찍는다.
+  여기서 멈추면 「기록한다, 막지 않는다」가 깨진다.
   스크립트는 항상 exit 0 이고 실패는 `- 깊이 측정: 기록 불가 — <이유>` 로 온다 — 그 줄도 §2 에
   붙인다. 측정 파일은 `Write` 가 아니라 스크립트가 쓴다(라벨 병합을 orchestrator 가 손으로
   하지 않기 위해서다).

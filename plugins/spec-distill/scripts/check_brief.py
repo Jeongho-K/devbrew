@@ -929,16 +929,24 @@ def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
     return fails
 
 
-MAPPER_RE = re.compile(r"coverage-mapper\s+(\d+)(?:\s*\((unavailable:[^)]*)\))?")
+# **불릿(데이터) 줄에 앵커한다.** 앵커가 없으면 §2 머리 «설명 산문»의 예시
+# (`coverage-mapper 0 (unavailable: <사유>)`)가 데이터 줄보다 먼저 매치돼 판정을 대신
+# 진다 — 실측: 출하 템플릿의 T-TPL green 을 그 설명 문장 하나가 전부 지고 있었고,
+# 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.55.0 수정 라운드 1 F4).
+# 산문은 그대로 둔다: 판정에 참여하지 않은 채 퇴화 모양을 계속 가르친다.
+MAPPER_RE = re.compile(
+    r"^\s*-\s.*?coverage-mapper\s+(\d+)(?:\s*\((unavailable:[^)]*)\))?",
+    re.MULTILINE)
 
 
 def budget_mapper_failures(audit_text: str) -> tuple[list[str], list[str]]:
     """audit §2 Budget 의 `coverage-mapper <k>` (v0.55.0, spec §2.3·C4).
 
     k>=1 통과. `coverage-mapper 0 (unavailable: <이유>)` 는 advisory 통과 — 침묵과 0 을
-    가른다. **이 검사가 못 잡는 것**: sentinel 은 피검자가 쓰는 문구라, dispatch 를 건너뛴
-    턴이 같은 문구를 적으면 «도구 부재»와 구분하지 못한다. 그래서 advisory 는 조용히
-    통과하지 않고 Step B 게이트 텍스트로 사람에게 간다."""
+    가른다. 대상은 §2 의 **불릿 줄**이다(`MAPPER_RE` 주석) — 머리 설명 산문의 예시는
+    판정에 참여하지 않는다. **이 검사가 못 잡는 것**: sentinel 은 피검자가 쓰는 문구라,
+    dispatch 를 건너뛴 턴이 같은 문구를 적으면 «도구 부재»와 구분하지 못한다. 그래서
+    advisory 는 조용히 통과하지 않고 Step B 게이트 텍스트로 사람에게 간다."""
     sec = _section_text(audit_text, "2", "Budget")
     m = MAPPER_RE.search(sec)
     if not m:

@@ -495,6 +495,18 @@ out="$(python3 "$SCRIPT" gate "$TMPD/tpl.md" 2>/dev/null)"; rc=$?
 [[ $rc -eq 0 ]] \
   && ok "T-TPL: shipping 템플릿 쌍(payload+audit)이 자기 게이트를 통과" \
   || { no "T-TPL: shipping 템플릿 쌍이 자기 게이트에 걸린다"; printf '    %s\n' "$out"; }
+# rc 만 보면 «어떤 통과인지»를 못 잰다. 출하 템플릿이 `coverage-mapper 0 (unavailable: …)`
+# advisory 로 지나가고 있어도 rc 는 0 이라 이 락이 조용했다 — 실제로 그랬고, 그 green 을
+# §2 머리 설명 산문의 예시 하나가 전부 지고 있었다(v0.55.0 수정 라운드 1 F4). 통과의
+# **종류**까지 본다: 템플릿은 mapper advisory 없이 지나가야 한다.
+tpl_adv="$(PYTHONDONTWRITEBYTECODE=1 python3 -c 'import json,sys; print("\n".join(json.loads(sys.argv[1]).get("advisories", [])))' "$out" 2>/dev/null)"
+tpl_adv_rc=$?
+[[ $tpl_adv_rc -eq 0 ]] \
+  && ok "T-TPL(양성대조): gate JSON 을 파싱했다 (아래 단언이 실재한다)" \
+  || no "T-TPL(양성대조): gate 출력이 JSON 이 아니다 — 아래 advisory 단언이 공허하다"
+grep -q 'coverage-mapper' <<<"$tpl_adv" \
+  && { no "T-TPL: 템플릿이 coverage-mapper advisory 로 통과한다 — 데이터 줄에 숫자 계수가 없어 판정을 설명 산문이 진다"; printf '    %s\n' "$tpl_adv"; } \
+  || ok "T-TPL: 템플릿이 coverage-mapper advisory 없이 통과 (데이터 줄이 판정을 진다)"
 
 # --- Task 3: bijection B (body §2 ↔ frontmatter) ---
 
