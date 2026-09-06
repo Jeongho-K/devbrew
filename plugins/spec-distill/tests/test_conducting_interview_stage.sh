@@ -783,4 +783,34 @@ grep -qE '발화 전부를 payload §6|전부를 payload §6 에' "$FIN" \
   && no "U2-T6: 「전부를 payload §6 에」 옛 지시 잔존" \
   || ok "U2-T6: 옛 거처 지시 제거됨"
 
+# --- v0.55.0 Step A.7 깊이 측정 (finishing.md, 블록 스코프) --------------------
+a7_block="$(awk '/^### Step A\.7/{f=1;print;next} /^### /{f=0} f' "$FIN")"
+a7_flat="$(tr '\n' ' ' <<<"$a7_block" | tr -s ' ')"
+{ [[ -n "$a7_block" ]] && grep -qF 'depth_pairs.py' <<<"$a7_block"; } \
+  && ok "A.7: 깊이 측정 절이 있고 depth_pairs.py 를 부른다" || no "A.7: 절 부재 또는 depth_pairs.py 호출 없음"
+grep -qF 'spec-distill:depth-auditor' <<<"$a7_block" && ok "A.7: depth-auditor dispatch" || no "A.7: depth-auditor dispatch 없음"
+grep -qF 'consumer=plugins/spec-distill/scripts/depth_record.py' <<<"$a7_block" && ok "A.7: 처분 줄이 depth_record.py 를 소비자로" || no "A.7: 처분 줄 부재"
+grep -qF 'depth_record.py' <<<"$a7_block" && ok "A.7: depth_record.py 호출" || no "A.7: depth_record.py 호출 없음"
+grep -qE 'pairs_rc[^.]{0,40}3[^.]{0,60}측정 불가' <<<"$a7_flat" && ok "A.7: rc 3 → «측정 불가» 기록" || no "A.7: rc 3 처분 없음"
+grep -qE '기록한다[^.]{0,20}막지 않는다|막지 않는다' <<<"$a7_flat" && ok "A.7: «기록한다, 막지 않는다» (C5)" || no "A.7: 비게이트 선언 없음"
+grep -qE '표본[^.]{0,10}0[^.]{0,30}(띄우지 않는다|호출 안 함|호출하지 않는다)' <<<"$a7_flat" && ok "A.7: 표본 0 이면 라벨 질문 없음" || no "A.7: 표본 0 처분 없음"
+grep -qF '미라벨' <<<"$a7_block" && grep -qF 'unavailable' <<<"$a7_block" && ok "A.7: 미라벨·unavailable 어휘" || no "A.7: 미라벨/unavailable 어휘 부재"
+grep -qE 'heredoc' <<<"$a7_block" && grep -qE '리다이렉트' <<<"$a7_block" && ok "A.7: raw 저장은 파일 리다이렉트(heredoc 금지)" || no "A.7: raw 저장 방식 미명시"
+grep -q '파고들었다' <<<"$a7_block" && grep -q '안 팠다' <<<"$a7_block" && grep -q '판단불가' <<<"$a7_block" && ok "A.7: 사람 라벨 선택지 셋" || no "A.7: 사람 라벨 선택지 부재"
+grep -qF 'min(4' <<<"$a7_block" && ok "A.7: 질문 수 min(4, 적격)" || no "A.7: 표본 상한 규칙 부재"
+# B-2 게이트 텍스트에 깊이 요약과 advisories 슬롯
+b2_block="$(awk '/^#### B-2/{f=1;print;next} /^#### /{f=0} f' "$FIN")"
+grep -qF '깊이:' <<<"$b2_block" && ok "B-2: question 에 깊이 요약 슬롯" || no "B-2: 깊이 요약 슬롯 부재"
+grep -qF 'coverage-mapper 0' <<<"$b2_block" && ok "B-2: coverage-mapper unavailable advisory 가 게이트 텍스트에" || no "B-2: mapper advisory 슬롯 부재"
+# Step A 4 항: 직렬화 규칙 (S앵커·재개방 접미)
+stepa4="$(awk '/^4\. \*\*Coverage Ledger 직렬화/{f=1} f&&/^5\. /{exit} f' "$FIN")"
+grep -qE 'S<N>|S\d\+|S 앵커' <<<"$stepa4" && grep -qF '재개방' <<<"$stepa4" && ok "Step A 4: 직렬화가 S앵커·재개방 접미를 요구" || no "Step A 4: 직렬화 규칙에 S앵커/재개방 부재"
+grep -qF 'coverage-mapper <k>' <<<"$stepa4" && ok "Step A 4: §2 coverage-mapper <k> 직렬화" || no "Step A 4: coverage-mapper <k> 부재"
+# audit 템플릿
+TPL="$REPO_ROOT/plugins/spec-distill/templates/interview-audit-template.md"
+grep -qF '깊이 측정(형식)' "$TPL" && grep -qF '깊이 측정(auditor)' "$TPL" && grep -qF '깊이 측정(사람)' "$TPL" && ok "AC10: audit 템플릿 §2 깊이 세 줄" || no "AC10: 템플릿 §2 깊이 줄 부재"
+grep -qF '(재개방' "$TPL" && ok "AC10: 템플릿 §1 재개방 접미 예시" || no "AC10: 재개방 접미 예시 부재"
+grep -qF 'coverage-mapper <k>' "$TPL" && ok "AC10: 템플릿 §2 coverage-mapper <k>" || no "AC10: 템플릿 coverage-mapper 부재"
+grep -qE 'path \(a\|b\|c\|d\)' "$TPL" && no "AC10: 템플릿 §5 에 경로 (c) 잔존" || ok "AC10: 템플릿 §5 경로 (c) 제거"
+
 finish

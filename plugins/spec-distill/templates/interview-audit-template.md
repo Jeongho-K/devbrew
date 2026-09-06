@@ -3,7 +3,7 @@ type: interview-audit
 payload: <YYYY-MM-DD>-<kebab-topic>-interview.md
 created_at: YYYY-MM-DD
 session_id: <uuid>
-source: spec-distill conducting-interview v0.23.0
+source: spec-distill conducting-interview v0.55.0
 ---
 
 # <Topic> — Interview Audit
@@ -14,7 +14,9 @@ source: spec-distill conducting-interview v0.23.0
 ## 1. Coverage Ledger
 
 (커버리지 원장 직렬화 — floor 5행(전부 closed + evidence) + derived(≥1행 OR N/A sentinel).
- orchestrator가 state.local.md에서 직렬화한다. evidence는 실재 `S<N>` 앵커를 인용해야 한다(AC3).)
+ orchestrator가 state.local.md에서 직렬화한다. evidence는 실재 `S<N>` 앵커를 인용해야 한다(AC3).
+ 아래의 `S1`은 **예시**이며, 실제로는 그 차원의 닫힘을 근거한 실제 `S<N>`으로 — 행마다
+ 서로 다른 발화로 — 바뀐다.)
 
 - floor:root_problem — closed — <evidence> (@S1)
 - floor:landscape — closed — <evidence> (@S1)
@@ -23,15 +25,23 @@ source: spec-distill conducting-interview v0.23.0
 - floor:open_questions — closed — <evidence> (@S1)
 - derived:<name> — closed — <rationale>; <evidence> (@S1)
 
+(재개방된 차원은 행 끝에 «(재개방 <n>회 — <사유>)», 박제는 «사용자-승인 박제(@S<N>) —
+ §Open Questions 참조». 모든 closed 행의 evidence 는 실재 S<N> 을 인용한다.)
+
 ## 2. Budget
 
-(coverage-mapper dispatch 횟수 — k≥1(예: 아래)이면 통과. dispatch 를 못 했으면
- `coverage-mapper 0 (unavailable: <사유>)`처럼 사유를 붙인다(advisory) — 사유 없는
- 0은 게이트 red(AC4).)
+(다섯 줄. 첫 줄의 두 계수는 **다른 것을 센다**: `agent dispatch: <n>` 은 이 인터뷰의 subagent
+ dispatch **총계**이고, `coverage-mapper <k>` 는 그중 coverage-mapper **하나만**의 횟수라
+ 언제나 `<k> ≤ <n>` 이다. 게이트가 보는 것은 후자뿐이며 k≥1이면 통과한다 — dispatch 를 못
+ 했으면 `coverage-mapper 0 (unavailable: <사유>)`처럼 사유를 붙인다(advisory). 사유 없는 0은
+ 게이트 red(AC4). 나머지 네 줄은 `depth_record.py` stdout 을 그대로 옮긴 깊이 측정이다 —
+ 순수 기록이며 게이트가 아니다. 스크립트가 «기록 불가»를 내면 그 한 줄을 대신 붙인다.)
 
-- agent dispatch: coverage-mapper 1
-
-- 질문 라운드: <n> · agent dispatch: <n> · codex 실호출: <n> (성공 <n>)
+- 질문 라운드: <n> · agent dispatch: <n> · coverage-mapper <k> · codex 실호출: <n> (성공 <n>)
+- 깊이 측정(형식): 짝 <n> 중 되비추기 블록 있음 <m> · 내용 있는 줄 ≥1 <p> · terminal <t>
+- 깊이 측정(auditor): dug <a> · not_dug <b> · undecidable <c> · held <h> · unavailable <0|1>
+- 깊이 측정(사람): 표본 <s> — dug <x> · not_dug <y> · undecidable <z> · 미라벨 <w> · auditor 일치 <k>/<v> (auditor 판정 없는 표본 <u> 별도)
+- 판정자 조건: <depth_record.py 출력 한 줄>
 
 ## 3. Steelman 원문
 
@@ -49,7 +59,7 @@ source: spec-distill conducting-interview v0.23.0
 
 ## 5. 프로세스 로그
 
-- round <n>: <path (a|b|c|d)> — <한 줄 요약>
+- round <n>: <path (a|b|d)> — <한 줄 요약>
 
 ### brief 리뷰 라운드 (reviewing-brief, v0.24.0)
 
