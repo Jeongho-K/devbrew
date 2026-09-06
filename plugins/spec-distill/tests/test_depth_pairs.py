@@ -78,6 +78,41 @@ class DepthPairs(unittest.TestCase):
     def test_missing_file_rc3(self):
         rc, out = run("does-not-exist.md")
         self.assertEqual(rc, 3)
+        self.assertIn("unmeasurable", json.loads(out))
+
+    def test_no_frontmatter_is_unmeasurable_rc3(self):
+        rc, out = run("depth-state-nofrontmatter.md")
+        self.assertEqual(rc, 3)
+        self.assertIn("unmeasurable", json.loads(out))
+
+    def test_missing_user_statements_key_is_unmeasurable_rc3(self):
+        rc, out = run("depth-state-nostatementskey.md")
+        self.assertEqual(rc, 3)
+        self.assertIn("unmeasurable", json.loads(out))
+
+    def test_unparseable_user_statements_is_unmeasurable_rc3(self):
+        # `user_statements:` 값이 리스트가 아니라 스칼라 문자열 — 항목 0개로 조용히
+        # 위장하지 않고 파싱 실패로 구분돼야 한다(정상적인 빈 세션과 출력이 달라야 함).
+        rc, out = run("depth-state-badstatements.md")
+        self.assertEqual(rc, 3)
+        self.assertIn("unmeasurable", json.loads(out))
+
+    def test_empty_user_statements_list_is_rc0_total0(self):
+        # 양의 짝: 명시적으로 빈 `user_statements: []` 는 파싱 실패가 아니라 정상적인
+        # 0 이다 — 위 파싱-실패 테스트가 이 케이스까지 rc 3 으로 끌고 가지 않는지 고정.
+        rc, out = run("depth-state-emptystatements.md")
+        self.assertEqual(rc, 0, out)
+        d = json.loads(out)
+        self.assertEqual(d["counts"]["total"], 0)
+        self.assertEqual(d["pairs"], [])
+        self.assertEqual(d["human_sample"], [])
+
+    def test_elig0_and_allnone_still_rc0(self):
+        # 회귀 고정: 파싱-실패 감지를 넣어도 "적격 0"·"블록 있으나 전부 없음" 같은
+        # 정상적인 내용 결과는 여전히 rc 0 이어야 한다(측정이 게이트가 되면 안 된다).
+        for fx in ("depth-state-elig0.md", "depth-state-allnone.md"):
+            rc, out = run(fx)
+            self.assertEqual(rc, 0, out)
 
 
 if __name__ == "__main__":

@@ -32,18 +32,28 @@ def _unquote(raw):
 
 
 def parse_statements(fm):
-    """`user_statements` → [{id, round, text}]. round 는 int 또는 원문 문자열."""
+    """`user_statements` → [{id, round, text}]. round 는 int 또는 원문 문자열.
+
+    «아무것도 안 적혀 있다»(정상적인 빈 세션)와 «뭔가 적혀 있는데 항목을 못 읽었다»
+    (파싱 실패)를 가른다 — 후자는 ValueError 로 올려 호출자가 rc 3(측정 불가)으로
+    구분하게 한다. 전자(명시적 `[]` 또는 값 영역이 비어 있고 그 아래도 비어 있음)는
+    빈 리스트를 정상 반환한다.
+    """
     lines = fm.splitlines()
     start = next((i for i, ln in enumerate(lines) if re.match(r"^user_statements\s*:", ln)), None)
     if start is None:
         raise ValueError("user_statements 키 부재")
-    if re.match(r"^user_statements\s*:\s*\[\s*\]\s*$", lines[start]):
+    key_m = re.match(r"^user_statements\s*:\s*(.*)$", lines[start])
+    inline = key_m.group(1).strip() if key_m else ""
+    if re.fullmatch(r"\[\s*\]", inline):
         return []
-    items, cur, i = [], None, start + 1
+    items, cur, i, saw_content = [], None, start + 1, bool(inline)
     while i < len(lines):
         ln = lines[i]
         if ln.strip() and not ln[0].isspace() and not ln.lstrip().startswith("-"):
             break
+        if ln.strip():
+            saw_content = True
         m = re.match(r"^\s*-\s+id\s*:\s*(\S+)", ln)
         if m:
             cur = {"id": m.group(1).rstrip(","), "round": None, "text": ""}
@@ -61,6 +71,8 @@ def parse_statements(fm):
                 cur["text"] = "\n".join(buf).strip(); continue
             cur["text"] = _unquote(raw)
         i += 1
+    if not items and saw_content:
+        raise ValueError("user_statements 파싱 실패 — 리스트 형식이 아니거나 항목을 읽을 수 없다")
     return items
 
 
