@@ -358,11 +358,10 @@ Law 1급 skepticism 의례입니다(verbatim pass-through로 무력화 방지).
 ## seed 를 입력으로 받았을 때
 
 **이 절 전문은 `references/seed-input.md` 에 있다** — `$ARGUMENTS` 가 `type: interview-seed` frontmatter 를 가진 문서일 때만 읽는다(조건부 로드 — seed 없는 호출이 더 흔해 finishing.md 보다 조건성이 강하다).
+
 ```
 Read references/seed-input.md
 ```
-
-경로는 이 SKILL.md 기준 상대경로 — 레포·설치본 모두 같은 위치에 있어 그대로 resolve.
 
 ## 종료 — brief 작성 + optional handoff
 
@@ -387,8 +386,7 @@ floor 다섯이 전부 `closed` 여야 종료가 열리지만, **사용자는 �
 Read references/finishing.md
 ```
 
-경로는 이 SKILL.md 파일 기준 상대경로다 — 레포·설치본 두 레이아웃 모두 이 SKILL.md와
-같은 위치에 `references/finishing.md` 가 있으므로 그대로 resolve 된다.
+경로는 이 SKILL.md 파일 기준 상대경로다 — 레포·설치본 두 레이아웃 모두 이 SKILL.md와 같은 위치에 `references/`가 있어, 위 seed 포인터·아래 migration 포인터를 포함한 이 세 참조 파일 전부 그대로 resolve 된다(세 포인터 공통 규칙 — 각자 따로 반복하지 않는다).
 
 ## In-flight state migration
 
@@ -397,8 +395,6 @@ Read references/finishing.md
 ```
 Read references/state-migration.md
 ```
-
-경로는 이 SKILL.md 기준 상대경로 — 레포·설치본 모두 같은 위치에 있어 그대로 resolve.
 
 ## kill switch
 
