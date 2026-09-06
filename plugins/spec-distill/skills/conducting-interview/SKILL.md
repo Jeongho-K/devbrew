@@ -36,18 +36,16 @@ session_id: <uuid>
 phase: 1
 coverage:                            # G1 커버리지 원장 (floor 5 + derived[]). 종료 driver.
   floor:
-    root_problem:   {status: open, evidence: ""}
-    landscape:      {status: open, evidence: ""}
-    skepticism:     {status: open, evidence: ""}
-    blind_spot:     {status: open, evidence: ""}
-    open_questions: {status: open, evidence: ""}
-  derived: []                        # 주제-도출 차원 (coverage-mapper 제안 → orchestrator admit; {name, rationale, status, evidence})
-orchestration:                       # C11/C8 across-resumption 상태 (orchestrator 소유, agent read-only)
+    root_problem:   {status: open, evidence: "", reopened: 0, reopen_log: []}
+    landscape:      {status: open, evidence: "", reopened: 0, reopen_log: []}
+    skepticism:     {status: open, evidence: "", reopened: 0, reopen_log: []}
+    blind_spot:     {status: open, evidence: "", reopened: 0, reopen_log: []}
+    open_questions: {status: open, evidence: "", reopened: 0, reopen_log: []}
+  derived: []                        # 주제-도출 차원 ({name, rationale, status, evidence, reopened, reopen_log})
+orchestration:                       # orchestrator 소유, agent read-only
   focused_dimension: null            # 현재 probe 대상 차원 이름 또는 null
-  no_progress_streak: 0              # C11 연속 무진전 probe 수; focused 변경·진전 시 0 reset
-  blind_spot_dispatched: false       # C8 인터뷰당 1회 보장; 첫 dispatch 시 true
-  stall_episode: 0                   # streak 이 0 으로 reset 될 때마다 +1. 정체 «구간»의 id
-  coverage_mapper_dispatched_episode: null   # 마지막 dispatch 가 일어난 에피소드 id
+  blind_spot_dispatched: false       # C8 인터뷰당 1회 보장
+  coverage_mapper_dispatches: 0      # 상한 2 — R1 첫 질문 전 1 + 재개방 시 ≤1
 non_user_streak: <int>
 rereview_count: 0
 trivia_escape_armed: false
@@ -114,6 +112,7 @@ Q2: <본문>
   함의·상충·위험 줄을 채운다. **인자 없이 `/interview` 를 부른 경로**(S1 이 없고 첫 사용자 답이 S1 이
   되는 호환 경로)에서는 R1 이 «직전 답에서» 블록 없이 «지금 이해 + 다음 결정 + Q2» 만으로 성립하고
   규약은 R2 부터 적용된다; coverage-mapper 첫 dispatch 도 R1 답을 받은 뒤 R2 전에 일어난다.
+  (아래 «Q1 은 생략할 수 없다»는 이 R2 부터의 규약이다 — R1 은 그 밖의 예외라 상충이 아니다.)
 - 네 줄 중 하나라도 «없음»이 아니어야 «형식 층에서 성립»이다. **넷 다 «없음»이면** 그 라운드는
   «S<k> 에서 아무것도 못 끌어냈다»는 기록이 되고 **그 라운드의 Q1 은 되묻기여야 한다**(아래 절).
   블록을 아예 쓰지 않는 것만이 라운드 불성립이다.
@@ -141,7 +140,7 @@ AskUserQuestion({
 })
 ```
 
-- **Q1 은 생략할 수 없다.** Q1 이 항상 먼저고 Q2 는 새 결정 하나다.
+- **Q1 은 생략할 수 없다**(단 인자 없이 부른 경로의 R1 은 예외 — 위 «R1 은 S1 을 되비춘다» 참조). Q1 이 항상 먼저고 Q2 는 새 결정 하나다.
 - **Q1 의 선택지는 둘뿐이다**(«맞다» / «모르겠다»). 틀린 부분은 사용자가 «기타» 자유 입력에 적는다 —
   선택지를 고르면서 동시에 자유 입력을 남기는 동작은 도구에 없다. «기타» 텍스트는 `verbatim` S 로
   기록되고 다음 라운드 Q1 이 그것을 다시 되비춘다(같은 주제 최대 2회 — 3회째는 §3 Open Questions 로
@@ -149,6 +148,8 @@ AskUserQuestion({
 - **Q2 는 Q1 의 확인과 독립이어야 한다.** Q2 가 Q1 이 되비춘 해석에 기대면 그 라운드는 Q1 만 낸다.
   독립인데도 Q1 이 «모르겠다»·«기타(수정)» 이면 Q2 의 답은 state 에 `provisional_on: S<k>` 를 달고,
   그 표시가 해소(다음 라운드 되비추기 «맞다»)되기 전에는 어느 차원의 닫힘 근거로도 쓰지 않는다.
+  `provisional_on`은 «사용자 발화 기록»의 `user_statements` 스키마 필드다 — 이 금지는 기계 검사가
+  아니라 orchestrator 판단이다(`check_brief.py`는 아래 «닫힘 · 재개방» 절의 S 앵커 실재만 본다).
 - 각 선택지의 `description` 은 «고르면 무엇이 달라지는가»를 담고, question 본문은 무엇을 정하는지·
   용어·기술 사실을 푼다. 기계 검사는 없다 — 사람 e2e 가 본다.
 - 두 답은 `user_statements` 에 `S<m>`·`S<m+1>` 로 append 된다(`source: chosen`, «기타» 입력은
@@ -199,6 +200,7 @@ Q1 (되묻기): «<S<k>>»라고 답하셨는데, 왜 그렇게 봤는지가 <�
   source: verbatim         # verbatim(발화 그대로) | chosen(고른 선택지 라벨 + 요지)
   round: <int>
   text: "<사용자가 실제로 한 말>"    # P21 secret placeholder 치환 적용
+  provisional_on: S<k>       # optional — Q1 이 «모르겠다»/«기타»일 때만. 해소(Q1 «맞다») 전엔 닫힘 근거 불가. 기계 검사 없음 — orchestrator 판단.
 ```
 
 `status` 필드는 없습니다. `section:` 해답공간 앵커도 없습니다 — 문제공간의 답변을 답이
@@ -220,36 +222,20 @@ Q1 (되묻기): «<S<k>>»라고 답하셨는데, 왜 그렇게 봤는지가 <�
 
 → 다음 probe의 질문은 **반드시 (b) judgment path** (사용자에게 직접 질문)로 라우팅. 강제.
 
-## coverage-mapper dispatch (C11)
+## coverage-mapper dispatch (상한 2)
 
-`coverage-mapper`는 고정 floor 위 **주제-도출 차원**을 *제안*하는 advisory 에이전트다(원장 admit
-판정은 orchestrator, G2). 다음 조건 중 하나에서 dispatch:
+`coverage-mapper` 는 고정 floor 위 **주제-도출 차원**을 *제안*하는 advisory 에이전트다(admit 은
+orchestrator, G2). dispatch 는 둘뿐이다:
 
-1. 한 focused 차원이 **연속 3 probe** 동안 status·evidence 무변경(진전 없음), OR
-2. floor 차원의 **첫 open→in-progress 전이**.
+1. **R1 첫 질문 전 필수 1회.** 입력: seed 전문(S1)과 그 «다시 검증할 것» 문단, 원장 초기 상태.
+   출력의 derived 차원을 admit 한 뒤에야 R1 질문이 나간다. 인자 없이 부른 경로에서는 R1 답을
+   받은 뒤 R2 전에.
+2. **재개방 시 최대 1회.** 재개방이 새 파생 차원을 함의할 수 있어서다. 두 번째 재개방부터는 없다.
 
-진전 = status 전이(open→in-progress→closed) 또는 evidence append. `orchestration.no_progress_streak`는
-focused 차원이 바뀌거나 진전 발생 시 0으로 reset.
-
-**redispatch 바운드(Unbounded-autonomy 가드)**: 재dispatch 조건은
-`no_progress_streak >= 3 AND coverage_mapper_dispatched_episode != stall_episode` 다. dispatch
-시 `orchestration.coverage_mapper_dispatched_episode = stall_episode` 를 기록하고,
-`no_progress_streak` 가 0 으로 reset 될 때마다 `stall_episode` 를 +1 한다. 한 정체 구간당
-정확히 1회다.
-
-판정은 **디스크 두 값의 비교**이므로 어느 턴에서든 무상태로 재계산된다 — 그 성질을 잃으면
-판정이 모델의 턴-간 기억에 의존하는 *프로즈 self-tracking*이 되어, 이 문단이 세운 기계적
-bound 자체가 무너진다. **streak 값 자체를 저장하지 않는 이유**: streak 3 에서 dispatch(저장
-3) → streak 4 → `3 != 4` → 재dispatch → streak 5 → 재dispatch … 로 레벨-트리거 무한
-재dispatch 가 그대로 살아난다.
-
-**dispatch 조건 2 는 이 바운드의 대상이 아니라 «바운드가 불필요»하다.** floor 차원의 첫
-`open→in-progress` 전이는 대상이 **floor 다섯 차원으로 고정**이므로(derived 차원은 그 조건의
-대상이 아니다) 상한이 5 다. 유한성이 구조에서 나오므로 추가 바운드를 두지 않는다.
-
-**이 바운드가 묶는 것은 «밀도»이지 «총량»이 아니다.** 정체 구간 수에는 상한이 없고,
-coverage-mapper 가 제안한 derived 차원이 원장에 admit 되면 새 focused 대상이 생겨 새 정체
-구간을 낳는 되먹임도 있다. 총량 바운드는 이 판본에 없다(설계 §11 이월).
+상한 2, 카운터 `orchestration.coverage_mapper_dispatches`. 종료 시 audit §2 에 `coverage-mapper <k>`
+를 쓰고 게이트가 k≥1 을 검사한다. dispatch 가 불가능한 환경(Agent 도구 부재)은
+`coverage-mapper 0 (unavailable: <이유>)` 로 적는다 — 게이트는 advisory 로 통과시키고 Step B 가
+사람에게 보인다(침묵과 0 은 다르다).
 
 **Web kill switch (dispatch 직전 확인 — 이 블록에 종속)**: `coverage-mapper`는
 `WebSearch`/`WebFetch`를 보유한다. kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1`이면
@@ -271,7 +257,7 @@ fi
 
 ```
 Agent({ description: "Map coverage dimensions", subagent_type: "spec-distill:coverage-mapper",
-        prompt: "coverage 원장 상태(열린/닫힌 차원 요약 · focused_dimension · no_progress_streak): <ledger_state>${LEDGER_STATE}</ledger_state>. web_disabled(true면 WebSearch/WebFetch 사용 금지, codebase 근거만): <web_disabled>${WEB_DISABLED}</web_disabled>. 이 주제가 요구하는 derived 차원과 neglect를 제안." })
+        prompt: "coverage 원장 상태(열린/닫힌 차원 요약 · focused_dimension · 재개방이면 reopen_log 마지막 항목): <ledger_state>${LEDGER_STATE}</ledger_state>. web_disabled(true면 WebSearch/WebFetch 사용 금지, codebase 근거만): <web_disabled>${WEB_DISABLED}</web_disabled>. 이 주제가 요구하는 derived 차원과 neglect를 제안." })
 // **처분** — consumer=orchestrator · fail-open · disclosure=advisory
 ```
 
@@ -279,11 +265,29 @@ Agent({ description: "Map coverage dimensions", subagent_type: "spec-distill:cov
 `neglect_flag: true`면 다음 probe에서 neglected 차원 하나를 추천 답안으로 제시. 복수 dispatch 시
 name 기준 union·dedup.
 
+## 닫힘 · 재개방
+
+**차원은 «그 차원의 되비추기에 사용자가 답한 S» 뒤에만 닫는다.** sweep·steelman·prober 의 **횟수**는
+닫힘 근거가 아니다 — 그 출력은 «상충/위험» 줄로 돌아와 사용자 처분 S 를 받은 뒤 닫힌다. 원장 행의
+evidence 는 그 S 를 인용하고, `check_brief.py`가 앵커 실재를 검사한다(«어느 S 가 닫힘을
+정당화하는가»는 보지 않는다 — 그 한계는 spec OQ6).
+다섯 floor 의 닫힘 발화: root_problem = 재구성 동의 S · landscape = 외부 근거 되비추기 처분 S ·
+skepticism = steelman 판정 S · blind_spot = 숨은 가정·실패 양식 처분 S · open_questions = OQ 목록
+확인 S. `provisional_on` 이 해소되지 않은 S 는 닫힘 근거가 아니다.
+
+**재개방 — `closed → open` 을 허용한다.** 조건: 새 답·외부 근거·코드 사실이 그 차원의 닫힘 근거 S 와
+충돌할 때(판단은 orchestrator). 기록: 그 차원의 `reopened` +1, `reopen_log` 에
+`{round, reason, conflicts_with: S<N>}` append, 그 라운드의 «상충» 줄에 «→ <차원> 재개방: <사유>».
+상한 없음 — 라운드는 사용자 답으로만 돌아 사용자가 시계다. 재개방된 차원이 다시 닫힐 때는 **새 S** 를
+인용한다(게이트는 최신 닫힘의 evidence 를 본다).
+
 ## blind-spot-prober dispatch (C8 — blind_spot floor 차원)
 
-`blind_spot` floor 차원의 **첫 open→in-progress 전이**(그 차원에 첫 probe 착수) 시 `blind-spot-prober`를
-**인터뷰당 1회** dispatch한다(fan-out 1, C8). `orchestration.blind_spot_dispatched`가 false일 때만
-dispatch하고, dispatch 후 true로 세팅(재dispatch 금지).
+`blind_spot` floor 차원의 **첫 open→in-progress 전이** 시 `blind-spot-prober`를 **인터뷰당 1회**
+dispatch한다(fan-out 1, C8). `orchestration.blind_spot_dispatched`가 false일 때만 — dispatch 후
+true로 세팅(재dispatch 금지). kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 또는 web 도구
+부재면 dispatch 대신 loud advisory 후 **inline premortem**으로 전환한다(C5, §5 위험 항목을
+codebase 근거·사용자 판단으로 기록).
 
 ```
 Agent({ description: "Adversarial premortem", subagent_type: "spec-distill:blind-spot-prober",
@@ -293,13 +297,8 @@ Agent({ description: "Adversarial premortem", subagent_type: "spec-distill:blind
 
 출력(`hidden_assumptions[] + failure_modes[]`)을 orchestrator가 payload §5 `## 5. 기각 · Blind Spots`의
 **`위험` 항목**(`- 위험 — <숨은 가정 | 실패 양식>: <내용> — <근거>`)으로 기록하고, `blind_spot` floor
-차원을 in-progress→closed로 전이(사용자에게 표면화된 blind-spot 확인 후).
-
-**Web 부재 시 graceful degradation (C5)**: kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 또는 web
-도구 부재로 blind-spot-prober를 돌릴 수 없으면 — R2/R3 web-absent 강등과 대칭으로 — opaque gate-fail로
-떨어뜨리지 말고 **loud advisory** 후 **inline premortem**으로 전환:
-`[spec-distill] web 비활성 — blind-spot-prober 자동 생략, inline premortem으로 전환`. 이 경우 §5의
-`위험` 항목은 codebase 근거 또는 사용자 판단으로 기록(URL 부재 사유 명시).
+차원을 in-progress→closed로 전이한다. web 비활성 시 advisory:
+`[spec-distill] web 비활성 — blind-spot-prober 자동 생략, inline premortem으로 전환`.
 
 ## 5 통과 의례 (Law 1 구조 게이트, R1–R5)
 
@@ -324,20 +323,11 @@ steelman · blind-spot premortem · coverage-mapper 넷이 전부 그 장치다.
 같은 주제도 이 기준으로 갈린다.
 
 토픽이 잡히면(round 1–2) landscape sweep을 수행합니다. 각 web 검색 *직전에* kill switch를
-확인합니다(세션 시작 시 캐시하지 않고 매 호출 직전 재평가):
-
-```bash
-if [[ "${DEVBREW_SPEC_DISTILL_DISABLE_WEB:-0}" == "1" ]]; then
-  echo "[spec-distill] web 비활성 — landscape 생략, codebase 근거만 사용"
-else
-  # <web 검색 수행>
-  :
-fi
-```
+재평가합니다(세션 시작 시 캐시 금지).
 
 - 모든 외부 주장은 **출처 URL 필수** — payload §4 External Landscape에 `[취함|피함|중립]` + 이유와 함께.
-- **kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1`** 또는 web 도구 부재 → landscape를 **loud하게
-  생략**하고 계속(crash 금지, graceful degradation): `[spec-distill] web 비활성 — landscape 생략, codebase 근거만 사용`.
+- kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 또는 web 도구 부재 → **loud** 생략(crash 금지):
+  `[spec-distill] web 비활성 — landscape 생략, codebase 근거만 사용`.
 
 ### R3 — Steelman 의심 게이트 (P17)
 
@@ -350,18 +340,16 @@ fi
    // **처분** — consumer=orchestrator · fail-open · disclosure=loud advisory
    ```
 2. builder 출력(`alternative_statement` + `evidence[].url`)을 **verbatim**으로 다음 라운드의
-   «상충» 줄에 반대 케이스로 제시 — conducting-interview는 이를 **약화·편집하지 않습니다**.
+   «상충» 줄에 반대 케이스로 제시 — conducting-interview는 이를 **약화·편집하지 않습니다**. 그 줄은
+   `depth_pairs.py`가 개행에서 끊어 읽으므로, 대안이 길면 **줄바꿈 없이 한 줄로** 적습니다(길어도 압축 금지).
 3. **게이트**(P17): 사용자가 (방어 → 원안 유지 / 전환 → 대안 채택, 원안은 R4로 / 보류 → §3 OQ) 중 하나를 선택한다.
 4. 판정을 payload §5의 **`verdict:` 항목**으로 기록 — 각 항목은 (대안 statement + 웹근거 URL + `verdict ∈ {defended | switched | deferred}` + audit §3의 `ST<N>` 참조). 게이트 매핑: 방어→`defended`, 전환→`switched`, 보류→`deferred`(§3 OQ에도 박제). builder 출력 verbatim은 audit §3에 `#### ST<N>` 헤딩으로 남고, payload §5와 audit §3은 이 `ST<N>` id로 맞물린다(bijection A) — frontmatter에는 별도 필드를 두지 않는다.
 5. 한 방향당 steelman 1회(새 근거 없으면 재steelman 금지 — AP16 harassment 방지).
 
-**Web 부재 시 graceful degradation (R2 대칭)**: `steelman-builder`는 WebSearch/WebFetch를 요구합니다.
-kill switch `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 또는 web 도구 부재로 steelman을 돌릴 수 없으면 —
-R2 landscape와 대칭으로 — opaque한 "malformed skepticism (no-url)" 게이트 실패로 떨어뜨리지 말고
-**loud advisory**를 내고 **수동 의심 게이트**로 전환합니다:
-`[spec-distill] web 비활성 — steelman 자동 생략, 사용자에게 의심 방향 수동 확인 요청`. 이 경우 §5의
-`verdict:` 항목은 사용자 판단(방어/전환/보류)을 근거로 기록하되 URL 부재 사유를 명시합니다(`check_brief.py`의
-skepticism 형식 검사는 web-disabled 시 수동 판단으로 위임).
+**Web 부재 시(R2 와 동일 원칙)**: kill switch 또는 web 도구 부재로 steelman을 못 돌리면 opaque
+게이트-fail 대신 loud advisory 후 **수동 의심 게이트**로 전환:
+`[spec-distill] web 비활성 — steelman 자동 생략, 사용자에게 의심 방향 수동 확인 요청`. `verdict:`
+항목은 사용자 판단(방어/전환/보류) + URL 부재 사유로 기록합니다.
 
 **Law 2 경계**: steelman 게이트는 Law 2 분리 메커니즘이 *아닙니다* — Law 2 분리 reviewer는
 오직 design doc(brainstorming `-design.md`)에만 적용됩니다. steelman은 문제공간 품질을 끌어올리는
@@ -377,6 +365,8 @@ frontmatter 줄이 seed 를 알아보는 유일한 표지다 — 본문만 오�
 
 - **§6 `S1` 은 `$ARGUMENTS` 원문 그대로다**(frontmatter 포함) — `finishing.md` 의 S1
   규약과 같은 값이다. 그것이 이 세션의 최초 사용자 발화다.
+- **seed 의 마지막 문단 «다시 검증할 것 —»** 이 R1 의 «직전 답에서 — S1» 블록(함의·상충·위험)과
+  coverage-mapper 첫 dispatch 의 입력이다. 문단이 없으면 seed 본문 전체를 그 입력으로 쓰되 무표시 문장은 전부 미확인이다.
 - **seed 에는 태그가 없다.** seed 게이트가 막는 `[open:`/`[추론:`/`[외부:` 구분을 seed
   에서 읽으려 하지 말 것 — Phase 0 이 전문을 사용자 확정으로 만들었으므로 전부 사용자
   **출처**(provenance)다. 이것은 출처일 뿐 **상태**(status)가 아니다 — `status` 는
@@ -421,32 +411,23 @@ state.local.md 로드 시 **구세션 스키마**(`interview_round` 존재 / `co
 *non-mutating read*로 fresh 초기화(승격):
 
 - `coverage.floor`의 5개 차원(root_problem/landscape/skepticism/blind_spot/open_questions) 전부
-  `{status: open, evidence: ""}`로 seed.
+  `{status: open, evidence: "", reopened: 0, reopen_log: []}`로 seed.
 - `coverage.derived`: `[]`.
-- `orchestration`: `{focused_dimension: null, no_progress_streak: 0, blind_spot_dispatched: false, stall_episode: 0, coverage_mapper_dispatched_episode: null}`.
+- `orchestration`: `{focused_dimension: null, blind_spot_dispatched: false, coverage_mapper_dispatches: 0}`.
 
-기존 필드(`non_user_streak`·`web_*`·`issue_history` 등)는 유지. 구세션의 라운드별 잠금
-레코드 리스트(v0.22.0까지의 잠금 필드)는 승계하지 않고 `user_statements: []`로 fresh
-seed합니다 — 잠금 레코드를 발화 레코드로 승격하면 판정이 없던 척하는 잠금이 그대로
-넘어옵니다.
+기존 필드(`non_user_streak`·`web_*`·`issue_history` 등)는 유지. 구세션의 라운드별 잠금 레코드
+리스트(v0.22.0까지의 잠금 필드)는 승계하지 않고 `user_statements: []`로 fresh seed합니다 — 잠금
+레코드를 발화 레코드로 승격하면 판정이 없던 척하는 잠금이 그대로 넘어옵니다.
 
-**영속화 시점**: 승격된 스키마는 재개된 세션의 첫 액션으로, 첫 probe보다 먼저 Bash
-전체-frontmatter write로 즉시 디스크에 반영한다(PN1 state write contract). 이 write는
-"다음 명시적 state write"를 기다리지 않는다 — 연기가 아니라 resume 직후 1회다.
-
-근거: coverage-mapper 재dispatch 바운드(`## coverage-mapper dispatch`)는 `orchestration`의
-두 에피소드 필드(`stall_episode`·`coverage_mapper_dispatched_episode`)를 디스크에서 직접
-비교한다 — 이 write 없이는 그 필드들이 디스크에 없는 채로 첫 probe가 발생해 판정이 무상태
-재계산 전제를 잃는다.
-
-이 write는 신규 필드(coverage/orchestration)만 추가하는 forward promotion이며
-backward-rewrite가 아니다 — `interview_round`는 이 write에서 자연 소멸하되 다른 기존
-필드는 고치지 않는다. backward-rewrite 금지·P14 실패-상태 보존과 무충돌: 이것은 성공적
-resume의 promotion write이지 실패-상태 mutation이 아니다.
+**영속화 시점**: 승격된 스키마는 재개된 세션의 첫 액션으로, 첫 probe보다 먼저 Bash 전체-frontmatter
+write로 즉시 디스크에 반영합니다(PN1) — coverage-mapper 상한 카운터(`coverage_mapper_dispatches`)와
+재개방 원장(`reopen_log`)이 그 디스크 값을 직접 읽기 때문입니다. 신규 필드(coverage/orchestration)만
+추가하는 forward promotion이지 backward-rewrite가 아닙니다(`interview_round`는 자연 소멸, 다른
+기존 필드는 불변) — "다음 명시적 write"를 기다리는 연기가 아니라 resume 직후 1회입니다.
 
 사용자에게 advisory 한 줄 출력:
 ```
-[spec-distill v0.38.0] state schema migration: coverage/orchestration added (probe counters retired).
+[spec-distill v0.55.0] state schema migration: reopen ledger + coverage_mapper_dispatches added (stall trigger retired).
 ```
 
 자동 promote 실패 시(파일 corruption 등) → "구세션 in-flight state 호환 실패 — 세션 재시작 권장"
