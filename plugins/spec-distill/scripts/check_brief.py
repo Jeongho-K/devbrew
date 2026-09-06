@@ -934,8 +934,14 @@ def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
 # 진다 — 실측: 출하 템플릿의 T-TPL green 을 그 설명 문장 하나가 전부 지고 있었고,
 # 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.55.0 수정 라운드 1 F4).
 # 산문은 그대로 둔다: 판정에 참여하지 않은 채 퇴화 모양을 계속 가르친다.
+#
+# 불릿 문자는 `[-*]` — 이 파일의 형제 둘(`ENTRY_BULLET_RE`·`BODY_ITEM_RE`)과 **같은 어휘**여야
+# 한다. `-` 단독으로 좁히면 이 파일이 이미 한 번 겪은 결함이 되돌아온다: 같은 줄을 `-` 로
+# 쓰면 red 인데 `*` 로 쓰면 green(ENTRY_BULLET_RE 주석의 실증). 방향만 반대다 — 여기서는
+# `*` 로 쓴 정당한 데이터 줄이 «없는 줄»로 읽혀 `coverage-mapper <k> line missing` 오탐-red 가
+# 난다. 좁히기가 우회를 막는 대신 정당한 입력을 거부하는 자리다(수정 라운드 2).
 MAPPER_RE = re.compile(
-    r"^\s*-\s.*?coverage-mapper\s+(\d+)(?:\s*\((unavailable:[^)]*)\))?",
+    r"^\s*[-*]\s.*?coverage-mapper\s+(\d+)(?:\s*\((unavailable:[^)]*)\))?",
     re.MULTILINE)
 
 

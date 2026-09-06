@@ -1418,6 +1418,27 @@ out="$(ac3_gate m_unavail)"; rc=$?
   && ok "AC4: coverage-mapper 0 (unavailable: …) → advisory 통과, advisories 채널에 실림" \
   || no "AC4: unavailable sentinel 이 red 이거나 advisory 가 비었다"
 
+# --- v0.55.0 수정 라운드 2: «*» 불릿 데이터 줄도 게이트가 읽는다 (좁히기 회귀 고정) ---
+# `MAPPER_RE` 를 불릿 줄에 앵커하면서(라운드 1 F4) 불릿 문자를 `-` 단독으로 좁혔더니, 이 파일이
+# 이미 한 번 겪은 결함이 **방향만 바꿔** 되돌아왔다 — `ENTRY_BULLET_RE` 주석의 실증은 「같은 줄을
+# `-` 로 쓰면 red, `*` 로 쓰면 green」(우회)이고, 여기서는 `*` 로 쓴 정당한 데이터 줄이 «없는
+# 줄»로 읽혀 `coverage-mapper <k> line missing` **오탐-red** 가 난다. 형제 둘
+# (`ENTRY_BULLET_RE`·`BODY_ITEM_RE`)과 같은 `[-*]` 어휘를 쓰는지 여기서 고정한다.
+#
+# 통과가 정답인 단언이라 모양만으로는 이빨을 알 수 없다 — **양성 대조**를 함께 둔다:
+# 변형이 실제로 `*` 불릿을 만들었고 `-` 쪽 mapper 줄이 남아 있지 않은지 «먼저» 확인한다.
+# (변형이 조용히 안 먹으면 아래 통과 단언은 원래 fixture 를 다시 재는 것이라 공허하다.)
+ac3_pair m_star
+sed -i.bak 's|^- \(agent dispatch: coverage-mapper .*\)$|* \1|' "$TMPD/m_star.audit.md"; rm -f "$TMPD/m_star.audit.md.bak"
+{ grep -qE '^\* .*coverage-mapper [0-9]' "$TMPD/m_star.audit.md" \
+  && ! grep -qE '^- .*coverage-mapper [0-9]' "$TMPD/m_star.audit.md"; } \
+  && ok "AC4(양성대조): 변형이 mapper 줄을 «*» 불릿 하나로 바꿨다 (아래 단언이 실재한다)" \
+  || no "AC4(양성대조): «*» 불릿 변형이 적용되지 않았다 — 아래 통과 단언이 공허하다"
+out="$(ac3_gate m_star)"; rc=$?
+{ [[ $rc -eq 0 ]] && ! grep -q 'coverage-mapper' <<<"$out"; } \
+  && ok "AC4: «*» 불릿으로 쓴 §2 데이터 줄도 통과 (형제 regex 와 같은 [-*] 어휘)" \
+  || { no "AC4: «*» 불릿 데이터 줄이 오탐-red — MAPPER_RE 가 [-*] 아닌 - 로 좁혀졌다"; printf '    %s\n' "$out"; }
+
 # --- v0.55.0 AC5: 재개방 접미 «(재개방 n회 — 사유)» 가 원장 regex 를 깨지 않는다 ---
 ac3_pair r_reopen
 sed -i.bak 's|^- floor:landscape — closed — \(.*\)$|- floor:landscape — closed — \1 (재개방 1회 — S1 과 충돌)|' "$TMPD/r_reopen.audit.md"; rm -f "$TMPD/r_reopen.audit.md.bak"
