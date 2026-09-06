@@ -60,14 +60,43 @@ seed 는 태그를 쓰지 않습니다(`check_seed.py` 가 본문 태그를 금�
 (`interview-basename`)은 세션 디렉토리(main repo 의 state root)에 있어 cwd 이동과 무관하다.
 
 `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` 이거나 `EnterWorktree` 도구가 없으면 **묻지 않고** 현재
-디렉토리에서 진행한다. 그 밖에는 단독 `AskUserQuestion` 하나:
+디렉토리에서 진행한다. 그 밖에는 **질문을 띄우기 전에** 로컬 전용 커밋 여부부터 확인한다 —
+기본 base 가 origin 의 기본 브랜치라 push 안 한 로컬 커밋은 새 워크트리에 안 들어오는데, 그
+사실을 질문 **뒤**에 적으면 사용자는 이미 고른 뒤에야 안다(사용자가 실제로 읽는 것은
+질문·옵션 텍스트뿐이다):
+
+```bash
+upstream="$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null)"
+if [ -n "$upstream" ]; then
+  local_only_n="$(git rev-list --count "$upstream"..HEAD 2>/dev/null)"
+else
+  local_only_n=""
+fi
+if [ -z "$upstream" ] || ! [[ "$local_only_n" =~ ^[0-9]+$ ]]; then
+  LOCAL_ONLY_NOTE="확인 못함 — upstream 없음 또는 git rev-list 실패(사유 불명)"
+elif [ "$local_only_n" -gt 0 ]; then
+  LOCAL_ONLY_NOTE="로컬 전용 커밋 ${local_only_n}개 — 워크트리 기본 base(origin 기준)엔 안 들어온다"
+else
+  LOCAL_ONLY_NOTE="로컬 전용 커밋 0개(upstream=$upstream 기준)"
+fi
+echo "$LOCAL_ONLY_NOTE"
+```
+
+`upstream` 이 없는 브랜치(원격 미설정·업스트림 미추적)에서도 이 블록은 죽지 않는다 —
+`rev-list` 를 아예 돌리지 않고 **«확인 못함»**으로 떨어진다. **빈 값과 0 은 다른 사실이다**
+— 확인에 실패하거나 upstream 이 없어서 못 잰 것을 0건으로 읽으면 이 풋건이 그대로
+재현된다(명령 실패 시 `local_only_n` 은 빈 문자열이라 숫자 정규식에 걸리지 않고 «확인
+못함» 으로만 떨어진다).
+
+`${LOCAL_ONLY_NOTE}` 를 질문 본문과 «만들고 시작» 옵션 설명에 그대로 실어 단독
+`AskUserQuestion` 하나를 띄운다:
 
 ```javascript
 AskUserQuestion({ questions: [{
   header: "워크트리",
-  question: "`feature/<kebab-topic>` 워크트리를 만들고 거기서 시작할까요? 이 브랜치 하나에서 인터뷰·설계·계획·구현까지 갑니다. 거절하면 현재 디렉토리에서 진행합니다.",
+  question: "`feature/<kebab-topic>` 워크트리를 만들고 거기서 시작할까요? 이 브랜치 하나에서 인터뷰·설계·계획·구현까지 갑니다. (${LOCAL_ONLY_NOTE}) 거절하면 현재 디렉토리에서 진행합니다.",
   options: [
-    {label: "만들고 시작 (권장)", description: "고르면 이 세션의 cwd 가 그 워크트리로 옮겨지고 audit·seed 가 그 안에 쓰인다"},
+    {label: "만들고 시작 (권장)", description: "고르면 이 세션의 cwd 가 그 워크트리로 옮겨지고 audit·seed 가 그 안에 쓰인다. ${LOCAL_ONLY_NOTE}"},
     {label: "현재 디렉토리에서", description: "고르면 워크트리 없이 지금 위치에 쓴다 — 자료는 현재 브랜치에 남는다"}],
   multiSelect: false }] })
 ```
@@ -84,14 +113,16 @@ AskUserQuestion({ questions: [{
 거절·도구 부재·스위치 → 현재 디렉토리에서 진행하고, audit §5 에 «워크트리 없음 — <거절|EnterWorktree 부재|
 DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE>» 한 줄을 남기며, 어느 경우도 seed 작성을 막지 않는다.
 
-**기본 base 는 origin 의 기본 브랜치다 — 로컬에만 있는 커밋은 들어오지 않는다** (v6 실측: rename
-전 `EnterWorktree` 직후의 base 가 origin 기준이었고, 로컬 전용 커밋은 빠졌다). 사용자에게 아직
-push 하지 않은 로컬 작업이 있으면 그 워크트리는 그 작업을 보지 못한다 — 필요하면 사용자 설정
-`worktree.baseRef=head` 로 로컬 HEAD 기준으로 바꾼다. 이 절은 그 설정을 자동으로 바꾸지 않는다:
-언제 로컬-전용 커밋이 있는지는 이 skill 이 판단할 수 없고, 잘못 바꾸면 반대 방향의 놀람(불필요한
-커밋까지 딸려 온다)이 생긴다.
+**자동으로 `worktree.baseRef=head` 로 바꾸지 않는 이유** — 위 확인이 이미 질문 시점에
+로컬 전용 커밋 여부를 사용자에게 보였으므로(v6 실측: 기본 base 는 origin 의 기본
+브랜치라 로컬에만 있는 커밋은 들어오지 않는다), 그 커밋이 이번 워크트리에 정말
+필요한지는 사용자 판단으로 남긴다 — 무조건 `head` 로 바꾸면 반대 방향의 놀람(불필요한
+커밋까지 딸려 온다)이 생긴다. 필요하면 사용자 설정 `worktree.baseRef=head` 로 로컬
+HEAD 기준으로 바꾼다.
 
-이 절은 native 도구의 동작을 단정하지 않는다 — 실측 결과는 CHANGELOG `[0.55.0]` 에 있다.
+이 절은 **실측한 것**(브랜치명 접두 · rename 무거부 · base-ref 기본값)만 단정하고,
+**실측 밖**(슬래시 포함 이름의 결과 · 사람의 정상 종료 후 워크트리 정리)은 단정하지
+않는다 — 실측 결과는 CHANGELOG `[0.55.0]` 에 있다.
 
 ## 확산
 
