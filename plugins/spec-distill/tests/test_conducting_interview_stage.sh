@@ -12,6 +12,11 @@ CMD="$REPO_ROOT/plugins/spec-distill/commands/interview.md"
 # 자동으로 대상이 된다. 섹션 윈도우(B-0…B-3·종료)는 그 섹션이 실제로 사는 $FIN 에서 뜬다.
 FIN_DIR="$REPO_ROOT/plugins/spec-distill/skills/conducting-interview/references"
 FIN="$FIN_DIR/finishing.md"
+# Task 11b(무게 감축 재시도): 같은 이유로 `## seed 를 입력으로 받았을 때`와
+# `## In-flight state migration`도 references/로 분리됐다(둘 다 finishing.md보다 조건성이
+# 강하거나 같은 conditional-load 후보). 섹션 윈도우는 이제 SKILL이 아니라 이 두 파일에서 뜬다.
+SEED_REF="$FIN_DIR/seed-input.md"
+MIG_REF="$FIN_DIR/state-migration.md"
 CI_FILES=("$SKILL")
 while IFS= read -r _f; do [ -n "$_f" ] && CI_FILES+=("$_f"); done < <(ls "$FIN_DIR"/*.md 2>/dev/null)
 # Task 33: 두 skill 이 **공유**하는 절차(proceed 게이트 공통 계약)는 어느 skill 밑도 아닌
@@ -193,7 +198,8 @@ has 'user_statements' "AC1: user_statements가 state 스키마에 존재"
 # AC5: 마이그레이션 — 구세션 감지 + fresh seed + advisory
 has 'coverage.*부재|coverage 부재|interview_round.*존재' "AC5: legacy detection (interview_round present / coverage absent)"
 has 'state schema migration.*coverage' "AC5: migration advisory wording"
-mig_block="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+# Task 11b: 절 전문이 SKILL에서 $MIG_REF 로 옮겨졌다(조건부 로드) — 윈도우도 거기서 뜬다.
+mig_block="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$MIG_REF")"
 # v0.55.0: migration 절도 orchestration 열거를 담고 있다 — 필드 교체를 소유한 태스크가 그
 # 필드의 모든 자리를 책임진다. 음의 grep 대신 **정확히 일치**하는 전체 열거 리터럴을 요구한다 —
 # `coverage_mapper_dispatches` 하나로 정확히 끝나는 열거만 통과하므로 정체 트리거 필드가
@@ -442,7 +448,9 @@ grep -qi 'breadth-keeper\|breadth_keeper' "${CI_ALL[@]}" \
   || ok "V7a: breadth-keeper term removed from SKILL"
 
 # interview_round confinement — migration section only (SHARP, Task 9 V9)
-mig_ir_count="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL" | grep -c interview_round)"
+# Task 11b: 절 전문이 $MIG_REF 로 옮겨갔으므로 그 파일 전체가 이제 "migration section"이다
+# (파일이 그 헤딩 하나로 시작해 끝까지가 그 절이므로 awk 윈도우는 그대로 유효하다).
+mig_ir_count="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$MIG_REF" | grep -c interview_round)"
 total_ir_count="$(ci_cat_all | grep -c interview_round)"
 [[ "$mig_ir_count" -eq "$total_ir_count" ]] \
   && ok "V9: interview_round confined to migration section (mig=$mig_ir_count total=$total_ir_count)" \
@@ -692,7 +700,8 @@ grep -qE 'request-framing[^.]{0,60}웹[^.]{0,20}보지 않' <<<"$r2_flat" \
   || no "R2(v0.41.0): 탐색 경계 명시 (request-framing…웹…보지 않, 한 문장 결속, rewrap-tolerant)"
 
 # --- v0.41.0: seed 입력 규약 (scoped — 헤더-satisfiable 회피 + rewrap 관용) ---
-seed_block="$(awk '/^## seed 를 입력으로 받았을 때/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+# Task 11b: 절 전문이 $SEED_REF 로 옮겨갔다 — 윈도우도 거기서 뜬다.
+seed_block="$(awk '/^## seed 를 입력으로 받았을 때/{f=1;print;next} /^## /{f=0} f' "$SEED_REF")"
 seed_flat="$(tr '\n' ' ' <<<"$seed_block" | tr -s ' ')"
 # 리터럴은 finishing.md 의 S1 규약("<$ARGUMENTS 원문 그대로>", frontmatter 포함)과 같은
 # 값을 요구한다 — "seed 본문 전체"라는 표현은 frontmatter 제외로 읽힐 수 있어 규약과 갈린다.

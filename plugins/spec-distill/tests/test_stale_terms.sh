@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # V7 — stale-term 회귀 락. rename 완결을 **production artifacts**에서 확인한다.
 # (a) breadth-keeper → coverage-mapper 재명명이 production에 완결(잔존 0).
-# (b) interview_round는 활성 코드서 제거, SKILL은 migration 섹션에만.
+# (b) interview_round는 활성 코드서 제거, 잔존은 conducting-interview의 migration 참조 파일
+#     (skills/conducting-interview/references/state-migration.md, Task 11b 로 SKILL.md 밖으로
+#     분리)에만.
 # (c) v0.23.0 권위 문법 6개 리터럴이 production에서 제거됐다(AC13). README.md도 스코프 안 —
 #     제외했던 근거("Principles Instantiated가 무엇이 왜 사라졌는지 설명하려면 옛 용어를
 #     인용해야 한다")는 검증 가능한 예측이었고 실패했다: v0.23.0 README는 이 6개 리터럴을
@@ -77,20 +79,24 @@ else
   ok "V12: v0.55.0 제거 어휘 production 잔존 0"
 fi
 
-# V7b-1: SKILL.md interview_round는 migration 섹션에만
-mig="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
-all_ir=$(grep -c interview_round "$SKILL" 2>/dev/null || true)
-mig_ir=$(printf '%s\n' "$mig" | grep -c interview_round 2>/dev/null || true)
-{ [[ "$all_ir" -ge 1 ]] && [[ "$all_ir" -eq "$mig_ir" ]]; } \
-  && ok "V7b: interview_round in SKILL confined to migration ($all_ir)" \
-  || no "V7b: interview_round leaks outside SKILL migration (total=$all_ir mig=$mig_ir)"
+# V7b-1: interview_round는 migration 섹션에만 (Task 11b: 그 섹션 전문이 SKILL.md 밖
+# references/state-migration.md 로 옮겨갔다 — SKILL.md 자신은 이제 포인터만 갖고 조건절 산문에도
+# 리터럴 `interview_round`를 쓰지 않으므로, 확인 대상이 「SKILL 안의 한 섹션」에서 「그 전용
+# 파일 전체」로 바뀐다. SKILL.md 쪽 잔존은 0 이어야 한다 — 포인터가 조건을 산문으로만 서술한다).
+MIG_REF="$SD/skills/conducting-interview/references/state-migration.md"
+skill_ir=$(grep -c interview_round "$SKILL" 2>/dev/null || true)
+mig_ir=$(grep -c interview_round "$MIG_REF" 2>/dev/null || true)
+{ [[ "$skill_ir" -eq 0 ]] && [[ "$mig_ir" -ge 1 ]]; } \
+  && ok "V7b: interview_round confined to state-migration.md (mig=$mig_ir), 0 in SKILL.md itself" \
+  || no "V7b: interview_round leaked (skill=$skill_ir mig=$mig_ir) — expected skill=0, mig>=1"
 
-# V7b-2: interview_round production(SKILL 제외) 잔존 0
+# V7b-2: interview_round production(SKILL·migration 참조 파일 제외) 잔존 0
 # 파일별 루프라 grep 실패도 파일별로 모은다 — 한 파일이 안 읽히면 그 파일은 검사되지 않은 것이므로
 # "매치 없음"으로 넘기지 않고 err 버킷에 쌓아 FAIL로 만든다.
 ir=""; ir_err=""
 for f in "${prod_files[@]}"; do
   [[ "$f" == "$SKILL" ]] && continue
+  [[ "$f" == "$MIG_REF" ]] && continue
   scan -InH interview_round "$f"
   if [[ $SCAN_RC -ge 2 ]]; then ir_err+="$SCAN_OUT"$'\n'
   elif [[ $SCAN_RC -eq 0 ]]; then ir+="$SCAN_OUT"$'\n'
@@ -99,7 +105,7 @@ done
 if [[ -n "$ir_err" ]]; then
   no "V7b: grep 자체 실패 — 아래 파일은 검사되지 않았다:"; printf '%s\n' "$ir_err"
 elif [[ -z "$ir" ]]; then
-  ok "V7b: no interview_round in production outside SKILL migration"
+  ok "V7b: no interview_round in production outside SKILL/state-migration.md"
 else
   no "V7b: interview_round in unexpected production files:"; printf '%s\n' "$ir"
 fi

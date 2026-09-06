@@ -357,27 +357,12 @@ Law 1급 skepticism 의례입니다(verbatim pass-through로 무력화 방지).
 
 ## seed 를 입력으로 받았을 때
 
-`$ARGUMENTS` 가 `type: interview-seed` frontmatter 를 가진 문서면, 그것은 **Phase 0 에서
-사용자가 확정한 메시지**다. Phase 0 은 그 파일을 **전문으로** 이 command 의 인자에
-붙여넣게 하고(그 호출 모양의 정본은 `framing-requests` 의 「호출 모양」 절이다), 그
-frontmatter 줄이 seed 를 알아보는 유일한 표지다 — 본문만 오면 seed 로 인식되지 않아 아래
-규약이 발동하지 않는다.
+**이 절 전문은 `references/seed-input.md` 에 있다** — `$ARGUMENTS` 가 `type: interview-seed` frontmatter 를 가진 문서일 때만 읽는다(조건부 로드 — seed 없는 호출이 더 흔해 finishing.md 보다 조건성이 강하다).
+```
+Read references/seed-input.md
+```
 
-- **§6 `S1` 은 `$ARGUMENTS` 원문 그대로다**(frontmatter 포함) — `finishing.md` 의 S1
-  규약과 같은 값이다. 그것이 이 세션의 최초 사용자 발화다.
-- **seed 의 마지막 문단 «다시 검증할 것 —»** 이 R1 의 «직전 답에서 — S1» 블록(함의·상충·위험)과
-  coverage-mapper 첫 dispatch 의 입력이다. 문단이 없으면 seed 본문 전체를 그 입력으로 쓰되 무표시 문장은 전부 미확인이다.
-- **seed 에는 태그가 없다.** seed 게이트가 막는 `[open:`/`[추론:`/`[외부:` 구분을 seed
-  에서 읽으려 하지 말 것 — Phase 0 이 전문을 사용자 확정으로 만들었으므로 전부 사용자
-  **출처**(provenance)다. 이것은 출처일 뿐 **상태**(status)가 아니다 — `status` 는
-  하류 규약대로 전부 `provisional` 로 시작하고, `confirmed` 로의 전이는 오직 Step B-0
-  사용자 확인에서만 일어난다.
-- **seed 를 뒤집을 수 있다**(P23). 인터뷰 중 사용자가 seed 의 확정을 뒤집으면 **새 발화가
-  이긴다** — 그리고 그 뒤집음을 **audit §6** 에 새 `S<N>` 으로 추가하고(payload §6은 `S1`
-  으로 불변이므로 새 앵커는 audit에만 붙는다) §5 `기각` 에 *원래 / 재결정 / 근거* 로 남긴다.
-  조용히 덮어쓰지 않는다.
-- **seed 가 아닌 입력도 그대로 받는다.** `/interview` 는 호환을 유지한다 — 조언 한 줄을
-  내되 **차단하지 않는다**.
+경로는 이 SKILL.md 기준 상대경로 — 레포·설치본 모두 같은 위치에 있어 그대로 resolve.
 
 ## 종료 — brief 작성 + optional handoff
 
@@ -407,31 +392,13 @@ Read references/finishing.md
 
 ## In-flight state migration
 
-state.local.md 로드 시 **구세션 스키마**(`interview_round` 존재 / `coverage` 부재)를 감지하면
-*non-mutating read*로 fresh 초기화(승격):
+**이 절 전문은 `references/state-migration.md` 에 있다** — state.local.md 로드 시 구세션 스키마(신 스키마의 `coverage`/`orchestration` 필드 부재)를 감지했을 때만 읽는다(조건부 로드).
 
-- `coverage.floor`의 5개 차원(root_problem/landscape/skepticism/blind_spot/open_questions) 전부
-  `{status: open, evidence: "", reopened: 0, reopen_log: []}`로 seed.
-- `coverage.derived`: `[]`.
-- `orchestration`: `{focused_dimension: null, blind_spot_dispatched: false, coverage_mapper_dispatches: 0}`.
-
-기존 필드(`non_user_streak`·`web_*`·`issue_history` 등)는 유지. 구세션의 라운드별 잠금 레코드
-리스트(v0.22.0까지의 잠금 필드)는 승계하지 않고 `user_statements: []`로 fresh seed합니다 — 잠금
-레코드를 발화 레코드로 승격하면 판정이 없던 척하는 잠금이 그대로 넘어옵니다.
-
-**영속화 시점**: 승격된 스키마는 재개된 세션의 첫 액션으로, 첫 probe보다 먼저 Bash 전체-frontmatter
-write로 즉시 디스크에 반영합니다(PN1) — coverage-mapper 상한 카운터(`coverage_mapper_dispatches`)와
-재개방 원장(`reopen_log`)이 그 디스크 값을 직접 읽기 때문입니다. 신규 필드(coverage/orchestration)만
-추가하는 forward promotion이지 backward-rewrite가 아닙니다(`interview_round`는 자연 소멸, 다른
-기존 필드는 불변) — "다음 명시적 write"를 기다리는 연기가 아니라 resume 직후 1회입니다.
-
-사용자에게 advisory 한 줄 출력:
 ```
-[spec-distill v0.55.0] state schema migration: reopen ledger + coverage_mapper_dispatches added (stall trigger retired).
+Read references/state-migration.md
 ```
 
-자동 promote 실패 시(파일 corruption 등) → "구세션 in-flight state 호환 실패 — 세션 재시작 권장"
-알림 + state.local.md 보존 (P14).
+경로는 이 SKILL.md 기준 상대경로 — 레포·설치본 모두 같은 위치에 있어 그대로 resolve.
 
 ## kill switch
 
