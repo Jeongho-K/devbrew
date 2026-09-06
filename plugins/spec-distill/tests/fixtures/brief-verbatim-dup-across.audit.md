@@ -14,14 +14,16 @@ S1만 안다) 합집합 단계에서 앵커 교집합만으로 exit 1이 나야 
 
 ## 1. Coverage Ledger
 
-- floor:root_problem — closed — <evidence>
-- floor:landscape — closed — <evidence>
-- floor:skepticism — closed — <evidence>
-- floor:blind_spot — closed — <evidence>
-- floor:open_questions — closed — <evidence>
-- derived:N/A — closed — N/A
+- floor:root_problem — closed — <evidence> (@S1)
+- floor:landscape — closed — <evidence> (@S1)
+- floor:skepticism — closed — <evidence> (@S1)
+- floor:blind_spot — closed — <evidence> (@S1)
+- floor:open_questions — closed — <evidence> (@S1)
+- derived:N/A — closed — N/A (@S1)
 
 ## 2. Budget
+
+- agent dispatch: coverage-mapper 1
 
 - 질문 라운드: 1 · agent dispatch: 0 · codex 실호출: 0 (성공 0)
 

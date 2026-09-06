@@ -12,6 +12,8 @@ source: spec-distill conducting-interview v0.23.0
 
 ## 2. Budget
 
+- agent dispatch: coverage-mapper 1
+
 - probe_count: 7 / cap 12
 - web_sweep_count: 3 / 4
 - web_search_count: 3 / 8
