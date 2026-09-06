@@ -929,6 +929,28 @@ def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
     return fails
 
 
+MAPPER_RE = re.compile(r"coverage-mapper\s+(\d+)(?:\s*\((unavailable:[^)]*)\))?")
+
+
+def budget_mapper_failures(audit_text: str) -> tuple[list[str], list[str]]:
+    """audit §2 Budget 의 `coverage-mapper <k>` (v0.55.0, spec §2.3·C4).
+
+    k>=1 통과. `coverage-mapper 0 (unavailable: <이유>)` 는 advisory 통과 — 침묵과 0 을
+    가른다. **이 검사가 못 잡는 것**: sentinel 은 피검자가 쓰는 문구라, dispatch 를 건너뛴
+    턴이 같은 문구를 적으면 «도구 부재»와 구분하지 못한다. 그래서 advisory 는 조용히
+    통과하지 않고 Step B 게이트 텍스트로 사람에게 간다."""
+    sec = _section_text(audit_text, "2", "Budget")
+    m = MAPPER_RE.search(sec)
+    if not m:
+        return ["§2 Budget: coverage-mapper <k> line missing"], []
+    k, reason = int(m.group(1)), m.group(2)
+    if k >= 1:
+        return [], []
+    if reason:
+        return [], [f"coverage-mapper 0 ({reason}) — dispatch 없이 통과 (advisory, 사람이 확인)"]
+    return ["§2 Budget: coverage-mapper 0 without unavailable reason"], []
+
+
 def frontmatter_errors(text: str) -> list[str]:
     m = FRONTMATTER_RE.match(text)
     if not m:
@@ -997,6 +1019,8 @@ def gate(path: Path) -> int:
     # "판정 없는 steelman"으로 오탐된다(§5가 없으면 refs가 항상 공집합이므로).
     sec5_absent = any(m.startswith("5.") for m in miss)
 
+    advisories: list[str] = []
+
     # --- audit 해석 (fail-closed): 못 열면 audit 측 검증 전체를 skip하지 않고 red ---
     audit_path, audit_err = resolve_audit(path, fm)
     audit_text = ""
@@ -1039,6 +1063,10 @@ def gate(path: Path) -> int:
                 nk = landscape_keys_declared(text, audit_text)
                 if nk:
                     failures.append(f"landscape keys not declared in audit §7: {nk}")
+            if not any(m.startswith("2.") for m in amiss):
+                bf, ba = budget_mapper_failures(audit_text)
+                failures += [f"coverage-mapper budget: {x}" for x in bf]
+                advisories += ba
 
     sec4_absent = any(m.startswith("4.") for m in miss)
     if not sec4_absent and not landscape_present(text):
@@ -1067,7 +1095,6 @@ def gate(path: Path) -> int:
             failures.append(f"coverage anchors: {anc}")
 
     ok = not failures
-    advisories: list[str] = []
     # 킬 스위치가 verdict를 뒤집을 수 있으면 **반드시** 말한다. v0.44.0 N1a 이후
     # `_web_disabled()`가 완화하는 것은 `landscape_present`의 §4 sentinel 경로(#12) 하나
     # 뿐이지만, 그 하나조차 흔적 없이 완화되면 이전 세션에서 export한 env가 남아 있을 때

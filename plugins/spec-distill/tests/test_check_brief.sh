@@ -1386,4 +1386,29 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$mut" gate "$TMPD/a_none.md" >/dev/null 2>&1 
   && ok "AC3(mutation): 검사 함수를 비우면 (a) 가 통과 — 락이 그 함수에 걸려 있다" \
   || no "AC3(mutation): 함수를 비웠는데도 red — 판정이 다른 곳에서 나온다(락 무의미)"
 
+# --- v0.55.0 AC4: §2 Budget 의 coverage-mapper <k> (k>=1 게이트, 0+unavailable advisory) ---
+ac3_pair m_ok
+ac3_gate m_ok >/dev/null && ok "AC4: coverage-mapper 1 → 통과" || no "AC4: coverage-mapper 1 이 red"
+ac3_pair m_missing
+sed -i.bak '/coverage-mapper/d' "$TMPD/m_missing.audit.md"; rm -f "$TMPD/m_missing.audit.md.bak"
+out="$(ac3_gate m_missing)"; rc=$?
+{ [[ $rc -ne 0 ]] && grep -q 'coverage-mapper <k> line missing' <<<"$out"; } \
+  && ok "AC4: coverage-mapper 줄 부재 → red" || no "AC4: 부재가 통과"
+ac3_pair m_zero
+sed -i.bak 's|coverage-mapper 1|coverage-mapper 0|' "$TMPD/m_zero.audit.md"; rm -f "$TMPD/m_zero.audit.md.bak"
+out="$(ac3_gate m_zero)"; rc=$?
+{ [[ $rc -ne 0 ]] && grep -q 'coverage-mapper 0 without unavailable reason' <<<"$out"; } \
+  && ok "AC4: coverage-mapper 0 (사유 없음) → red" || no "AC4: 0 이 사유 없이 통과"
+ac3_pair m_unavail
+sed -i.bak 's|coverage-mapper 1|coverage-mapper 0 (unavailable: Agent 도구 부재)|' "$TMPD/m_unavail.audit.md"; rm -f "$TMPD/m_unavail.audit.md.bak"
+out="$(ac3_gate m_unavail)"; rc=$?
+{ [[ $rc -eq 0 ]] && grep -q '"advisories": \[.*unavailable' <<<"$out"; } \
+  && ok "AC4: coverage-mapper 0 (unavailable: …) → advisory 통과, advisories 채널에 실림" \
+  || no "AC4: unavailable sentinel 이 red 이거나 advisory 가 비었다"
+
+# --- v0.55.0 AC5: 재개방 접미 «(재개방 n회 — 사유)» 가 원장 regex 를 깨지 않는다 ---
+ac3_pair r_reopen
+sed -i.bak 's|^- floor:landscape — closed — \(.*\)$|- floor:landscape — closed — \1 (재개방 1회 — S1 과 충돌)|' "$TMPD/r_reopen.audit.md"; rm -f "$TMPD/r_reopen.audit.md.bak"
+ac3_gate r_reopen >/dev/null && ok "AC5: 재개방 접미가 붙은 닫힌 행 통과" || no "AC5: 재개방 접미가 원장 검사를 깬다"
+
 finish

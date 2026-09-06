@@ -25,6 +25,12 @@ source: spec-distill conducting-interview v0.23.0
 
 ## 2. Budget
 
+(coverage-mapper dispatch 횟수 — k≥1(예: 아래)이면 통과. dispatch 를 못 했으면
+ `coverage-mapper 0 (unavailable: <사유>)`처럼 사유를 붙인다(advisory) — 사유 없는
+ 0은 게이트 red(AC4).)
+
+- agent dispatch: coverage-mapper 1
+
 - 질문 라운드: <n> · agent dispatch: <n> · codex 실호출: <n> (성공 <n>)
 
 ## 3. Steelman 원문
