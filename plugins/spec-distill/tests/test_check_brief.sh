@@ -1333,4 +1333,57 @@ while IFS="$(printf '\t')" read -r kind got form; do
   esac
 done <<< "$sr_report"
 
+# --- v0.55.0 AC3: 닫힌 행의 닫힘 근거는 실재 S 앵커 (spec §2.1) ---------------------
+# fixture 를 파일로 복제하지 않는다(중복 락) — 정상 쌍에서 실행 시 생성한다(T1/T2 관례).
+ac3_pair() {  # $1 = stem. $TMPD/$1.md + $1.audit.md 를 정상 쌍에서 만든다.
+  cp "$FX/interview-brief-valid.md" "$TMPD/$1.md"
+  cp "$FX/interview-brief-valid.audit.md" "$TMPD/$1.audit.md"
+  sed -i.bak "s|^audit_file:.*|audit_file: $1.audit.md|" "$TMPD/$1.md"; rm -f "$TMPD/$1.md.bak"
+  sed -i.bak "s|^payload:.*|payload: $1.md|" "$TMPD/$1.audit.md"; rm -f "$TMPD/$1.audit.md.bak"
+}
+ac3_gate() { python3 "$SCRIPT" gate "$TMPD/$1.md" 2>/dev/null; }
+
+# (c) 실재 S 인용 → 통과 (스윕된 정상 fixture 그대로)
+ac3_pair c_ok
+ac3_gate c_ok >/dev/null && ok "AC3(c): 닫힌 행이 실재 S 를 인용하면 통과" || no "AC3(c): 실재 S 인용이 통과해야 한다"
+
+# (a) 앵커 없음 → red, 메시지에 차원명 + 'cites no'
+ac3_pair a_none
+sed -i.bak 's|^- floor:landscape — closed — .*$|- floor:landscape — closed — §4 Next.js SSR 인용|' "$TMPD/a_none.audit.md"; rm -f "$TMPD/a_none.audit.md.bak"
+out="$(ac3_gate a_none)"; rc=$?
+{ [[ $rc -ne 0 ]] && grep -q 'floor:landscape evidence cites no S' <<<"$out"; } \
+  && ok "AC3(a): 앵커 없는 닫힌 행 → red + 차원명 메시지" || no "AC3(a): 앵커 없는 닫힌 행이 통과했거나 메시지 부재"
+
+# (b) §6 에 없는 S 인용 → red
+ac3_pair b_dangling
+sed -i.bak 's|^- floor:skepticism — closed — \(.*\)$|- floor:skepticism — closed — S77 판정|' "$TMPD/b_dangling.audit.md"; rm -f "$TMPD/b_dangling.audit.md.bak"
+out="$(ac3_gate b_dangling)"; rc=$?
+{ [[ $rc -ne 0 ]] && grep -q 'floor:skepticism evidence anchor S77 not found' <<<"$out"; } \
+  && ok "AC3(b): §6 에 없는 S 인용 → red" || no "AC3(b): dangling S 가 통과했거나 메시지 부재"
+
+# (d) 우연 토큰 OQS3 는 앵커가 아니다 → red (앵커 0개로 판정)
+ac3_pair d_token
+sed -i.bak 's|^- floor:blind_spot — closed — .*$|- floor:blind_spot — closed — OQS3 참조|' "$TMPD/d_token.audit.md"; rm -f "$TMPD/d_token.audit.md.bak"
+out="$(ac3_gate d_token)"; rc=$?
+{ [[ $rc -ne 0 ]] && grep -q 'floor:blind_spot evidence cites no S' <<<"$out"; } \
+  && ok "AC3(d): OQS3 류 우연 토큰은 앵커로 세지 않는다" || no "AC3(d): OQS3 가 앵커로 통과했다"
+
+# derived 행과 박제 행도 대상이다
+ac3_pair e_derived
+sed -i.bak 's|^- derived:rendering-strategy — closed — .*$|- derived:rendering-strategy — closed — SSR/islands 선택이 축|' "$TMPD/e_derived.audit.md"; rm -f "$TMPD/e_derived.audit.md.bak"
+out="$(ac3_gate e_derived)"; rc=$?
+{ [[ $rc -ne 0 ]] && grep -q 'derived:rendering-strategy evidence cites no S' <<<"$out"; } \
+  && ok "AC3: derived 닫힌 행도 앵커 필수" || no "AC3: derived 행이 앵커 없이 통과"
+ac3_pair f_frozen
+sed -i.bak 's|^- floor:open_questions — closed — .*$|- floor:open_questions — closed — 사용자-승인 박제(@S1) — §Open Questions 참조|' "$TMPD/f_frozen.audit.md"; rm -f "$TMPD/f_frozen.audit.md.bak"
+ac3_gate f_frozen >/dev/null && ok "AC3: 박제 행 «사용자-승인 박제(@S1) — …» 통과" || no "AC3: 접두 뒤 앵커를 가진 박제 행이 red"
+
+# mutation: 검사 함수를 무력화하면 (a) 가 통과해야 한다 — 락의 이빨 확인 (PYTHONDONTWRITEBYTECODE)
+mut="$TMPD/check_brief_mut.py"
+sed 's/^def coverage_anchor_failures(.*$/&\n    return []/' "$SCRIPT" > "$mut"
+cp "$REPO_ROOT/plugins/spec-distill/scripts/section6.py" "$TMPD/" 2>/dev/null || true
+PYTHONDONTWRITEBYTECODE=1 python3 "$mut" gate "$TMPD/a_none.md" >/dev/null 2>&1 \
+  && ok "AC3(mutation): 검사 함수를 비우면 (a) 가 통과 — 락이 그 함수에 걸려 있다" \
+  || no "AC3(mutation): 함수를 비웠는데도 red — 판정이 다른 곳에서 나온다(락 무의미)"
+
 finish

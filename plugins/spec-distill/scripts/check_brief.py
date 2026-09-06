@@ -898,6 +898,37 @@ def coverage_ledger_failures(text: str) -> list[str]:
     return fails
 
 
+# 닫힘 근거 앵커 (v0.55.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
+# 우연 토큰이 앵커로 잡힌다 — 앞이 영문자가 아니어야 한다.
+ANCHOR_RE = re.compile(r"(?<![A-Za-z])S\d+\b")
+LEDGER_ROW_RE = re.compile(r"^(floor:\w+|derived:[^—]+?)\s*—\s*(\S+)\s*—\s*(.*)$")
+
+
+def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
+    """audit §1 의 **닫힌 행마다** evidence 가 실재 `S<N>` 앵커를 인용하는가 (AC3).
+
+    Form-only: «그 S 가 닫힘을 정당화하는가»는 보지 않는다(spec §2.1 이 그 한계를
+    OQ6 으로 공시한다). 인용된 앵커는 **전부** 실재해야 한다 — 재개방 접미의
+    `conflicts_with` S 도 사용자 발화이므로 같은 요구를 받는다. `derived: N/A`
+    sentinel 과 open 행은 대상이 아니다(form 검사가 따로 잡는다)."""
+    sec = _section_text(audit_text, "1", "Coverage Ledger")
+    fails: list[str] = []
+    for ln in _entry_lines(sec):
+        body = _strip_bullet(ln).strip()
+        m = LEDGER_ROW_RE.match(body)
+        if not m or m.group(2).strip() != "closed":
+            continue
+        key, evidence = m.group(1).strip(), m.group(3)
+        cited = ANCHOR_RE.findall(evidence)
+        if not cited:
+            fails.append(f"{key} evidence cites no S<N> anchor")
+            continue
+        for s in cited:
+            if s not in anchors:
+                fails.append(f"{key} evidence anchor {s} not found in §6")
+    return fails
+
+
 def frontmatter_errors(text: str) -> list[str]:
     m = FRONTMATTER_RE.match(text)
     if not m:
@@ -1030,6 +1061,10 @@ def gate(path: Path) -> int:
         cov = coverage_ledger_failures(audit_text)
         if cov:
             failures.append(f"coverage ledger: {cov}")
+        anc = coverage_anchor_failures(
+            audit_text, payload_verbatim_anchors(text) | verbatim_anchors(audit_text))
+        if anc:
+            failures.append(f"coverage anchors: {anc}")
 
     ok = not failures
     advisories: list[str] = []
@@ -1095,7 +1130,10 @@ def main(argv: list[str]) -> int:
             print(json.dumps({"failures": [f"audit pairing: {p}" for p in pair]},
                              ensure_ascii=False))
             return 1
-        print(json.dumps({"failures": coverage_ledger_failures(audit_text)},
+        print(json.dumps({"failures": coverage_ledger_failures(audit_text),
+                          "anchor_failures": coverage_anchor_failures(
+                              audit_text,
+                              payload_verbatim_anchors(text) | verbatim_anchors(audit_text))},
                          ensure_ascii=False))
         return 0
     if sub == "frontmatter":

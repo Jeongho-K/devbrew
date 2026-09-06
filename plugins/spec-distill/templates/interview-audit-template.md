@@ -14,14 +14,14 @@ source: spec-distill conducting-interview v0.23.0
 ## 1. Coverage Ledger
 
 (커버리지 원장 직렬화 — floor 5행(전부 closed + evidence) + derived(≥1행 OR N/A sentinel).
- orchestrator가 state.local.md에서 직렬화한다.)
+ orchestrator가 state.local.md에서 직렬화한다. evidence는 실재 `S<N>` 앵커를 인용해야 한다(AC3).)
 
-- floor:root_problem — closed — <evidence>
-- floor:landscape — closed — <evidence>
-- floor:skepticism — closed — <evidence>
-- floor:blind_spot — closed — <evidence>
-- floor:open_questions — closed — <evidence>
-- derived:<name> — closed — <rationale>; <evidence>
+- floor:root_problem — closed — <evidence> (@S1)
+- floor:landscape — closed — <evidence> (@S1)
+- floor:skepticism — closed — <evidence> (@S1)
+- floor:blind_spot — closed — <evidence> (@S1)
+- floor:open_questions — closed — <evidence> (@S1)
+- derived:<name> — closed — <rationale>; <evidence> (@S1)
 
 ## 2. Budget
 
