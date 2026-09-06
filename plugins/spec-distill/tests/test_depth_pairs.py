@@ -114,6 +114,47 @@ class DepthPairs(unittest.TestCase):
             rc, out = run(fx)
             self.assertEqual(rc, 0, out)
 
+    def test_skill_template_trailing_comment_is_rc0_total0(self):
+        # 회귀 락: plugins/spec-distill/skills/conducting-interview/SKILL.md 의
+        # `user_statements: []                  # 매 round 끝 append. …` 그 줄을
+        # 그대로 옮긴 fixture. 파싱-실패 감지가 «주석 뒤 문자열」을 내용으로 잘못 세면
+        # 막 시작한 정상 세션이 rc 3(측정 불가)으로 오분류된다 — 원래 버그보다 나쁜
+        # 회귀이므로 반드시 rc 0 + total 0 이어야 한다.
+        rc, out = run("depth-state-templatecomment.md")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(json.loads(out)["counts"]["total"], 0)
+
+    def test_user_statements_inline_comment_boundary_matrix(self):
+        # 여섯 경계: 키 뒤 아무것도 없음 / 공백만 / 주석만 / `[]`+주석 / 항목 전부
+        # malformed / 정상 항목 1개. 앞 넷과 마지막은 rc 0, malformed 만 rc 3.
+        import tempfile
+
+        def make(stmts_line, extra_block=""):
+            return ("---\nsession_id: bx\n" + stmts_line + "\n" + extra_block
+                    + "---\n\n## R1\n\n### 답\n→ (대기)\n")
+
+        cases = [
+            ("키 뒤 아무것도 없음", "user_statements:", "", 0, 0),
+            ("공백만", "user_statements:   ", "", 0, 0),
+            ("주석만", "user_statements: # 아직 없음", "", 0, 0),
+            ("[]+주석", "user_statements: []   # 나중에 채움", "", 0, 0),
+            ("항목 전부 malformed", "user_statements:", "  이상한 값\n", 3, None),
+            ("정상 항목 1개", "user_statements:",
+             "  - id: S1\n    round: 0\n    text: \"ok\"\n", 0, 1),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            for label, line, extra, want_rc, want_total in cases:
+                p = Path(td) / (label.replace(" ", "_") + ".md")
+                p.write_text(make(line, extra), encoding="utf-8")
+                r = subprocess.run([sys.executable, str(SCRIPT), str(p)],
+                                   capture_output=True, text=True)
+                self.assertEqual(r.returncode, want_rc, (label, r.stdout, r.stderr))
+                d = json.loads(r.stdout)
+                if want_rc == 0:
+                    self.assertEqual(d["counts"]["total"], want_total, label)
+                else:
+                    self.assertIn("unmeasurable", d, label)
+
 
 if __name__ == "__main__":
     unittest.main()

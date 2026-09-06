@@ -31,20 +31,43 @@ def _unquote(raw):
     return raw
 
 
+def _strip_inline_comment(raw):
+    """YAML 인라인 주석(앞에 공백 또는 줄 시작이 오는 `#`)을 뗀다.
+
+    따옴표 안의 `#` 은 값으로 보존한다(예: `text: "이슈 #12"`) — 따옴표 밖에서만
+    주석 시작으로 본다. 사람이 읽으라고 붙인 주석은 «값 영역의 내용»이 아니다.
+    """
+    out, quote = [], None
+    for i, c in enumerate(raw):
+        if quote:
+            out.append(c)
+            if c == quote:
+                quote = None
+            continue
+        if c in "\"'":
+            quote = c; out.append(c); continue
+        if c == "#" and (i == 0 or raw[i - 1].isspace()):
+            break
+        out.append(c)
+    return "".join(out)
+
+
 def parse_statements(fm):
     """`user_statements` → [{id, round, text}]. round 는 int 또는 원문 문자열.
 
     «아무것도 안 적혀 있다»(정상적인 빈 세션)와 «뭔가 적혀 있는데 항목을 못 읽었다»
     (파싱 실패)를 가른다 — 후자는 ValueError 로 올려 호출자가 rc 3(측정 불가)으로
-    구분하게 한다. 전자(명시적 `[]` 또는 값 영역이 비어 있고 그 아래도 비어 있음)는
-    빈 리스트를 정상 반환한다.
+    구분하게 한다. 전자(명시적 `[]` — 뒤에 사람이 읽으라고 붙인 주석이 있어도 — 또는
+    값 영역이 비어 있고 그 아래도 비어 있음)는 빈 리스트를 정상 반환한다. 주석은
+    데이터가 아니므로 «내용이 있는가» 판정 전에 먼저 뗀다(예: SKILL.md 템플릿의
+    `user_statements: []                  # 매 round 끝 append. …`).
     """
     lines = fm.splitlines()
     start = next((i for i, ln in enumerate(lines) if re.match(r"^user_statements\s*:", ln)), None)
     if start is None:
         raise ValueError("user_statements 키 부재")
     key_m = re.match(r"^user_statements\s*:\s*(.*)$", lines[start])
-    inline = key_m.group(1).strip() if key_m else ""
+    inline = _strip_inline_comment(key_m.group(1) if key_m else "").strip()
     if re.fullmatch(r"\[\s*\]", inline):
         return []
     items, cur, i, saw_content = [], None, start + 1, bool(inline)
