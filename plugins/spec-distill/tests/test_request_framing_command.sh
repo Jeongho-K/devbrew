@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# guards: plugins/spec-distill/commands/request-framing.md
+# guards: plugins/spec-distill/commands/request-framing.md plugins/spec-distill/skills/framing-requests/SKILL.md plugins/spec-distill/references/compression.md plugins/spec-distill/templates/interview-seed-template.md
 #
 # `/request-framing` command 가 자기 세 책임을 실제로 담고 있는가 — kill switch ·
 # trivia escape 포인터 · skill dispatch. 그 셋뿐이고, 셋 다 없으면 안 된다.
@@ -30,6 +30,9 @@ CMD="$ROOT/plugins/spec-distill/commands/request-framing.md"
 
 if [ "${1:-}" = "--emit-scanned" ]; then
   echo "plugins/spec-distill/commands/request-framing.md"
+  echo "plugins/spec-distill/skills/framing-requests/SKILL.md"
+  echo "plugins/spec-distill/references/compression.md"
+  echo "plugins/spec-distill/templates/interview-seed-template.md"
   exit 0
 fi
 
@@ -50,5 +53,26 @@ pc="$(grep -cE '^[0-9]\. \*\*(Typo|주석-only|formatting|단일 식별자|<10 �
 [ "$pc" -eq 0 ] \
   && ok "5패턴 본문이 복제되지 않았다 (정본만)" \
   || no "5패턴 본문이 이 파일에 복제돼 있다 (${pc}줄) — 정본과 갈라진다"
+
+# --- v0.55.0 AC11: seed 산문 규약 (블록 스코프) -------------------------------------------
+SK="$ROOT/plugins/spec-distill/skills/framing-requests/SKILL.md"
+CMP="$ROOT/plugins/spec-distill/references/compression.md"
+TPL="$ROOT/plugins/spec-distill/templates/interview-seed-template.md"
+conv_block="$(awk '/^### 확정 표시와 «다시 검증할 것»/{f=1;print;next} /^##/{f=0} f' "$SK")"
+conv_flat="$(tr '\n' ' ' <<<"$conv_block" | tr -s ' ')"
+{ [[ -n "$conv_block" ]] && grep -qF '(사용자 확인)' <<<"$conv_block"; } && ok "AC11: SKILL 규약 절 + «(사용자 확인)» 표시" || no "AC11: 규약 절/확정 표시 부재"
+grep -qF '다시 검증할 것 —' <<<"$conv_block" && ok "AC11: 마지막 문단 «다시 검증할 것 —»" || no "AC11: 재검증 문단 규약 부재"
+grep -qE '그 밖[^.]{0,30}미확인|나머지[^.]{0,30}미확인' <<<"$conv_flat" && ok "AC11: 무표시 = 미확인" || no "AC11: 무표시=미확인 문장 부재"
+grep -qE '태그[^.]{0,30}(쓰지 않|없)' <<<"$conv_flat" && ok "AC11: 태그 문법 없음 (check_seed 정합)" || no "AC11: 태그 금지 문장 부재"
+cmp_block="$(awk '/^## 확정 표시와 마지막 문단/{f=1;print;next} /^## /{f=0} f' "$CMP")"
+{ [[ -n "$cmp_block" ]] && grep -qF '(사용자 확인)' <<<"$cmp_block" && grep -qF '다시 검증할 것 —' <<<"$cmp_block"; } \
+  && ok "AC11: compression.md 규약 절" || no "AC11: compression.md 규약 절 부재"
+tpl_ex="$(awk '/^```markdown/{f=1;next} f&&/^```/{exit} f' "$TPL")"
+grep -qF '(사용자 확인)' <<<"$tpl_ex" && ok "AC11: seed 템플릿 예시에 확정 표시" || no "AC11: 템플릿 예시 확정 표시 부재"
+[[ "$(printf '%s\n' "$tpl_ex" | grep -v '^\s*$' | tail -1 | head -c 400)" == *"다시 검증할 것"* || "$(awk -v RS='' 'END{print}' <<<"$tpl_ex")" == "다시 검증할 것 —"* ]] \
+  && ok "AC11: 템플릿 예시의 마지막 문단이 «다시 검증할 것 —»로 시작" || no "AC11: 템플릿 마지막 문단 규약 위반"
+# check_seed.py 는 손대지 않는다 — Task 착수 커밋(main merge) 대비 diff 0
+[[ -z "$(git -C "$ROOT" diff --name-only main -- plugins/spec-distill/scripts/check_seed.py)" ]] \
+  && ok "AC11: check_seed.py 무변경 (diff 0 vs main)" || no "AC11: check_seed.py 가 변경됐다"
 
 finish
