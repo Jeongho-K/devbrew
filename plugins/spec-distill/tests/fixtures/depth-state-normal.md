@@ -1,4 +1,5 @@
 ---
+# 픽스처 전용: 이 S1 은 프로덕션 seed 경로의 모양이 아니다 — 그 경로는 user_statements 를 S2 부터 번호매김한다(S1 은 §6 예약, state 미기록).
 session_id: depthfixture01
 phase: 1
 coverage:
