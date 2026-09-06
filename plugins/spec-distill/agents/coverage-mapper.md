@@ -4,6 +4,16 @@ cost_class: low
 color: blue
 tools: Read, Grep, Glob, WebSearch, WebFetch
 input_slots:
+  # seed 두 슬롯이 없으면 이 agent 는 **주제를 볼 수 없다**. 첫 dispatch 는 R1 질문
+  # «전에» 돌고 그때 원장은 floor 다섯 줄뿐이라 주제-무관하다 — 「이 주제가 요구하는
+  # derived 차원」을 제안하라면서 주제를 안 주고 있었다. spec §4.1·AC11 도 첫 dispatch
+  # 입력이 seed 의 «다시 검증할 것» 문단이라고 못 박는다.
+  - tag: seed
+    var: SEED_TEXT
+    kind: artifact
+  - tag: reverify
+    var: SEED_REVERIFY
+    kind: artifact
   - tag: ledger_state
     var: LEDGER_STATE
     kind: task

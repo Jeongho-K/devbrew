@@ -65,28 +65,44 @@ seed 는 태그를 쓰지 않습니다(`check_seed.py` 가 본문 태그를 금�
 사실을 질문 **뒤**에 적으면 사용자는 이미 고른 뒤에야 안다(사용자가 실제로 읽는 것은
 질문·옵션 텍스트뿐이다):
 
+**기준은 워크트리가 실제로 쓰는 base 다** — `EnterWorktree` 의 기본(`worktree.baseRef=fresh`)은
+origin 의 **기본 브랜치**이므로, 재야 할 것은 「HEAD 에 있는데 `origin/<기본>` 에 없는 커밋」이다.
+tracking branch(`@{u}`)를 재면 **자기 remote 를 추적하는 브랜치가 0 을 보고하면서 실제로는
+`origin/main` 과 발산해 있을 수 있다** — push 를 마쳤어도 그 커밋들은 새 워크트리에 안 들어온다.
+그러면 경고가 0 건으로 뜨고 워크트리가 조용히 커밋을 빠뜨린다. 그래서 base 를 도출해서 잰다:
+
 ```bash
-upstream="$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null)"
-if [ -n "$upstream" ]; then
-  local_only_n="$(git rev-list --count "$upstream"..HEAD 2>/dev/null)"
+base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
+if [ -z "$base" ]; then
+  for cand in origin/main origin/master; do
+    if git rev-parse --verify --quiet "$cand" >/dev/null 2>&1; then base="$cand"; break; fi
+  done
+fi
+if [ -n "$base" ]; then
+  local_only_n="$(git rev-list --count "$base"..HEAD 2>/dev/null)"
 else
   local_only_n=""
 fi
-if [ -z "$upstream" ] || ! [[ "$local_only_n" =~ ^[0-9]+$ ]]; then
-  LOCAL_ONLY_NOTE="확인 못함 — upstream 없음 또는 git rev-list 실패(사유 불명)"
+if [ -z "$base" ] || ! [[ "$local_only_n" =~ ^[0-9]+$ ]]; then
+  LOCAL_ONLY_NOTE="확인 못함 — origin 기본 브랜치를 못 찾았거나 git rev-list 실패(사유 불명)"
 elif [ "$local_only_n" -gt 0 ]; then
-  LOCAL_ONLY_NOTE="로컬 전용 커밋 ${local_only_n}개 — 워크트리 기본 base(origin 기준)엔 안 들어온다"
+  LOCAL_ONLY_NOTE="$base 에 없는 커밋 ${local_only_n}개 — 워크트리 기본 base 엔 안 들어온다"
 else
-  LOCAL_ONLY_NOTE="로컬 전용 커밋 0개(upstream=$upstream 기준)"
+  LOCAL_ONLY_NOTE="$base 에 없는 커밋 0개"
 fi
 echo "$LOCAL_ONLY_NOTE"
 ```
 
-`upstream` 이 없는 브랜치(원격 미설정·업스트림 미추적)에서도 이 블록은 죽지 않는다 —
-`rev-list` 를 아예 돌리지 않고 **«확인 못함»**으로 떨어진다. **빈 값과 0 은 다른 사실이다**
-— 확인에 실패하거나 upstream 이 없어서 못 잰 것을 0건으로 읽으면 이 풋건이 그대로
-재현된다(명령 실패 시 `local_only_n` 은 빈 문자열이라 숫자 정규식에 걸리지 않고 «확인
-못함» 으로만 떨어진다).
+origin 의 기본 브랜치를 못 찾는 환경(원격 미설정 · `origin/HEAD` 미설정 + main/master 둘 다 부재)
+에서도 이 블록은 죽지 않는다 — `rev-list` 를 아예 돌리지 않고 **«확인 못함»**으로 떨어진다.
+**빈 값과 0 은 다른 사실이다** — 확인에 실패하거나 base 를 못 찾아서 못 잰 것을 0건으로 읽으면
+이 풋건이 그대로 재현된다(명령 실패 시 `local_only_n` 은 빈 문자열이라 숫자 정규식에 걸리지
+않고 «확인 못함» 으로만 떨어진다).
+
+`origin/<기본>` 은 마지막 fetch 시점의 값이다 — 여기서 fetch 하지 않는다(네트워크는 이 절의
+책임이 아니다). stale 하면 **더 많이** 세는 쪽으로 틀리므로 경고가 과해질 뿐 빠지지 않는다.
+`worktree.baseRef=head` 로 바꾼 사용자에게는 이 경고가 무해한 과다 경고다 — 그 설정에서는
+base 가 로컬 HEAD 라 아무것도 안 빠진다.
 
 `${LOCAL_ONLY_NOTE}` 를 질문 본문과 «만들고 시작» 옵션 설명에 그대로 실어 단독
 `AskUserQuestion` 하나를 띄운다:

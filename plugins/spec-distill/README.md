@@ -33,7 +33,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
                                    interview-seed → docs/superpowers/interview/   ← 문서가 아니라 다음 세션 첫 턴에 붙여넣는 메시지
                                        ▼ 새 세션 첫 턴 = `/interview <seed 파일 전문>` (frontmatter 포함, 한 턴)
 /interview ─→ [0] Trivia escape ─→ [1] Interview (문제공간 stage)
-                                       · «직전 답에서» 블록 + 질문 둘 + 4-path (web=path(a))
+                                       · «직전 답에서» 블록 + 질문 둘 + 3-path (web=path(a))
                                        · R1 Problem Reframe / R2 Landscape / R3 Steelman / R4 Tried&Discarded / R5 OQ
                                        ▼ 5 의례 통과 (check_brief.py gate, Law 1)
                                    interview brief (payload + audit) → docs/superpowers/interview/   ← terminal 산출물
@@ -230,6 +230,9 @@ dispatch 뿐입니다. 완전히 clean 한 문서는 발견 자체가 되지 않
   **세 소비자**의 웹 접근을 끈다: interview 웹 리서치(landscape, v0.12.0), codex design-doc
   co-reviewer(`run_spec_codex_reviewer.sh`), codex brief co-reviewer(`run_brief_codex_reviewer.sh`,
   둘 다 AC21). 어느 쪽이든 loud log와 함께 생략, crash 없음 (graceful degradation, AC8).
+- `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` (v0.56.0) — `framing-requests` 진입 직후의 워크트리
+  질문을 **묻지 않고** 현재 디렉토리에서 진행한다. `EnterWorktree` 도구 부재와 같은 경로다.
+  audit §5 에 «워크트리 없음 —» 강등 기록이 남고, 어느 경우도 seed 작성을 막지 않는다.
 - `DEVBREW_SPEC_DISTILL_DISABLE_BRIEF_REVIEW=1` (v0.24.0) — brief 리뷰 파이프라인 전체 skip.
   `component: pipeline` degradation record + loud advisory를 남기고 Step B로 직행한다(조용한
   생략이 아니다). 충실도·방향성·냉독 전부 미검증 상태가 게이트 질문에 표시된다.

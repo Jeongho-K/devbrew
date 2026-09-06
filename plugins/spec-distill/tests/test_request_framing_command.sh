@@ -104,7 +104,25 @@ pre_q="${wt_block%%AskUserQuestion(*}"
 grep -qF 'git rev-list --count' <<<"$pre_q" && ok "AC12: 로컬 전용 커밋 확인이 질문 앞에 있다" || no "AC12: 로컬 전용 커밋 확인이 질문 앞에 없다"
 askq_block="$(awk '/^```javascript$/{f=1;next} f&&/^```$/{exit} f' <<<"$wt_block")"
 grep -qF 'LOCAL_ONLY_NOTE' <<<"$askq_block" && ok "AC12: 질문 본문에 로컬 전용 커밋 안내가 실린다" || no "AC12: 질문 본문에 로컬 전용 커밋 안내 부재"
-grep -qF 'LOCAL_ONLY_NOTE="확인 못함' <<<"$wt_block" && ok "AC12: upstream 부재/확인 실패가 «확인 못함» 으로 드러난다" || no "AC12: 확인 불가 상태가 침묵(또는 0건 오독)으로 떨어진다"
+grep -qF 'LOCAL_ONLY_NOTE="확인 못함' <<<"$wt_block" && ok "AC12: base 부재/확인 실패가 «확인 못함» 으로 드러난다" || no "AC12: 확인 불가 상태가 침묵(또는 0건 오독)으로 떨어진다"
+# 위 셋은 「확인이 있는가·앞에 있는가·실패가 드러나는가」만 재고 **무엇을 기준으로 재는가**는
+# 안 봤다. 그래서 tracking branch(`@{u}`) 를 재던 동안 셋 다 green 이었다 — 워크트리 base 는
+# origin 의 기본 브랜치인데(EnterWorktree baseRef=fresh) 자기 remote 를 추적하는 브랜치는
+# push 를 마쳤다는 이유로 «0» 을 보고하면서 실제로는 origin/main 과 발산해 있을 수 있다.
+# 그때 워크트리는 조용히 커밋을 빠뜨린다. 기준 자체를 잰다.
+rev_line="$(grep -F 'git rev-list --count' <<<"$pre_q")"
+[[ -n "$rev_line" ]] \
+  && ok "AC12(양성대조): rev-list 실행 줄을 찾았다 (아래 단언이 실재한다)" \
+  || no "AC12(양성대조): rev-list 실행 줄이 없다 — 아래 단언이 공허하다"
+grep -qF '"@{u}"' <<<"$rev_line" \
+  && no "AC12: 발산을 tracking branch 기준으로 잰다 — 워크트리 base(origin 기본 브랜치)가 아니다" \
+  || ok "AC12: 발산 기준이 tracking branch 가 아니다"
+grep -qF '"$base"..HEAD' <<<"$rev_line" \
+  && ok "AC12: 발산을 «워크트리가 실제로 쓰는 base» 기준으로 잰다" \
+  || no "AC12: rev-list 가 도출한 base 를 안 쓴다 — 산문의 «origin 기준» 주장과 갈린다"
+grep -qF 'refs/remotes/origin/HEAD' <<<"$pre_q" \
+  && ok "AC12: origin 의 기본 브랜치를 열거가 아니라 도출한다" \
+  || no "AC12: origin 기본 브랜치 도출이 없다 — main 하드코딩은 다른 기본 브랜치 리포서 틀린다"
 { grep -qF '실측한 것' <<<"$wt_block" && grep -qF '실측 밖' <<<"$wt_block"; } && ok "AC12: 단정 범위 문장이 잰 것/안 잰 것을 가른다" || no "AC12: 단정 범위 문장이 자기모순(모두 단정 안 함으로 읽힘)"
 grep -qF '워크트리 없음 —' <<<"$wt_block" && ok "AC12: 거절/부재 시 audit §5 문구" || no "AC12: 강등 문구 부재"
 grep -qE '(거절|부재|스위치)[^.]{0,60}seed[^.]{0,20}막지 않' <<<"$wt_flat" && ok "AC12: 어느 경우도 seed 작성을 막지 않는다" || no "AC12: 비차단 선언 부재"

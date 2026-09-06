@@ -207,6 +207,29 @@ mig_block="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f'
 { grep -qF '`orchestration`: `{focused_dimension: null, blind_spot_dispatched: false, coverage_mapper_dispatches: 0}`' <<<"$mig_block"; } \
   && ok "AC5(v0.56.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)" \
   || no "AC5(v0.56.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)"
+# v0.56.0 C2: 발동 조건이 «구조 통째 부재» 면 **실제 업그레이드 경로가 통째로 빠진다** —
+# 직전 릴리스 세션은 `coverage`·`orchestration` 을 이미 갖고 이 릴리스가 더한 세 키
+# (`reopened`·`reopen_log`·`coverage_mapper_dispatches`)만 없어서 어느 조건에도 안 걸린 채
+# 그 키를 읽는 코드로 들어간다. spec §2.4 는 «부재 키는 기본값으로 추가» 다. 조건의 «단위»를
+# 잰다 — 위 열거 락은 무엇을 채우는지만 보고 언제 발동하는지는 안 본다.
+{ [[ -n "$mig_block" ]] && grep -qF '판정은 **키 단위**다' <<<"$mig_block"; } \
+  && ok "AC5/C2: migration 발동 판정이 «키 단위»다 (구조 부재로 좁히지 않는다)" \
+  || no "AC5/C2: migration 발동 판정이 키 단위가 아니다 — 직전 릴리스 세션이 어느 조건에도 안 걸린다"
+# 리터럴은 **body-unique** 여야 한다. «부재 키만» 은 이 절에 두 번 나와서(총칙 + orchestration
+# 적용례) 한쪽을 지워도 다른 쪽이 grep 을 계속 만족시킨다 — 실측으로 확인하고 총칙 문장에서만
+# 나는 리터럴로 좁혔다.
+grep -qF '이미 있는 값은 손대지 않는다' <<<"$mig_block" \
+  && ok "AC5/C2: 이미 있는 값은 두고 부재 키만 채운다 (진행 중 인터뷰의 닫힘을 안 되돌린다)" \
+  || no "AC5/C2: 부분 보충 총칙이 없다 — 있는 값을 덮어쓸 수 있다"
+# 조건을 넓히면 «구세션 전용» 이던 `user_statements` 초기화가 직전 릴리스 세션까지 삼킬 수
+# 있다. 그건 마이그레이션이 아니라 §6 원문·깊이 측정 근거의 손실이다. 범위 한정을 못 박는다.
+grep -qE '구세션에 한해|구세션에만' <<<"$mig_block" \
+  && ok "AC5/C2: user_statements 초기화가 구세션으로 한정된다" \
+  || no "AC5/C2: user_statements 초기화 범위가 한정되지 않았다 — 넓힌 조건이 발화 레코드를 지운다"
+mig_ptr="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+{ [[ -n "$mig_ptr" ]] && grep -qF '어떤 키든 부재' <<<"$mig_ptr"; } \
+  && ok "AC5/C2: SKILL 의 조건부 로드 조건도 «어떤 키든 부재» 다 (참조와 포인터가 같은 조건)" \
+  || no "AC5/C2: SKILL 포인터의 로드 조건이 참조 파일의 조건보다 좁다 — 파일을 아예 안 읽는다"
 
 # Unbounded-autonomy backstop fail-open fix: migration must persist BEFORE the first probe.
 # Deferring persistence to "the next explicit state write" leaves coverage/orchestration
@@ -802,6 +825,21 @@ seed_flat="$(tr '\n' ' ' <<<"$seed_block" | tr -s ' ')"
 grep -qF '다시 검증할 것' <<<"$seed_flat" \
   && ok "AC11: seed 의 «다시 검증할 것» 문단을 R1/coverage-mapper 입력으로" \
   || no "AC11: seed 재검증 문단 소비 부재"
+# 위 단언의 코퍼스는 seed 참조 «산문» 뿐이라 dispatch 를 못 본다 — 실제 호출이 seed 를
+# 하나도 안 싣고 `<ledger_state>` 와 `<web_disabled>` 만 넘겨도 계속 green 이었다
+# (spec §4.1·AC11 위반). 첫 dispatch 는 R1 «전에» 돌고 그때 원장은 floor 다섯 줄뿐이라,
+# seed 가 없으면 이 agent 는 「이 주제가 요구하는 차원」을 제안하라는 과업의 **주제 자체를
+# 못 본다**. dispatch 펜스를 직접 코퍼스로 삼는다.
+mapper_fence="$(awk '/subagent_type: "spec-distill:coverage-mapper"/{f=1} f{print} f&&/\}\)/{exit}' "$SKILL")"
+[[ -n "$mapper_fence" ]] \
+  && ok "AC11(양성대조): coverage-mapper dispatch 펜스를 찾았다 (아래 단언이 실재한다)" \
+  || no "AC11(양성대조): dispatch 펜스를 못 찾았다 — 아래 단언이 공허하다"
+grep -qF '<reverify>' <<<"$mapper_fence" \
+  && ok "AC11: coverage-mapper dispatch 가 «다시 검증할 것» 문단을 실제로 싣는다" \
+  || no "AC11: dispatch 가 재검증 문단을 안 싣는다 — 산문만 그렇다고 말하고 있다"
+grep -qF '<seed>' <<<"$mapper_fence" \
+  && ok "AC11: coverage-mapper dispatch 가 seed 원문을 실제로 싣는다" \
+  || no "AC11: dispatch 가 seed 를 안 싣는다 — 주제 없이 주제-도출 차원을 요구한다"
 grep -qF 'type: interview-seed' <<<"$seed_flat" \
   && ok "v0.41.0: seed frontmatter 태그(type: interview-seed) 인식" \
   || no "v0.41.0: type: interview-seed 인식 규약이 없다"
@@ -966,5 +1004,57 @@ c43_prose_n="$(sed -n 's/.*다음 \([0-9][0-9]*\) 경로 중.*/\1/p' <<<"$c43_bl
 [[ "$c43_prose_n" == "$c43_rows" ]] \
   && ok "C43: 산문이 선언한 경로 수 $c43_prose_n == 표 행 수 $c43_rows" \
   || no "C43: 산문 «다음 ${c43_prose_n:-∅} 경로 중» 이 표 행 수 ${c43_rows:-∅} 와 다르다"
+
+# 위 락의 코퍼스는 `SKILL.md` 뿐이라 **README 를 못 본다**. 그래서 README 안에서 87줄 떨어진
+# 두 줄이 «4-path» 와 «3-path» 로 서로 모순한 채 릴리스까지 갔다 — 사용자가 가장 먼저 읽는
+# 파일이다. 코퍼스를 넓힌다: `<n>-path` 를 적는 **모든** 우리 문서가 표 행 수와 같아야 한다.
+# 파일을 열거하지 않고 grep 으로 도출하므로 새 문서가 같은 표기를 쓰면 자동으로 들어온다.
+README="$REPO_ROOT/plugins/spec-distill/README.md"
+path_claims="$(grep -ohE '[0-9]+-path' "$SKILL" "$README" | sort -u)"
+[[ -n "$path_claims" ]] \
+  && ok "C43(양성대조): «<n>-path» 표기를 찾았다 ($(tr '\n' ' ' <<<"$path_claims")) — 아래 단언이 실재한다" \
+  || no "C43(양성대조): 어느 문서에도 «<n>-path» 표기가 없다 — 아래 단언이 공허하다"
+[[ "$(wc -l <<<"$path_claims" | tr -d ' ')" == "1" && "$path_claims" == "${c43_rows}-path" ]] \
+  && ok "C43: SKILL·README 의 «<n>-path» 표기가 하나뿐이고 표 행 수 $c43_rows 와 같다" \
+  || { no "C43: «<n>-path» 표기가 여럿이거나 표 행 수 ${c43_rows} 와 다르다 — 문서끼리 모순한다"; \
+       printf '    발견: %s\n' "$(tr '\n' ' ' <<<"$path_claims")"; }
+
+# C51 5-type 라벨 강제는 이 릴리스가 없앴다(SKILL 본문·README 정의 불릿 모두 제거). 그런데
+# 5 의례 요약표의 R1 행이 «(d) ontological 5-type» 으로 그 죽은 규칙을 계속 인용했다 —
+# 독자가 본문보다 먼저 믿는 자리다. 코퍼스 전수로 막되, **«제거됐다»고 적은 줄은 위반이
+# 아니다** — 그것은 죽은 규칙의 인용이 아니라 죽었다는 기록이다(README 의 v0.56.0 변경 설명).
+# 그래서 단순 부재 검사가 아니라 «5-type 을 적은 모든 줄은 제거 표시를 함께 갖는다» 로 쓴다:
+# 살아 있는 요구로 읽히는 인용만 RED 다. 부재 검사로 두면 정정 노트가 자기 락에 걸린다.
+c51_live="$(grep -rn '5-type' "$SKILL" "$README" "$FIN" 2>/dev/null \
+  | grep -vE '제거|폐기|없앴|삭제' || true)"
+[[ -z "$c51_live" ]] \
+  && ok "C51: «5-type» 을 살아 있는 요구로 인용하는 줄 0건 (SKILL·README·finishing 전수)" \
+  || { no "C51: 삭제된 «5-type» 라벨 규칙이 살아 있는 요구처럼 인용된다 (요약표가 본문과 모순)"; \
+       printf '    %s\n' "$c51_live"; }
+# 양성 대조 — 위 단언은 «없으면 통과»라, 코퍼스를 못 읽어도(경로 오타·파일 이동) 조용히
+# green 이다. 세 파일이 실재하고 읽히는지 먼저 못 박는다.
+{ [[ -s "$SKILL" ]] && [[ -s "$README" ]] && [[ -s "$FIN" ]]; } \
+  && ok "C51(양성대조): 코퍼스 세 파일을 실제로 읽었다 (위 부재 단언이 공허하지 않다)" \
+  || no "C51(양성대조): 코퍼스 파일 중 비었거나 없는 것이 있다 — 위 단언이 공허하다"
+
+# kill switch 는 보안 컨트롤이고 README 의 스위치 목록이 그 문서화된 등재부다. AC12 가
+# SKILL 자신의 목록만 요구해서, 새 스위치가 SKILL·템플릿·CHANGELOG 에는 있는데 README
+# 등재부에만 빠져도 어떤 락도 발화하지 않았다. 등재부를 «도출»로 채운다 — 리포가 아는
+# 모든 `DEVBREW_SPEC_DISTILL_*` 스위치 이름이 README 목록에 있어야 한다.
+ks_list="$(awk '/^### 스위치 목록/{f=1;next} /^### /{f=0} f' "$README")"
+switches="$(grep -rhoE 'DEVBREW_SPEC_DISTILL_[A-Z_]*DISABLE[A-Z_]*' \
+  "$REPO_ROOT/plugins/spec-distill/skills" "$REPO_ROOT/plugins/spec-distill/templates" \
+  2>/dev/null | sort -u)"
+[[ -n "$ks_list" && -n "$switches" ]] \
+  && ok "C6(양성대조): README 스위치 목록과 코드의 스위치 이름을 둘 다 추출했다" \
+  || no "C6(양성대조): 목록 또는 스위치 이름 추출 실패 — 아래 단언이 공허하다"
+ks_missing=""
+while IFS= read -r sw; do
+  [[ -z "$sw" ]] && continue
+  grep -qF "$sw" <<<"$ks_list" || ks_missing="$ks_missing $sw"
+done <<<"$switches"
+[[ -z "$ks_missing" ]] \
+  && ok "C6: 코드가 읽는 모든 DEVBREW_SPEC_DISTILL_*DISABLE* 이 README 등재부에 있다" \
+  || no "C6: README 스위치 목록에 없는 kill switch:$ks_missing — 등재부가 보안 컨트롤을 감춘다"
 
 finish
