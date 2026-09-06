@@ -357,7 +357,8 @@ Law 1급 skepticism 의례입니다(verbatim pass-through로 무력화 방지).
 
 ## seed 를 입력으로 받았을 때
 
-**이 절 전문은 `references/seed-input.md` 에 있다** — `$ARGUMENTS` 가 `type: interview-seed` frontmatter 를 가진 문서일 때만 읽는다(조건부 로드 — seed 없는 호출이 더 흔해 finishing.md 보다 조건성이 강하다).
+**이 절 전문은 `references/seed-input.md` 에 있다** — `$ARGUMENTS` 가 `type: interview-seed` frontmatter
+를 가진 문서일 때만 읽는다(조건부 로드 — seed 없는 호출이 더 흔해 finishing.md 보다 조건성이 강하다).
 
 ```
 Read references/seed-input.md
@@ -390,7 +391,8 @@ Read references/finishing.md
 
 ## In-flight state migration
 
-**이 절 전문은 `references/state-migration.md` 에 있다** — state.local.md 로드 시 구세션 스키마(신 스키마의 `coverage`/`orchestration` 필드 부재)를 감지했을 때만 읽는다(조건부 로드).
+**이 절 전문은 `references/state-migration.md` 에 있다** — state.local.md 로드 시 구세션
+스키마(신 스키마의 `coverage`/`orchestration` 필드 부재)를 감지했을 때만 읽는다(조건부 로드).
 
 ```
 Read references/state-migration.md
