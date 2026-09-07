@@ -389,7 +389,9 @@ def cmd_decide(a) -> int:
         return fail("unknown_decide", id=a.id)
     # 만료(expired)만 재결정을 받는다(설계 §6.4 탈출구) — 후속이 끝내 안 생기는 입력에
     # 사용자의 길이 없으면 영구 차단이다. rejected · held · applied 는 이미 누군가 의무를
-    # 졌거나 소멸한 것이라 다시 열지 않는다.
+    # 졌거나 소멸한 것이라 다시 열지 않는다. adopted 도 거부한다 — 그 라운드에 이미 연
+    # permit 이 아직 관측을 기다리는 중이라, 다음 라운드가 스스로 applied 나 expired 로
+    # 답한다(재결정할 대상이 아니라 결과를 기다리는 중인 것뿐이다).
     if d["state"] not in ("open", "expired"):
         return fail("decide_not_open", id=a.id, state=d["state"])
     # 만료의 선택지는 「채택」과 「기각」 둘뿐이다. 「보류」는 항목을 held 로 내려
@@ -575,12 +577,15 @@ def cmd_observe_diff(a) -> int:
     # finding 이 다시 만료해도 그 후속은 `cmd_finalize` 의 id 배정 루프(`it["id"] = "%s#r%d.%d"`)가
     # 매번 새로 발급하는 id 를 쓰므로 `finding_id` 가 절대 겹치지 않는다(Task 3 의 재만료가
     # 실측 — 원 라운드 id 와 후속 라운드 id 는 항상 다르다). Task 4 의 만료 재결정 탈출구도
-    # 같은 id 로 새 permit 을 열기 전에 그 id 의 미소비 예약을 먼저 폐기하므로(그 사이 어떤
-    # observe-diff 도 새 예약을 못 만든다) 충돌이 생기지 않는다. 그래서 이 가드는 **지금
-    # 도달 가능한 상태를 막는 살아있는 불변식이 아니라 defense-in-depth** 다 — 유일한
-    # 도달 경로는 `record-findings` 로 같은 id 를 다시 심는 것인데, 엔진의 유일한 실제
-    # 호출자(`cmd_finalize`)는 항상 새 id 를 배정하므로 그 경로를 쓰지 않는다
-    # (case_AC21_reraise_dedup 이 픽스처로만 그 상태를 만든다).
+    # 같은 id 에 새 permit 을 여는 것과 그 id 의 미소비 예약을 폐기하는 것을 **같은 호출
+    # 안에서 함께** 하므로(§`docreview_state.cmd_decide`, 그 사이 어떤 observe-diff 도
+    # 끼어들 수 없다) 충돌이 생기지 않는다. 그래서 이 가드는 **지금 도달 가능한 상태를
+    # 막는 살아있는 불변식이 아니라 defense-in-depth** 다 — [Task 4 fix round 1 정정]
+    # 유일한 도달 경로는 픽스처(`st_open_permit.py`)로 `cmd_decide` 를 완전히 우회해
+    # 같은 id 에 두 번째 permit 을 직접 여는 것이다. `record-findings` 재심기 뒤 실제
+    # `cmd_decide` 로 재채택하는 경로(Task 2/3 원안)는 그 재채택 자체가 첫 예약을 먼저
+    # 지워버려 이 상태에 이르지 못한다(`case_AC21_reraise_dedup` 이 이제 그 픽스처로 이
+    # 상태를 만든다).
     pending = list(st.get("reraise") or [])
     seen = {p0["finding_id"] for p0 in pending}
     for r0 in reraise:

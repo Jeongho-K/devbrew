@@ -290,11 +290,30 @@ case_AC22_nonexpired_states_still_refused() {
     assert_eq "$?" "1" "AC22③: 첫 결정이 $st 였던 항목의 재결정은 거부된다"
     rm -rf "$d"
   done
+  # [리뷰 M5] adopted 도 네 번째 거부 상태다 — 그 라운드에 이미 연 permit 이 아직
+  # 관측을 기다리는 중이라, 재결정할 대상이 아니라 다음 라운드 observe-diff 의 결과
+  # (applied 나 expired)를 기다리는 중인 것뿐이다(설계 §6.4).
+  d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '다시' >/dev/null 2>&1
+  assert_eq "$?" "1" "AC22③: adopted(관측 대기 중)의 재결정도 거부된다"
+  rm -rf "$d"
   d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
   next_round "$d" "$FX/design-sample-r2.md" >/dev/null     # 변경 관측 → applied
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice reject --quote '되돌려' >/dev/null 2>&1
   assert_eq "$?" "1" "AC22③: applied 의 재결정도 거부된다"
+  rm -rf "$d"
+}
+# [리뷰 I1] `case_AC22_expired_escape_hatch` 가 렌더를 재는 항목은 F_DEC(kind="pre") 뿐이라
+# post 만료의 원복-경고 꼬리(§6.4 탈출구 문단 마지막 문장)를 렌더 문자열에서 지워도
+# 아무 락도 못 잡았다(리뷰 실측: 68/68 GREEN 유지). `_post_with_real_hash`(case_T25·T26 가
+# 쓰는 헬퍼)로 사후 decide 를 기각 → 원복 permit → 그 라운드 관측 안 됨 → post 만료까지
+# 실제로 걷고, 선결조건(state·kind)을 먼저 단언한 뒤에만 렌더를 잰다.
+case_AC22_post_expiry_render_tail() {
+  local d; d="$(_post_with_real_hash)"; next_round "$d" "$FX/design-sample-r2.md" >/dev/null   # 원복 관측 안 됨
+  assert_eq "$(st_yaml "$d" 'st["decides"]["dddd0001#r2.1"]["state"], st["decides"]["dddd0001#r2.1"]["kind"]')" "('expired', 'post')" "AC22: 사후 결정의 원복 미관측 → post 만료(렌더 단언의 선결조건)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c '원복 의무를 관측 없이 종결한다')" "1" "AC22: post 만료 렌더에 원복 경고 꼬리가 실린다(§6.4 탈출구 마지막 문장)"
   rm -rf "$d"
 }
 # [Task 4 실행 노트] Task 3 의 픽스처(`st_set_stale_pointer.py`)가 강제하던 조합 — 포인터가
@@ -905,8 +924,9 @@ case_AC21_reraise_accumulates() {
 # 되돌리는 것을 이용해 두 번째로 `cmd_decide` 채택)은 Task 4 에서 실측 `no_teeth` 로
 # 무너졌다 — 재심기 자체는 `cmd_decide` 를 안 거치지만, 바로 다음 줄의 실제 `cmd_decide`
 # 채택이 Task 4 의 재결정 탈출구를 그대로 탄다: 그 탈출구는 **모든** `cmd_decide` 호출에서
-# 대상 id 의 미소비 예약을 새 permit 을 열기 «전에» 폐기한다(§6.4 상호배제의 절반) —
-# 원안은 스스로 첫 예약을 지워버려 dedup 이 막아야 할 「같은 id 의 예약 둘」 조합을 만들지
+# 새 permit 을 여는 것과 대상 id 의 미소비 예약을 폐기하는 것을 **같은 호출 안에서 함께**
+# 한다(§6.4 상호배제의 절반) — 원안은 스스로 첫 예약을 지워버려 dedup 이 막아야 할
+# 「같은 id 의 예약 둘」 조합을 만들지
 # 못했다(실측: 변이 있든 없든 결과가 똑같이 `(1, 1)`). `cmd_decide` 를 완전히 우회해
 # 두 번째 permit 을 여는 픽스처(`st_open_permit.py`)로 바꾼다 — 첫 예약을 그대로 둔 채로.
 case_AC21_reraise_dedup() {

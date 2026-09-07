@@ -218,8 +218,10 @@ mut expired_redecide_refused case_AC22_expired_escape_hatch sed_state \
 #    바로 이 변이가 실제로 만드는 상태다.
 mut expired_hold_allowed case_AC22_expired_escape_hatch sed_state \
   's/^    if d\["state"\] == "expired" and a\.choice == "hold":$/    if False:/'
-# ㉑ 가드를 세 상태까지 «넓힌다» — 음의 요구(rejected·held·applied 거부)는 넓히는 변이로만
-#    잰다(좁히는 변이는 이 술어에 닿지 않는다).
+# ㉑ 가드를 완전히 연다 — 음의 요구(rejected·held·applied·adopted 네 상태 모두 거부)는
+#    넓히는 변이로만 잰다(좁히는 변이는 이 술어에 닿지 않는다). [리뷰 M5] adopted 는
+#    이미 연 permit 이 관측 대기 중이라 재결정 대상이 아니다(설계 §6.4) — 넷 중 하나만
+#    빠지면 재는 폭이 좁아지므로 네 상태 전부 case 에 있어야 한다.
 mut redecide_guard_widened case_AC22_nonexpired_states_still_refused sed_state \
   's/if d\["state"\] not in ("open", "expired"):/if False:/'
 # ㉒ 재결정이 자기 자신의 낡은 포인터를 지우는 것(설계 §6.4 규칙②, 브리프에 없던 정정 —
@@ -231,4 +233,10 @@ mut redecide_guard_widened case_AC22_nonexpired_states_still_refused sed_state \
 #    기다려야 걸리므로 이 창을 못 잡는다.
 mut decide_pointer_not_cleared case_AC22_stale_pointer_cleared_via_redecide sed_state \
   's/^    d\.pop("superseded_by", None)$/    pass/'
+# ㉓ [리뷰 I1] post 만료의 원복-경고 꼬리(§6.4 탈출구 마지막 문장)를 지운다 → 렌더가
+#    「채택」을 원복 관측 생략의 뜻으로 밝히지 않는다. `case_AC22_expired_escape_hatch`
+#    만으로는 안 잡힌다(F_DEC 는 kind="pre") — post 만료까지 실제로 걷는
+#    `case_AC22_post_expiry_render_tail` 이 유일한 검출기다.
+mut post_tail_removed case_AC22_post_expiry_render_tail sed_state \
+  's/ if d\.get("kind") == "post" else ""/ if False else ""/'
 finish
