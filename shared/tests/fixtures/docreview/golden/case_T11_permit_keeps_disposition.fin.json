@@ -1,0 +1,99 @@
+{
+ "ok": true,
+ "round": 2,
+ "findings": [
+  {
+   "layer": 2,
+   "category": "ambiguity",
+   "anchor": "#2-goals",
+   "disposition": "fix",
+   "summary": "목표 B 문구 후속 손질",
+   "edit_scope": "#2-goals",
+   "blocks": [],
+   "supersedes": null,
+   "evidence": null,
+   "f": "f1",
+   "origin": "reviewer",
+   "immutable": false,
+   "kind": "pre",
+   "bucket": "11adb9c3",
+   "id": "11adb9c3#r2.1",
+   "lineage": "11adb9c3#r2.1"
+  },
+  {
+   "f": null,
+   "layer": 2,
+   "category": "frozen_change",
+   "anchor": "#12-files-to-modify",
+   "disposition": "decide",
+   "summary": "finding 없이 바뀜: 12. Files to Modify (modified)",
+   "edit_scope": "#12-files-to-modify",
+   "blocks": [],
+   "supersedes": null,
+   "evidence": "섹션 '12. Files to Modify' (#12-files-to-modify) modified — hash 62a715899d27→5d9a206e6f82",
+   "origin": "auto",
+   "kind": "post",
+   "prev_hash": "62a715899d27",
+   "immutable": false,
+   "bucket": "42522f07",
+   "id": "42522f07#r2.1",
+   "lineage": "42522f07#r2.1",
+   "decision_view": {
+    "change": "finding 없이 바뀜: 12. Files to Modify (modified)",
+    "basis": "섹션 '12. Files to Modify' (#12-files-to-modify) modified — hash 62a715899d27→5d9a206e6f82",
+    "alternatives": [
+     "채택(적용)",
+     "기각(원복)",
+     "보류"
+    ],
+    "impact": "#12-files-to-modify · 인용 1 섹션",
+    "auto": true
+   }
+  }
+ ],
+ "by_disposition": {
+  "decide": [
+   "42522f07#r2.1"
+  ],
+  "ask": [],
+  "fix": [
+   "11adb9c3#r2.1"
+  ],
+  "defer": [],
+  "drop": []
+ },
+ "rejected": [],
+ "defers": [],
+ "bucket_conflicts": 0,
+ "lineage_mismatch": 0,
+ "revived": [],
+ "degrade": {
+  "critic_dead": false,
+  "layer2_missing": false,
+  "codex_absent": true,
+  "codex_reason": "exit_nonzero",
+  "recritic_dead": "missing"
+ },
+ "advisory": [
+  "codex 없음 — 모델 다양성 0 (exit_nonzero)",
+  "입력 실패(보조): codex — exit_nonzero",
+  "입력 실패(보조): doc-recritic — missing",
+  "기각 경로 0 — 오탐이 걸러지지 않았다 (doc-recritic missing)"
+ ],
+ "blocks": false,
+ "reraise_unconsumed": 0,
+ "adjudication_accepted": 2,
+ "adjudication_rejected": 0,
+ "adjudication_held": 0,
+ "adjudication_absorbed": 0,
+ "adjudication_coerced": 0,
+ "adjudication_sources_failed": 2,
+ "adjudication_suppressed": 0,
+ "adjudication_unknown_counts": [],
+ "adjudication_degraded": true,
+ "adjudication_held_by_class": {
+  "판정자 부재": 0,
+  "항목 파손": 0,
+  "기타": 0
+ }
+}

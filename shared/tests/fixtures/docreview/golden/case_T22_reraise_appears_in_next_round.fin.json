@@ -1,0 +1,112 @@
+{
+ "ok": true,
+ "round": 2,
+ "findings": [
+  {
+   "layer": 1,
+   "category": "scope",
+   "anchor": "#3-non-goals",
+   "disposition": "decide",
+   "summary": "Non-goals 가 브리프의 범위 항목 하나를 조용히 뺐다",
+   "edit_scope": "#3-non-goals",
+   "blocks": [],
+   "supersedes": null,
+   "evidence": "브리프 §2 C3 vs 문서 §3",
+   "f": "f1",
+   "origin": "reviewer",
+   "immutable": false,
+   "kind": "pre",
+   "bucket": "fee27fc9",
+   "id": "fee27fc9#r2.1",
+   "lineage": "fee27fc9#r2.1",
+   "decision_view": {
+    "change": "Non-goals 가 브리프의 범위 항목 하나를 조용히 뺐다",
+    "basis": "브리프 §2 C3 vs 문서 §3",
+    "alternatives": [
+     "채택(적용)",
+     "기각(원복)",
+     "보류"
+    ],
+    "impact": "#3-non-goals · 인용 0 섹션",
+    "auto": false
+   }
+  },
+  {
+   "f": null,
+   "layer": 1,
+   "category": "scope",
+   "anchor": "#3-non-goals",
+   "disposition": "decide",
+   "summary": "채택 후 미적용(expired): Non-goals 가 브리프의 범위 항목 하나를 조용히 뺐다",
+   "edit_scope": "#3-non-goals",
+   "blocks": [],
+   "supersedes": "fee27fc9#r1.1",
+   "evidence": "라운드 2 에 채택 변경 관측 없음 (D1.1)",
+   "origin": "auto",
+   "kind": "pre",
+   "immutable": false,
+   "bucket": "fee27fc9",
+   "id": "fee27fc9#r2.2",
+   "lineage": "fee27fc9#r1.1",
+   "decision_view": {
+    "change": "채택 후 미적용(expired): Non-goals 가 브리프의 범위 항목 하나를 조용히 뺐다",
+    "basis": "라운드 2 에 채택 변경 관측 없음 (D1.1)",
+    "alternatives": [
+     "채택(적용)",
+     "기각(원복)",
+     "보류"
+    ],
+    "impact": "#3-non-goals · 인용 0 섹션",
+    "auto": true
+   }
+  }
+ ],
+ "by_disposition": {
+  "decide": [
+   "fee27fc9#r2.1",
+   "fee27fc9#r2.2"
+  ],
+  "ask": [],
+  "fix": [],
+  "defer": [],
+  "drop": []
+ },
+ "rejected": [],
+ "defers": [],
+ "bucket_conflicts": 1,
+ "lineage_mismatch": 0,
+ "revived": [],
+ "degrade": {
+  "critic_dead": false,
+  "layer2_missing": true,
+  "codex_absent": true,
+  "codex_reason": "exit_nonzero",
+  "recritic_dead": "missing"
+ },
+ "advisory": [
+  "codex 없음 — 모델 다양성 0 (exit_nonzero)",
+  "셀 수 없음: layer2 — block missing",
+  "입력 실패(보조): codex — exit_nonzero",
+  "입력 실패(보조): doc-recritic — missing",
+  "기각 경로 0 — 오탐이 걸러지지 않았다 (doc-recritic missing)",
+  "상세 미검증 — 층 2 블록 없음"
+ ],
+ "blocks": true,
+ "reraise_unconsumed": 0,
+ "adjudication_accepted": 2,
+ "adjudication_rejected": 0,
+ "adjudication_held": 0,
+ "adjudication_absorbed": 0,
+ "adjudication_coerced": 0,
+ "adjudication_sources_failed": 2,
+ "adjudication_suppressed": 0,
+ "adjudication_unknown_counts": [
+  "layer2"
+ ],
+ "adjudication_degraded": true,
+ "adjudication_held_by_class": {
+  "판정자 부재": 0,
+  "항목 파손": 0,
+  "기타": 0
+ }
+}
