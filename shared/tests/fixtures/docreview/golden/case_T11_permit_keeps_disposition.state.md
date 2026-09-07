@@ -1,7 +1,7 @@
 ---
 docreview:
-  doc: /Users/jeonghokim/Downloads/devbrew/shared/tests/fixtures/docreview/design-sample.md
-  profile: /Users/jeonghokim/Downloads/devbrew/plugins/spec-distill/references/docreview-profiles/design-doc.md
+  doc: <REPO_ROOT>/shared/tests/fixtures/docreview/design-sample.md
+  profile: <REPO_ROOT>/plugins/spec-distill/references/docreview-profiles/design-doc.md
   round: 2
   rereview_count: 1
   extra_rounds: []

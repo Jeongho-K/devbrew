@@ -4,7 +4,7 @@
 # 라우팅 규칙(설계 §6.3 표)과 finding 정체성(§6.2)의 행동 — D13 T01~T17 · T22 · T28 · T35 · T40~T43.
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
-  echo "shared/docreview/scripts/docreview_route.py"; git ls-files -- 'shared/tests/fixtures/docreview/*'; exit 0
+  echo "shared/docreview/scripts/docreview_route.py"; bash "$(dirname "$0")/docreview_fixture_corpus.sh"; exit 0
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/assert.sh"

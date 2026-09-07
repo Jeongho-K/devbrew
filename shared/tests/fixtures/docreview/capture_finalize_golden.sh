@@ -19,9 +19,10 @@
 # 인자)를 알아보고 실제 삭제 «전에» 복사한 뒤 진짜 `rm` 을 그대로 부른다.
 #
 # 사용: shared/tests/fixtures/docreview/capture_finalize_golden.sh [출력 디렉토리]
-#       (기본 출력 = 이 파일과 같은 디렉토리의 golden/). Task 8b 의 Step 4 는 분해
-#       «후» 이 스크립트를 그대로 다시 돌려 diff 로 비교한다 — 다른 스크립트로
-#       다시 만들면 다른 시퀀스를 재는 것이 된다.
+#       (기본 출력 = 이 파일과 같은 디렉토리의 golden/). 판정하는 락은 형제
+#       `shared/tests/test_docreview_golden.sh` 다 — 그것이 이 스크립트를 임시
+#       디렉토리로 돌려 committed golden 과 diff 한다. 골든을 갱신할 때만 인자 없이
+#       직접 부른다.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../../.." && pwd)"
@@ -31,6 +32,24 @@ export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$OUT"
 . "$REPO_ROOT/shared/tests/assert.sh"
 . "$HERE/cases.sh"
+
+# ── 절대경로 정규화 ────────────────────────────────────────────────────────
+# `docreview-state.md` 의 `doc:`·`profile:` 두 줄은 이 체크아웃의 `$REPO_ROOT` 를
+# 그대로 담는다. 정규화하지 않으면 골든은 **다른 클론·워크트리·CI 에서 구조적으로
+# RED** 다 — 그것도 언제나, 그 두 줄에서만. 그러면 첫 실패가 「회귀」가 아니라
+# 「환경이 다름」이라 다음 사람이 락을 끄게 된다.
+#
+# `sed` 가 아니라 python 리터럴 치환인 이유 — 경로에 `|`·`&`·`/` 가 들어오면 sed 는
+# 구분자/치환 메타문자로 조용히 오작동한다. 인코딩도 명시한다(non-UTF-8 locale 에서
+# fail-open 하지 않게).
+GOLDEN_PLACEHOLDER='<REPO_ROOT>'
+norm_copy() {   # norm_copy <src> <dst> — REPO_ROOT 절대경로를 안정 placeholder 로
+  python3 -c 'import io, sys
+src, dst, root, ph = sys.argv[1:5]
+io.open(dst, "w", encoding="utf-8").write(
+    io.open(src, encoding="utf-8").read().replace(root + "/", ph + "/"))' \
+    "$1" "$2" "$REPO_ROOT" "$GOLDEN_PLACEHOLDER"
+}
 
 # capture_and_run <case-fn> — `rm` 을 이 함수 호출 동안만 재정의해 케이스가 스스로
 # 지우기 직전에 fin.json·docreview-state.md 를 가로챈다. 케이스는 매번 상태 디렉토리
@@ -43,8 +62,8 @@ capture_and_run() {
     for arg in "$@"; do
       case "$arg" in -*) continue ;; esac
       if [ -d "$arg" ] && [ -f "$arg/docreview-state.md" ]; then
-        [ -f "$arg/fin.json" ] && cp "$arg/fin.json" "$OUT/$casefn.fin.json"
-        cp "$arg/docreview-state.md" "$OUT/$casefn.state.md"
+        [ -f "$arg/fin.json" ] && norm_copy "$arg/fin.json" "$OUT/$casefn.fin.json"
+        norm_copy "$arg/docreview-state.md" "$OUT/$casefn.state.md"
       fi
     done
     command rm "$@"

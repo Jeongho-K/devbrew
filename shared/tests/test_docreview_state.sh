@@ -5,7 +5,7 @@
 # 케이스 본문은 fixtures/docreview/cases.sh 에 있다(mutation 락과 공유).
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
-  echo "shared/docreview/scripts/docreview_state.py"; git ls-files -- 'shared/tests/fixtures/docreview/*'; exit 0
+  echo "shared/docreview/scripts/docreview_state.py"; bash "$(dirname "$0")/docreview_fixture_corpus.sh"; exit 0
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/assert.sh"

@@ -15,7 +15,7 @@
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
   echo "shared/docreview/scripts/run_docreview_codex_reviewer.sh"
-  git ls-files -- 'shared/tests/fixtures/docreview/*'
+  bash "$(dirname "$0")/docreview_fixture_corpus.sh"
   exit 0
 fi
 

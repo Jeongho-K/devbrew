@@ -31,8 +31,13 @@
 # 되기 때문이다. 그런 셀을 세우려면 먼저 헬퍼가 `$SCRIPTS`(사본)를 보게 바꿔야 한다.
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
+  # `--emit-scanned` 의 계약은 **실제로 읽은** 경로다 — 선언에서 목록을 도출하면
+  # 「락이 읽었다」의 증거가 아니라 선언의 자기 반복이다
+  # (`test_guards_coverage_bidirectional.sh` 헤더). 이 매트릭스는 `golden/**` 과
+  # `capture_finalize_golden.sh` 를 한 번도 안 읽으므로 그 일곱은 코퍼스 도출기가
+  # 뺀다 — 근거와 형제 락들의 사정은 `docreview_fixture_corpus.sh` 헤더에.
   git ls-files -- 'shared/docreview/scripts/*.py'
-  git ls-files -- 'shared/tests/fixtures/docreview/*'
+  bash "$(dirname "$0")/docreview_fixture_corpus.sh"
   exit 0
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"

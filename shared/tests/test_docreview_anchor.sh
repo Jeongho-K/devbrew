@@ -4,7 +4,7 @@
 # 헤딩 단위 앵커 도구의 행동 — 스냅샷 모양 · slug 규칙 · diff 와 얼림 예외 · 보호 부류 캐스케이드 · 인용 수.
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
-  echo "shared/docreview/scripts/docreview_anchor.py"; git ls-files -- 'shared/tests/fixtures/docreview/*'; exit 0
+  echo "shared/docreview/scripts/docreview_anchor.py"; bash "$(dirname "$0")/docreview_fixture_corpus.sh"; exit 0
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/assert.sh"
