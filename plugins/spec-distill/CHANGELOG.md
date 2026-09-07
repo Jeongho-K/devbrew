@@ -1,5 +1,184 @@
 # Changelog
 
+## [0.57.0] — 2026-09-07
+
+### Added
+
+- **라운드 규약 — «직전 답에서 — S<k>» 블록 + AskUserQuestion 질문 둘** (`conducting-interview`, spec
+  `docs/superpowers/specs/2026-09-06-interview-depth-redesign-design.md` §1). 매 라운드는 직전 답마다
+  함의·상충·확인한 사실·위험 네 줄로 시작하고, Q1 은 그 되비추기의 확인(«맞다/모르겠다», 수정은 «기타»),
+  Q2 는 새 결정 하나. 넷 다 «없음»이면 Q1 은 되묻기(이유·사례·실패 조건). state 본문이 이 형식 그대로다
+  (`## R<n>` 헤딩은 `depth_pairs.py` 가 읽는 계약).
+- **닫힘 = 사용자 발화 앵커** — `check_brief.py` 에 `coverage_anchor_failures`(닫힌 행 evidence 의
+  `S<N>` 실재, floor·derived·박제 전부)와 `budget_mapper_failures`(§2 `coverage-mapper <k>` k≥1,
+  `0 (unavailable: …)` 은 advisory). **0.57.0 이전 brief 는 새 게이트를 통과하지 않는다** — 아카이브는
+  재게이트 대상이 아니다. 기존 fixture 93개는 `tests/fixtures/sweep_anchor_fixtures.py` 로 정합했다
+  (`*.audit.md` 95개 중 seed audit 2개는 원장이 없어 대상 밖. 실행 전후 `test_check_brief.sh`
+  ok/no 집합 동일).
+- **재개방** — `closed → open`, `reopened`/`reopen_log`, 상충 줄 «→ <차원> 재개방», audit §1 접미
+  `(재개방 n회 — 사유)`. 상한 없음(사용자가 시계).
+- **사후 깊이 측정 세 층** — `scripts/depth_pairs.py`(짝·표본 ≤4·rc 3 측정 불가), `agents/depth-auditor.md`
+  (`tools: []`, `depth-audit` 센티널), `scripts/depth_record.py`(병합·audit §2 네 줄·
+  `docs/superpowers/interview/depth/<basename>.json`·판정자 조건 A 30%/B 70%/적격 5건). finishing
+  Step A.7. **게이트 아님** — 어떤 결과도 종료를 막지 않는다.
+- **Phase 0 — seed 산문 규약**: seed 의 «(사용자 확인)» 표시(무표시 = 미확인)와 «다시 검증할 것 —»
+  마지막 문단(`framing-requests` SKILL · `references/compression.md` · seed 템플릿). `conducting-interview`
+  의 seed 입력 절이 그 문단을 R1 의 S1 되비추기와 coverage-mapper 입력으로 쓴다. `check_seed.py` 는 무변경.
+- **`framing-requests` — 진입 직후 워크트리 질문 + 5단계 절차 + handoff 직전 커밋 +
+  kill switch (AC12·AC13).** `## 확산` 앞에 `## 워크트리 — 진입 직후` 절을 추가했다 —
+  이 skill 에 들어온 첫 행동으로 단독 `AskUserQuestion` 하나를 띄우고(승낙 시
+  `EnterWorktree` → `git branch -m` → audit·seed 를 그 안에 쓰기 → proceed 게이트
+  ①/②에서 handoff 직전 커밋 1회 → 게이트 텍스트에 워크트리 절대경로), 거절·도구
+  부재·kill switch(`DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1`) 는 현재 디렉토리로
+  진행하며 audit §5 에 «워크트리 없음 — <이유>» 한 줄을 남긴다(어느 경우도 seed
+  작성을 막지 않는다). 커밋 메시지 리터럴은 `docs(interview): <topic> interview
+  seed + audit`.
+  **실측 근거**: 격리 헤드리스 probe(`.claude/spec-distill/idr-scratch/v6/results.md`,
+  Task 1) — `EnterWorktree(name=X)` 는 브랜치명에 `worktree-` 접두를 붙인다(요청한
+  이름 그대로가 아니다, 디렉토리명은 접두 없음) → 그래서 절차가 항상 `git branch -m`
+  으로 명시적으로 rename 한다(슬래시 포함 이름을 넣어 접두를 우회하는 것은 실측
+  범위 밖이라 가정하지 않았다). `git branch -m` · `git commit -F` 는 실측에서 거부
+  없이 성공했다. **기본 base 는 origin 의 기본 브랜치이고 로컬 전용 커밋은 빠진다**
+  (`worktree.baseRef=head` 로 바꿀 수 있음) — 이 절은 그 설정을 자동으로 바꾸지
+  않고 사실만 알린다. 종료 후 워크트리·브랜치가 lock 이 걸린 채 잔존한다는 관측은
+  근거 등급이 한 단계 낮고(raw 파일 없이 전사한 기록) 사람의 정상 `ExitWorktree`
+  종료까지 재현되는지는 미확인이라 이번 절차(진입·rename·커밋·경로 안내)에는
+  반영하지 않았다 — Task 15(e2e) 관찰 항목.
+  `templates/interview-seed-audit-template.md` §5 설명에도 같은 문구를 추가해
+  producer(SKILL.md)와 exemplar(template)를 동기화했다.
+  Test: `tests/test_request_framing_command.sh` (AC12 블록, 삭제-방향 뮤테이션으로
+  이빨 확인).
+
+### Changed
+
+- coverage-mapper dispatch: «연속 3 probe 무진전 / floor 첫 전이마다» → **R1 첫 질문 전 필수 1회 + 재개방 시
+  ≤1회 (상한 2, `orchestration.coverage_mapper_dispatches`)**. 첫 사이클 실측: 정체 트리거 0회 발화,
+  첫 전이 dispatch 4/9 미이행. `agents/coverage-mapper.md` 의 description·Input·동작 규칙 4번도 같은
+  계약으로 옮겼다(입력이 «최근 probe 의 no_progress 신호»에서 «seed 전문 + 원장 상태 + 재개방이면 그
+  차원의 `reopen_log` 마지막 항목»으로).
+- state 스키마: floor/derived 에 `reopened`·`reopen_log`. migration advisory v0.57.0.
+- proceed 게이트(Step B) question 에 깊이 측정 요약과 `check_brief` advisories 슬롯.
+- **`conducting-interview/SKILL.md` 조건부 로드 분리** — `## seed 를 입력으로 받았을 때` →
+  `references/seed-input.md`(23줄), `## In-flight state migration` → `references/state-migration.md`(27줄).
+  **내용 삭제 0** — 그대로 옮기고 SKILL.md 에는 `finishing.md` 가 이미 쓰는 것과 같은 모양의 포인터(조건 +
+  Read 줄 + 레포·설치본 양쪽에서 resolve 되는 경로 문구)만 남겼다. 순감의 실제 목표는 «매 인터뷰가 지는
+  무게»이고, 남은 삭제 후보가 실제 내용뿐이 됐을 때 커트를 멈춘 결과다. 락 셋(`mig_block`·`mig_ir_count`·
+  `seed_block`)과 `test_stale_terms.sh` 의 `interview_round` confinement(V7b-1·V7b-2)는 삭제가 아니라
+  새 파일로 재포인트했고 mutation 으로 각각 여전히 무는 것을 확인했다.
+- `scripts/check_brief.py` 의 `MAPPER_RE` 가 형제 regex(`ENTRY_BULLET_RE`·`BODY_ITEM_RE`)와 같은 `[-*]`
+  불릿 어휘를 쓴다. 게이트를 «불릿 줄»에 앵커하면서 불릿 문자를 `-` 단독으로 좁혔더니, `*` 로 쓴 정당한
+  §2 데이터 줄이 «없는 줄»로 읽혀 `coverage-mapper <k> line missing` 오탐-red 가 났다(이 파일이 이미 한 번
+  겪은 결함이 방향만 바꿔 재발). 회귀 락은 통과가 정답인 단언이라 **양성 대조**(변형이 실제로 `*` 불릿을
+  만들었고 `-` 쪽 줄이 남아 있지 않은지)를 먼저 재고 나서 통과를 단언한다.
+- `commands/interview.md` 의 첫 라운드 설명이 «4-block Korean format» → ««직전 답에서» 블록 + 질문 둘».
+- `shared/tests/test_adjudication_wiring.sh` 의 `COMP_BASELINE` 33 → 38 — `depth_record.py` 가 `Ledger`
+  import 로 스캔 대상에 들어오며 더한 컴프리헨션 다섯. 다섯 전부 «항목을 버리는 자리»가 아니라 «세거나
+  목록을 만드는 자리»임을 코드를 열어 확인한 근거를 그 자리 주석에 남겼다(baseline 은 요구가 아니라 회귀 축).
+
+### Removed
+
+- teach-beat 절(teach-lite/heavy — 첫 사이클 열린 질문 8/8 소실), **라운드 규약의** 4-block 형식, SKILL C43
+  경로 (c)(general-purpose adversarial draft, 사용 기록 0), C51 라벨 강제, 정체 트리거와 state 필드
+  `no_progress_streak`·`stall_episode`·`coverage_mapper_dispatched_episode`(`test_stale_terms.sh` V12 등재).
+  `conducting-interview/SKILL.md` 386줄(0.54.0: 408 — G7 락은 `< 408`).
+  **범위 — 줄 수**: 그 22줄이 전부 이 릴리스의 삭제는 아니다. 아래 수는 전부
+  `git show <ref>:plugins/spec-distill/skills/conducting-interview/SKILL.md | wc -l` 로 **직접 센 값**이다 —
+  `319ed43`(0.54.0, 이 브랜치의 main 쪽 base) **408** · `6d77183`(이 브랜치가 merge 하기 직전의 tip)
+  **405** · `353b4a6`(upstream 0.55.0) **387** · `27c596d`(merge) **386**.
+  즉 **이 브랜치 자신의 순감은 −3**(408 → 405)이고 **upstream 의 순감은 −21**(408 → 387).
+  −3 은 조건부 로드 분리 하나의 몫이 아니라 SKILL.md 를 건드린 이 브랜치 커밋 **여섯**
+  (`a82c57b`·`cc25708`·`a7af882`·`f09b321`·`8693087`·`f8a1b53`)의 합이다.
+  **그리고 두 순감은 더해지지 않는다** — 408 − 3 − 21 = 384 인데 병합 결과는 386 이다(+2). 양쪽이
+  **같은** R3/steelman 영역을 고쳐서, merge 가 독립적인 두 삭감을 합산한 것이 아니라 겹침을 해소했기
+  때문이다. 빼서 384 가 나온 독자가 changelog 를 의심하지 않도록 여기 적어 둔다 — 386 과 `< 408` 은
+  그 해소 **뒤**의 실측값이고 둘 다 참이다(G7 락이 그 값을 쓴다).
+  **범위 — 4-block**: 위에서 빠진 것은 «라운드 규약의» 4-block 이고, **형식 자체는 리포에 남아 있다** —
+  R3 steelman 게이트가 `references/steelman.md` Step 3 에서 제시 형식으로 그대로 쓴다. 같은 어휘를 쓰는
+  다른 물건이라, `test_conducting_interview_stage.sh` 의 G7 부재 락은 그 파일 하나만 예외로 두되 그
+  예외가 vacuous 하지 않은지(그 파일이 실제로 그 어휘를 갖는지)를 양성 대조로 함께 잰다.
+
+### Fixed
+
+- **최종 리뷰 fix wave** (좌석 둘 — 같은 계열 whole-branch · codex cross-family — 이 서로 blind 로
+  돌아 거의 다른 것을 찾았다. 아래는 판정 후 고친 것):
+  - **AC3 닫힘 게이트 fail-open** — `coverage_ledger_failures`(derived 를 `startswith` 로만 셈)와
+    `coverage_anchor_failures`(세 부분 요구, 매치 실패는 조용히 `continue`)의 **엄격도 비대칭**으로,
+    derived 닫힘 행에서 근거 «필드 자체»를 지우면 게이트가 `{"pass": true}` rc=0 을 냈다. 두 함수가
+    하나의 `LEDGER_ROW_RE` 를 공유하게 하고, `floor:`/`derived:` 로 시작하는데 그 형태로 안 읽히는
+    줄을 그 자체로 failure 로 만들었다. 구분자 앞 공백을 요구해(`\s+—`) 이름에 em-dash 가 든 행이
+    **오파싱되어 닫힌 행이 열린 행으로 재분류**되던 두 번째 증상도 닫는다.
+  - **Step A.7 측정 원장이 영영 안 써지던 것** — 두 번째 bash 블록이 첫 블록에서만 정의된
+    `$PR`·`$PAIRS`·`$AUD_RAW`·`$ROOT`·`$harness_sid` 를 썼다. 두 블록 사이에 `Agent` dispatch 와
+    `AskUserQuestion` 이 있어 반드시 새 셸이다(`can't open file '/scripts/depth_record.py'` rc=2).
+    Step B-0 과 같은 관례로 블록 머리에서 재도출한다.
+  - **출하 audit 템플릿이 게이트의 답을 미리 채우던 것** — `coverage-mapper` 만 리터럴 통과값 `1` 을
+    달고 있어 dispatch 0 회 턴이 그대로 옮겨 적으면 게이트가 조용히 통과했다. `<k>` 로 되돌리고,
+    R18 이 막던 것(산문이 판정을 짐)은 **숫자를 치환한 합성 사본**에 대해 잰다.
+  - **측정이 거짓말하던 자리 넷** — 파손된 auditor 펜스가 「측정했고 0」으로 기록되던 것(이제
+    못 읽은 줄을 계수하고 항목 0 이면 unavailable) · 같은 S 의 상충 판정이 무공시 흡수되던 것(이제
+    hold, 같은 라벨 중복은 흡수로 계수) · `user_statements` 항목의 **필드 순서**만 달라도 한 답의
+    본문이 다른 S 에 붙던 것(이제 불릿이 항목 경계, id 부재는 rc 3) · 중간 라운드 결번이 terminal 로
+    오계수돼 적격 답이 사람 표본에서 사라지던 것(spec §3.2 의 정의대로 «뒤에 라운드가 없을 때»만
+    terminal). `agreement` 이형 값이 uncaught `ValueError` 로 「항상 exit 0」 계약을 깨던 것도 닫았다.
+    `depth_pairs.py` 가 늘 세던 `skipped` 를 영구 기록·표시 **양쪽에** 실어 누락이 하류에서 보이게 했다.
+  - **산문이 코드와 어긋나던 여섯** — 필수 첫 coverage-mapper dispatch 가 계약이 요구한 seed 입력을
+    안 싣던 것(슬롯 `seed`·`reverify` 추가 — 첫 dispatch 는 R1 전이라 원장만으로는 **주제를 못 본다**) ·
+    migration 이 «직전 released 스키마»(구조는 있고 새 키 셋만 없음)를 안 덮던 것(판정을 키 단위로) ·
+    워크트리 발산 경고가 tracking branch 를 재던 것(워크트리가 실제 쓰는 origin 기본 브랜치 기준으로) ·
+    README 안의 `4-path`/`3-path` 자기모순 · 삭제된 C51 5-type 규칙의 거짓 인용 ·
+    `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE` 의 README 등재부 누락.
+  - **이빨 없던 락 둘** — Step A.7 락이 `grep -qF '<파일명>'` 이라 산문·처분 줄이 만족시켜 **호출 두
+    줄을 지워도 GREEN** 이었다(bash 펜스 안 호출 «형태»로 교체). AC10 템플릿 락이 깊이 줄 셋만 세어
+    `- 판정자 조건:` 줄을 지워도 GREEN 이었다(넷 다 센다).
+- steelman dispatch 의 web kill switch 확인이 dispatch **뒤**에 놓여 있어(`SKILL.md` R3, 선재 결함), 위에서
+  아래로 읽는 모델이 `DEVBREW_SPEC_DISTILL_DISABLE_WEB=1` 인 채로 dispatch 할 수 있었다. `test_web_kill_switch.sh`
+  의 guard-window 락(dispatch 줄 위 40줄 안에 스위치 확인)은 이것을 잡지 못했다 — steelman dispatch 바로
+  위가 아니라 9줄 위의 R2 landscape 절 **자신의** kill switch 언급에 우연히 걸려 green 이었다. 확인 문단을
+  다른 두 dispatch 와 같은 모양으로 dispatch 직전에 옮겼다. **그런데 이 수정은 병합에서 살아남은 것이
+  아니라 더 강한 수정으로 대체됐다** — 0.55.0 merge 가 R3 절차 전문을 `references/steelman.md` 로 옮겼고,
+  upstream 은 같은 클래스를 그 파일에서 **다른 층위로** 고쳤다(아래 `[0.55.0]` 의 Fixed). 우리 것은
+  advisory **문단**을 dispatch 위로 올린 «산문 순서»였고, upstream 은 `Agent(...)` **호출 자체**를 `else`
+  가지 안에 넣어 스위치가 켜지면 dispatch 가 **구조적으로 도달 불가**가 되게 했다. 순서는 읽는 모델에
+  기대고 도달 불가는 기대지 않는다 — 병합 후 순 표면에 남는 것은 후자이고, 그것이 더 강하다.
+
+### Verification
+
+- **V6 실측** (native 워크트리, 격리 헤드리스 — 기본 baseRef / `worktree.baseRef=head` 두 실행 + 훅 전용
+  보충 실행 1회. 근거: `.claude/spec-distill/idr-scratch/v6/results.md`):
+  - (a) 브랜치명 — `EnterWorktree(name=X)` 가 만드는 브랜치는 `worktree-X`(요청한 이름 그대로가 아니다);
+    워크트리 **디렉토리**는 접두 없이 `X`. 두 실행 동일.
+  - (b) base ref — 기본은 origin 의 기본 브랜치라 **로컬 전용 커밋이 빠지고**, `worktree.baseRef=head`
+    면 로컬 HEAD 라 들어온다.
+  - (c) 훅 · `CLAUDE_PLUGIN_ROOT` — 훅은 워크트리 안에서도 정상 발화하고 훅 커맨드 문자열의
+    `${CLAUDE_PLUGIN_ROOT}` 는 플러그인 절대경로로 치환된다. 그러나 에이전트가 실행하는 **일반 Bash
+    세션에는 export 되지 않는다**(`unset`) — 두 컨텍스트를 «훅 발화 여부» 하나로 뭉뚱그리지 말 것.
+  - (d) 종료 후 잔존 — 헤드리스(`ExitWorktree` 미호출) 종료 뒤 워크트리·브랜치가 **lock 걸린 채 잔존**하고
+    `git worktree remove --force` 는 거부돼 `-f -f` 가 필요했다. **근거 등급이 (a)(b)(e) 보다 한 단계 낮다** —
+    도구가 낸 JSON 필드가 아니라 `git worktree list` 출력을 수기로 전사한 기록이다.
+  - (e) `git branch -m` · `git commit -F` — 격리 세션의 git 가드에 **둘 다 거부 없이 성공**. `tool_available=yes`.
+  - **미측정 셋**(단정하지 않는다): ① 슬래시 포함 브랜치명(`EnterWorktree(name="feature/<topic>")`)이
+    무엇이 되는지 ② 사람이 대화형 `ExitWorktree` 로 **정상 종료**했을 때도 (d) 의 lock 잔존이 재현되는지
+    ③ keep/remove 프롬프트의 모양 — 대화형 UI 라 `-p` 헤드리스에서 트리거되지 않는다.
+- **V1 mutation** — 앵커 문자 삭제 / 앵커 번호를 §6 에 없는 값으로 / 원장 행 통째 삭제 셋을 스윕된
+  `interview-brief-valid` 쌍 사본에 수동으로 넣어 전부 red 를 확인했다(무변이 baseline 은 pass;
+  `.claude/spec-distill/idr-scratch/ac3_mutation.txt`). `coverage-mapper 1 → 0`(사유 없음)·줄 부재·
+  `0 (unavailable: …)` advisory 는 `test_check_brief.sh` AC4 블록의 in-test 변형이 상시 고정한다.
+- **V5 baseline** — 착수 전 실패 3줄 → 완료 후 3줄, 새 실패 0. 그 3줄은 이 릴리스와 무관한 선재 RED 이고
+  clean `origin/main` 체크아웃에서도 바이트 동일하다(plan 부록 B 에 줄과 면제 사유).
+- **V7 사람 e2e**: 실행하지 않았다 — 사용자가 이번 릴리스에서 사람 e2e 인터뷰 실행을 하지 않기로
+  결정했다. **AC16 미충족.** 이 릴리스가 더한 것 중 모델이 실행하는 산문 — 라운드 규약(«직전 답에서»
+  블록 + 질문 둘), Step A.7 사후 깊이 측정 절차, `framing-requests` 워크트리 질문, 종료 시
+  사람-라벨링 질문 — 은 라이브 세션에서 한 번도 실행되지 않았다. 결정론적 스위트(V1~V5)는
+  통과했으나 그것이 검증하는 범위 밖이다.
+- **알려진 한계 — 씨드 경로의 `S1→R1` 쌍이 측정 밖**: 씨드로 시작한 인터뷰는 state 의
+  `user_statements` 번호를 `S2` 부터 매긴다(`S1` 은 §6 예약, state 미기록) — 그래서 `S1` 은
+  `depth_pairs.py` 에 닿지 않고, 그 스크립트가 내는 `total`/`eligible` 은 R1 의 되비추기를
+  체계적으로 뺀다. 방향은 낙관 쪽이다: 빠지는 답은 seed 의 «다시 검증할 것» 문단에서 그대로
+  채워지는 반사(파고든 것이 아니라 미리 쓰인 것)일 확률이 가장 높은 자리라, 측정된 dug-rate 를
+  실제보다 높게 보이게 한다 — spec §3.4 의 판정자 조건 임계치(A 30%/B 70%)가 바로 그 비율을
+  읽는다. 고치는 방법은 설계 결정이다(`S1` 을 state 에 실제로 넣을지, 스크립트가 §6 예약을
+  알게 할지) — 이번 사이클에서는 하지 않는다.
+
 ## [0.56.0] — 2026-09-06
 
 ### Added

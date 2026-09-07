@@ -10,14 +10,16 @@ source: spec-distill conducting-interview v0.23.0
 
 ## 1. Coverage Ledger
 
-- floor:root_problem — closed — §1 Goal (ROOT_CAUSE)
-- floor:landscape — closed — §4 Next.js SSR 인용
-- floor:skepticism — closed — §5 islands steelman kept
-- floor:blind_spot — closed — §5 cold-start 위험
-- floor:open_questions — closed — §3 OQ1
-- derived:rendering-strategy — closed — SSR/islands 선택이 축; §5 근거
+- floor:root_problem — closed — §1 Goal (ROOT_CAUSE) (@S2)
+- floor:landscape — closed — §4 Next.js SSR 인용 (@S2)
+- floor:skepticism — closed — §5 islands steelman kept (@S2)
+- floor:blind_spot — closed — §5 cold-start 위험 (@S2)
+- floor:open_questions — closed — §3 OQ1 (@S2)
+- derived:rendering-strategy — closed — SSR/islands 선택이 축; §5 근거 (@S2)
 
 ## 2. Budget
+
+- agent dispatch: coverage-mapper 1
 
 - probe_count: 7 / cap 12
 - web_sweep_count: 3 / 4

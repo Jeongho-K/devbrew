@@ -12,6 +12,11 @@ CMD="$REPO_ROOT/plugins/spec-distill/commands/interview.md"
 # 자동으로 대상이 된다. 섹션 윈도우(B-0…B-3·종료)는 그 섹션이 실제로 사는 $FIN 에서 뜬다.
 FIN_DIR="$REPO_ROOT/plugins/spec-distill/skills/conducting-interview/references"
 FIN="$FIN_DIR/finishing.md"
+# Task 11b(무게 감축 재시도): 같은 이유로 `## seed 를 입력으로 받았을 때`와
+# `## In-flight state migration`도 references/로 분리됐다(둘 다 finishing.md보다 조건성이
+# 강하거나 같은 conditional-load 후보). 섹션 윈도우는 이제 SKILL이 아니라 이 두 파일에서 뜬다.
+SEED_REF="$FIN_DIR/seed-input.md"
+MIG_REF="$FIN_DIR/state-migration.md"
 CI_FILES=("$SKILL")
 while IFS= read -r _f; do [ -n "$_f" ] && CI_FILES+=("$_f"); done < <(ls "$FIN_DIR"/*.md 2>/dev/null)
 # Task 33: 두 skill 이 **공유**하는 절차(proceed 게이트 공통 계약)는 어느 skill 밑도 아닌
@@ -174,14 +179,15 @@ grep -q 'drafting-spec' "${CI_ALL[@]}" && no "AC10: drafting-spec still referenc
 
 # --- v0.22.0: 커버리지 상태 스키마 + 마이그레이션 (AC1/AC5) ---
 has 'coverage:' "AC1: coverage ledger in state schema"
-has 'no_progress_streak' "AC1: orchestration.no_progress_streak in schema"
 has 'blind_spot_dispatched' "AC1: orchestration.blind_spot_dispatched in schema"
-# v0.38.0: probe 카운터를 지우면서 coverage-mapper 재dispatch 바운드가 함께 사라지지
-# 않게 «에피소드» 단위로 이식한다. 재는 것은 **두 디스크 값의 비교**가 유지되는가다 —
-# 값 하나(streak)를 저장하면 streak 3 에서 dispatch(저장 3) → 4 → `3 != 4` → 재dispatch
-# → 5 → … 로 레벨-트리거 무한 재dispatch 가 되살아난다(현행 바운드가 명시적으로 막는 것).
-has 'stall_episode' "C11(v0.38.0): orchestration.stall_episode in schema"
-has 'coverage_mapper_dispatched_episode' "C11(v0.38.0): orchestration.coverage_mapper_dispatched_episode in schema"
+# v0.57.0: 정체 트리거(streak·에피소드) 전량 제거 — coverage-mapper dispatch 는 R1 필수 1회 +
+# 재개방 시 최대 1회로 바뀌어 «두 디스크 값 비교» 바운드 자체가 불필요해졌다. 부재로 반전한다.
+for tok in no_progress_streak stall_episode coverage_mapper_dispatched_episode; do
+  grep -q "$tok" "${CI_ALL[@]}" && no "AC5/C4: $tok 잔존 (정체 트리거 제거)" || ok "AC5/C4: $tok 제거됨"
+done
+has 'coverage_mapper_dispatches' "C4: orchestration.coverage_mapper_dispatches in schema"
+has 'reopen_log' "AC5: reopen_log in schema"
+has 'reopened' "AC5: reopened in schema"
 # AC1: 기존 필드 보존
 has 'non_user_streak' "AC1: non_user_streak retained"
 # AC1: 라운드별 잠금 producer 제거 — pending_locked_decisions는 사라지고 user_statements가 대체
@@ -192,17 +198,38 @@ has 'user_statements' "AC1: user_statements가 state 스키마에 존재"
 # AC5: 마이그레이션 — 구세션 감지 + fresh seed + advisory
 has 'coverage.*부재|coverage 부재|interview_round.*존재' "AC5: legacy detection (interview_round present / coverage absent)"
 has 'state schema migration.*coverage' "AC5: migration advisory wording"
-mig_block="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
-# v0.38.0(R-I): migration 절도 orchestration 열거를 담고 있다 — 필드 교체를 소유한
-# 태스크가 그 필드의 모든 자리를 책임진다. Task 6(probe 스윕)이 옛 단일 필드 리터럴을
-# 이 파일에서 지우면서, 그 리터럴로 부재를 확인하던 이 assertion도 함께 다시 써야 했다
-# (그 리터럴 자체가 probe 계열 별칭 oracle에 걸린다 — 남기면 잔존 락이 이 파일을 영구히
-# residue로 본다). 음의 grep 대신 **정확히 일치**하는 전체 열거 리터럴을 요구한다 —
-# 에피소드 필드 둘로 정확히 끝나는 열거만 통과하므로 옛 필드가 끼어들거나(추가) 대체돼도
-# (치환) 이 리터럴과 달라져 RED다. 부분 토큰 공존이 아니라 **열거 전체의 동일성**이 이빨이다.
-{ grep -qF '`orchestration`: `{focused_dimension: null, no_progress_streak: 0, blind_spot_dispatched: false, stall_episode: 0, coverage_mapper_dispatched_episode: null}`' <<<"$mig_block"; } \
-  && ok "AC5(v0.38.0): migration 절의 orchestration 열거가 정확히 에피소드 필드 둘로 끝난다 (구 단일 필드 없음)" \
-  || no "AC5(v0.38.0): migration 절의 orchestration 열거가 정확히 에피소드 필드 둘로 끝난다 (구 단일 필드 없음)"
+# Task 11b: 절 전문이 SKILL에서 $MIG_REF 로 옮겨졌다(조건부 로드) — 윈도우도 거기서 뜬다.
+mig_block="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$MIG_REF")"
+# v0.57.0: migration 절도 orchestration 열거를 담고 있다 — 필드 교체를 소유한 태스크가 그
+# 필드의 모든 자리를 책임진다. 음의 grep 대신 **정확히 일치**하는 전체 열거 리터럴을 요구한다 —
+# `coverage_mapper_dispatches` 하나로 정확히 끝나는 열거만 통과하므로 정체 트리거 필드가
+# 끼어들거나 대체돼도 이 리터럴과 달라져 RED다. 부분 토큰 공존이 아니라 **열거 전체의 동일성**이 이빨이다.
+{ grep -qF '`orchestration`: `{focused_dimension: null, blind_spot_dispatched: false, coverage_mapper_dispatches: 0}`' <<<"$mig_block"; } \
+  && ok "AC5(v0.57.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)" \
+  || no "AC5(v0.57.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)"
+# v0.57.0 C2: 발동 조건이 «구조 통째 부재» 면 **실제 업그레이드 경로가 통째로 빠진다** —
+# 직전 릴리스 세션은 `coverage`·`orchestration` 을 이미 갖고 이 릴리스가 더한 세 키
+# (`reopened`·`reopen_log`·`coverage_mapper_dispatches`)만 없어서 어느 조건에도 안 걸린 채
+# 그 키를 읽는 코드로 들어간다. spec §2.4 는 «부재 키는 기본값으로 추가» 다. 조건의 «단위»를
+# 잰다 — 위 열거 락은 무엇을 채우는지만 보고 언제 발동하는지는 안 본다.
+{ [[ -n "$mig_block" ]] && grep -qF '판정은 **키 단위**다' <<<"$mig_block"; } \
+  && ok "AC5/C2: migration 발동 판정이 «키 단위»다 (구조 부재로 좁히지 않는다)" \
+  || no "AC5/C2: migration 발동 판정이 키 단위가 아니다 — 직전 릴리스 세션이 어느 조건에도 안 걸린다"
+# 리터럴은 **body-unique** 여야 한다. «부재 키만» 은 이 절에 두 번 나와서(총칙 + orchestration
+# 적용례) 한쪽을 지워도 다른 쪽이 grep 을 계속 만족시킨다 — 실측으로 확인하고 총칙 문장에서만
+# 나는 리터럴로 좁혔다.
+grep -qF '이미 있는 값은 손대지 않는다' <<<"$mig_block" \
+  && ok "AC5/C2: 이미 있는 값은 두고 부재 키만 채운다 (진행 중 인터뷰의 닫힘을 안 되돌린다)" \
+  || no "AC5/C2: 부분 보충 총칙이 없다 — 있는 값을 덮어쓸 수 있다"
+# 조건을 넓히면 «구세션 전용» 이던 `user_statements` 초기화가 직전 릴리스 세션까지 삼킬 수
+# 있다. 그건 마이그레이션이 아니라 §6 원문·깊이 측정 근거의 손실이다. 범위 한정을 못 박는다.
+grep -qE '구세션에 한해|구세션에만' <<<"$mig_block" \
+  && ok "AC5/C2: user_statements 초기화가 구세션으로 한정된다" \
+  || no "AC5/C2: user_statements 초기화 범위가 한정되지 않았다 — 넓힌 조건이 발화 레코드를 지운다"
+mig_ptr="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+{ [[ -n "$mig_ptr" ]] && grep -qF '어떤 키든 부재' <<<"$mig_ptr"; } \
+  && ok "AC5/C2: SKILL 의 조건부 로드 조건도 «어떤 키든 부재» 다 (참조와 포인터가 같은 조건)" \
+  || no "AC5/C2: SKILL 포인터의 로드 조건이 참조 파일의 조건보다 좁다 — 파일을 아예 안 읽는다"
 
 # Unbounded-autonomy backstop fail-open fix: migration must persist BEFORE the first probe.
 # Deferring persistence to "the next explicit state write" leaves coverage/orchestration
@@ -292,81 +319,103 @@ grep -q 'interview_round' <<<"$term_block" \
 
 # --- v0.22.0: teach-beat + blind-spot/coverage-mapper dispatch (AC6/AC7/AC8/AC9/C11/C12) ---
 
-# teach-beat 섹션 (scoped — feedback_grep_lock_header_satisfiable teeth)
-teach_block="$(awk '/^## teach-beat/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
-{ [[ -n "$teach_block" ]] && grep -qi 'teach-lite' <<<"$teach_block"; } \
-  && ok "AC8: teach-beat section present (teach-lite)" \
-  || no "AC8: teach-beat section present (teach-lite)"
-grep -qE '≤1문장' <<<"$teach_block" \
-  && ok "AC8: teach-lite size bound (<=1 sentence)" \
-  || no "AC8: teach-lite size bound (<=1 sentence)"
-{ grep -q 'teach-heavy' <<<"$teach_block" && grep -q '≥1' <<<"$teach_block" && grep -q 'URL' <<<"$teach_block"; } \
-  && ok "AC8: teach-heavy needs >=1 URL" \
-  || no "AC8: teach-heavy needs >=1 URL"
-grep -qE '단정이 아닌 질문 형태|질문 형태' <<<"$teach_block" \
-  && ok "C3: teach as question, not assertion" \
-  || no "C3: teach as question, not assertion"
-grep -qE '모델 판단|non-goal' <<<"$teach_block" \
-  && ok "C12: firing time is model-judged, not mechanized" \
-  || no "C12: firing time is model-judged, not mechanized"
+# --- v0.57.0 §1 라운드 규약 (블록 스코프 — 4-block·teach-beat 대체) ---------------------
+# 스코프 안의 예시 fenced block 이 `## R<n>`(depth_pairs 계약이 요구하는 실제 헤딩 리터럴)을
+# 담고 있어 — 단순 "다음 `## ` 헤딩에서 닫는다" idiom 이 예시 자체를 다음 섹션 시작으로
+# 오판한다(fence 미인식). 그래서 이 스코프만 ``` 토글로 fence 안쪽을 닫힘-판정에서 뺀다.
+round_block="$(awk '/^```/{c=!c} /^## 라운드 규약/{f=1;print;next} !c && /^## /{f=0} f' "$SKILL")"
+round_flat="$(tr '\n' ' ' <<<"$round_block" | tr -s ' ')"
+{ [[ -n "$round_block" ]] && grep -qF '### 직전 답에서 — S<k>' <<<"$round_block"; } \
+  && ok "AC1: 라운드 규약 절 + «### 직전 답에서 — S<k>» 블록 형식" || no "AC1: 라운드 규약 절/블록 형식 부재"
+for key in '- 함의:' '- 상충:' '- 확인한 사실:' '- 위험:'; do
+  grep -qF -- "$key" <<<"$round_block" && ok "AC1: 네 줄 키 $key" || no "AC1: 네 줄 키 $key 부재"
+done
+grep -qF '## R<n>' <<<"$round_block" && ok "AC1: state 본문 헤딩 ## R<n> (depth_pairs 계약)" || no "AC1: ## R<n> 헤딩 부재"
+grep -qF 'Q1 은 생략할 수 없다' <<<"$round_flat" && ok "AC1: «Q1 은 생략할 수 없다»" || no "AC1: Q1 불가생략 문장 부재"
+grep -qF 'R1 은 S1 을 되비춘다' <<<"$round_flat" && ok "AC1: «R1 은 S1 을 되비춘다»" || no "AC1: R1/S1 문장 부재"
+grep -qE '넷 다 «없음»[^.]{0,60}되묻기|전부 «없음»[^.]{0,60}되묻기' <<<"$round_flat" && ok "AC1: 전부 «없음» → Q1 되묻기 (G1 이행 규칙)" || no "AC1: 전부-없음 규칙 부재"
+# 실측(round 산문): «/interview» 와 «R2 부터» 사이 간격이 101자 — 원안 {0,80} 은 이 정확한
+# 산문(브리프가 지정한 리터럴 그대로, 임의로 줄이지 않음)에 대해 너무 좁아 자기모순이었다.
+# 120으로 넓혀 현재 문장 + 사소한 리라이트 여유를 함께 잡는다(부재 판정용이 아니라 「한
+# 문장 안의 관계」결속이 목적이므로 상한 자체를 없애지 않는다 — 무관한 문장까지 걸리는
+# vacuous 매치를 막는 것이 이 축의 역할이다).
+grep -qE '인자 없이[^.]{0,40}/interview[^.]{0,120}R2 부터' <<<"$round_flat" && ok "AC1: 비-seed 경로의 R1 예외" || no "AC1: 비-seed R1 규약 부재"
+q_js="$(awk '/^## 라운드 규약/{f=1} f&&/^```javascript/{j=1;next} j&&/^```/{exit} j' "$SKILL")"
+[[ "$(grep -c 'header:' <<<"$q_js")" -eq 2 ]] && grep -q 'AskUserQuestion(' <<<"$q_js" \
+  && ok "AC2: AskUserQuestion 한 번에 질문 둘(header 2개)" || no "AC2: AskUserQuestion 질문 수가 2가 아니다"
+grep -qF '(권장)' <<<"$q_js" && ok "AC2: 첫 선택지가 추천 (권장)" || no "AC2: 추천 선택지 부재"
+grep -qF '고르면 무엇이 달라지는가' <<<"$round_flat" && ok "AC2: description = 고르면 무엇이 달라지는가" || no "AC2: description 규칙 부재"
+grep -qE 'Q1 의 선택지는 둘|«맞다» / «모르겠다»' <<<"$round_flat" && ok "AC2: Q1 선택지 둘(맞다/모르겠다), 수정은 기타" || no "AC2: Q1 선택지 규칙 부재"
+grep -qF 'provisional_on' <<<"$round_flat" && ok "AC2: Q2 의 provisional_on 규칙" || no "AC2: provisional_on 부재"
+reask_block="$(awk '/^## 되묻기로 바뀌는 조건/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+{ [[ -n "$reask_block" ]] && grep -q '이유' <<<"$reask_block" && grep -q '사례' <<<"$reask_block" && grep -q '실패 조건' <<<"$reask_block"; } \
+  && ok "C1: 되묻기 세 축(이유·사례·실패 조건)" || no "C1: 되묻기 절/세 축 부재"
+grep -qE '추측[^.]{0,20}첫 선택지' <<<"$(tr '\n' ' ' <<<"$reask_block")" && ok "C1: 인터뷰어 추측이 첫 선택지" || no "C1: 추측-첫-선택지 규칙 부재"
+# 제거 (G7·AC1·AC14) — 존재 검사가 아니라 부재 검사이므로 CI_ALL 전체
+for tok in 'teach-lite' 'teach-heavy' 'teach-beat' 'general-purpose'; do
+  grep -qF -- "$tok" "${CI_ALL[@]}" && no "G7: «${tok}» 잔존" || ok "G7: «${tok}» 제거됨"
+done
+# `4-block`·`막힌 결정` 은 **라운드 규약**의 어휘로서 제거됐다(AC1: «직전 답에서» 블록 + 질문 둘).
+# 그런데 **R3 steelman 게이트**가 자기 제시 형식으로 같은 두 낱말을 쓴다(`references/steelman.md`
+# Step 3) — 다른 물건이 같은 어휘를 쓴다. 어휘가 같다고 한쪽을 지우면 다른 쪽 설계를 지우는
+# 것이므로, 부재는 «전 코퍼스»가 아니라 «steelman.md 를 뺀 전 코퍼스»에서 요구한다.
+# 예외는 **하나**이고, 그 예외가 vacuous 하지 않은지(그 파일이 실제로 그 어휘를 갖는지)를
+# 함께 잰다 — 그러지 않으면 steelman.md 가 어휘를 잃어도 이 예외가 조용히 남아 범위만 줄인다.
+g7_exempt="$FIN_DIR/steelman.md"
+g7_scoped=()
+for _f in "${CI_ALL[@]}"; do [[ "$_f" == "$g7_exempt" ]] || g7_scoped+=("$_f"); done
+[[ "${#g7_scoped[@]}" -eq $(( ${#CI_ALL[@]} - 1 )) ]] \
+  && ok "G7: 예외가 정확히 references/steelman.md 하나 (${#g7_scoped[@]}/${#CI_ALL[@]})" \
+  || no "G7: steelman.md 예외가 코퍼스에서 도출되지 않았다 (${#g7_scoped[@]}/${#CI_ALL[@]}) — 범위가 어긋났다"
+for tok in '4-block' '막힌 결정'; do
+  grep -qF -- "$tok" "${g7_scoped[@]}" \
+    && no "G7: «${tok}» 잔존 (steelman.md 밖)" || ok "G7: «${tok}» 제거됨 (steelman.md 밖)"
+  grep -qF -- "$tok" "$g7_exempt" \
+    && ok "G7 양성 대조: «${tok}» 이 steelman.md 에 실재 (예외가 vacuous 아님)" \
+    || no "G7 양성 대조: steelman.md 에 «${tok}» 이 없다 — 예외가 아무것도 면제하지 않으면서 범위만 줄인다"
+done
+[[ "$(wc -l < "$SKILL")" -lt 408 ]] && ok "G7: SKILL.md 줄 수 $(wc -l < "$SKILL") < 408 (순감)" || no "G7: SKILL.md 줄 수 $(wc -l < "$SKILL") ≥ 408"
 
-# coverage-mapper dispatch (C11/AC7, scoped)
+# coverage-mapper dispatch (상한 2, AC7, scoped)
 covmap_block="$(awk '/^## coverage-mapper dispatch/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
 { [[ -n "$covmap_block" ]] && grep -q 'coverage-mapper' <<<"$covmap_block"; } \
   && ok "AC7: coverage-mapper dispatch section present" \
   || no "AC7: coverage-mapper dispatch section present"
-grep -qE '연속 3 probe|no_progress' <<<"$covmap_block" \
-  && ok "C11: coverage-mapper trigger (3 no-progress probes OR floor first transition)" \
-  || no "C11: coverage-mapper trigger (3 no-progress probes OR floor first transition)"
-# 스코프가 필수다 — `stall_episode` 는 State schema 절에도 등장하므로 전-파일 grep 은
-# 이 절이 통째로 사라져도 satisfied 된다(feedback_grep_lock_header_satisfiable).
-# 토큰 co-occurrence(각각 grep -q)는 이빨이 없다 — 이 절 본문은 두 필드 이름을 두 번
-# 이상 언급하고(대입문 · 설명문) `!=`도 무관한 예시("3 != 4")에 따로 등장해, 조건식을
-# 지워도(mutation M1) 흩어진 잔여 토큰만으로 satisfied된다(실측, fix round 1 이전 실패
-# 모드). **같은 줄에서 `!=`로 이어지는지**만 보는 것도 부족하다 — AND -> OR 재배치는
-# `!=` 페어를 그대로 두고 논리 접속사만 바꾸므로 밀도 게이트(연속 3 probe)가 사라지는데도
-# `!=` 페어 단독 검사는 통과시킨다(fix round 1 Important 1, reviewer 재현). 그래서
-# **관계 전체**(임계값 `no_progress_streak >= 3` · 논리 접속사 `AND` · 비교 `!=` 페어)를
-# 하나의 정규식으로 묶는다.
-#
-# 동시에 줄바꿈에는 관대해야 한다(fix round 1 Minor 1) — 조건식은 backtick 인라인 코드
-# 스팬 하나 안에 있고, 그 안에서 줄이 바뀌어도(rewrap) 의미는 그대로다. 그래서 절 본문을
-# 줄 단위로 grep하지 않고 backtick 페어로 구획을 나눠 **각 코드 스팬 안의 개행만** 공백으로
-# 접는다(그 스팬 밖 줄바꿈은 건드리지 않는다) — 조임(관계 전체)과 관대함(레이아웃)을
-# 맞바꾸지 않는다.
-#
-# Task 6(R-J 이월): 위 code_spans는 **절 전체**에서 backtick 스팬을 모으므로 «관계가 어느
-# 스팬에든 존재하는가»만 본다 — 그 스팬이 **실제 판정문인지**는 안 본다. 실증(reviewer
-# 재현): 진짜 조건식을 `AND`→`OR`로 defang하고, 절 안 다른 곳(예: 반례 설명 문단)에 옛
-# AND 문구를 backtick 예시로 남겨두면 이 절이 이미 반례 설명 문단을 갖고 있어 그 미끼가
-# 자연스럽게 생기고, 스위트 전체가 GREEN이 된다(M12). 그래서 검사 대상을 **판정문이 사는
-# 단락**(직전 줄이 `**redispatch 바운드`로 시작하는 문단, 빈 줄 경계)으로 먼저 좁히고,
-# 그 문단 안의 backtick 스팬에서만 관계를 찾는다 — 절 전체의 다른 문단에 있는 스팬은
-# 후보에서 아예 빠진다.
-#
-# **이 앵커의 대가(fix round 1, 리뷰 Minor 3)**: `^\*\*redispatch 바운드`는 위치
-# 의존적이다 — 그 문단 **맨 앞**에 `**redispatch 바운드`가 와야 한다. 의미를 안 바꾸는
-# 편집(예: 그 문단 앞에 안내 문장 한 줄을 새로 끼워 넣는 것)도 그 문단을 더는 이
-# 리터럴로 시작하지 않게 만들면 `judgment_para`가 비어 거짓 RED가 난다(실측 확인 —
-# `**redispatch 바운드(...)**: 재dispatch 조건은` 앞에 무해한 한 줄을 넣자 이 assert가
-# 즉시 RED). 이전 태스크(Task 4)와 같은 교훈이다 — **의미를 결속하고 레이아웃엔
-# 관대해야** 하는데, 이 앵커는 그 문단의 **첫 줄 위치**라는 레이아웃에 결속돼 있다.
-# 지금은 이 문단이 그렇게 편집될 계획이 없어 위험을 감수하지만, 이 문단을 다시 만지는
-# 사람은 이 앵커가 「문단 시작」을 본다는 것을 알아야 한다.
-judgment_para="$(awk -v RS='' '/^\*\*redispatch 바운드/' <<<"$covmap_block")"
-code_spans="$(awk 'BEGIN{RS="`"} NR%2==0{gsub(/\n/," "); print}' <<<"$judgment_para")"
-{ grep -qE 'no_progress_streak[[:space:]]*>=[[:space:]]*3[[:space:]]+AND[[:space:]]+coverage_mapper_dispatched_episode[[:space:]]*!=[[:space:]]*stall_episode' <<<"$code_spans" \
-  || grep -qE 'coverage_mapper_dispatched_episode[[:space:]]*!=[[:space:]]*stall_episode[[:space:]]+AND[[:space:]]+no_progress_streak[[:space:]]*>=[[:space:]]*3' <<<"$code_spans"; } \
-  && ok "C11(v0.38.0): 재dispatch 바운드가 «임계값 AND 에피소드 비교» 관계 전체 (판정문 단락에 앵커, rewrap-tolerant)" \
-  || no "C11(v0.38.0): 재dispatch 바운드가 «임계값 AND 에피소드 비교» 관계 전체 (판정문 단락에 앵커, rewrap-tolerant)"
-# 조건 2 의 «유한성 근거» — 이것이 없으면 그 조건이 «바운드 밖»인지 «바운드 불필요»인지
-# 구별되지 않는다. 지금까지 어디에도 없었다.
-grep -qE 'floor 다섯 차원으로 고정|상한이 5' <<<"$covmap_block" \
-  && ok "C11(v0.38.0): 조건 2 의 유한성 근거 명시" \
-  || no "C11(v0.38.0): 조건 2 의 유한성 근거 명시"
+# v0.57.0: 정체 트리거(연속 3 probe · 에피소드 비교)를 R1 필수 1회 + 재개방 시 최대 1회로
+# 교체했다. 관계는 절 본문(줄바꿈 관용을 위해 flatten)에서 잡는다 — 헤더-satisfiable 회피는
+# 위 presence 체크가 이미 담당하므로 여기서는 각 규칙의 body-unique 문구를 요구한다.
+covmap_flat="$(tr '\n' ' ' <<<"$covmap_block" | tr -s ' ')"
+grep -qE 'R1[^.]{0,30}첫 질문 전[^.]{0,20}필수 1회' <<<"$covmap_flat" \
+  && ok "C4: R1 첫 질문 전 필수 1회" || no "C4: R1 필수 dispatch 규칙 부재"
+grep -qE '재개방[^.]{0,20}최대 1회' <<<"$covmap_flat" \
+  && ok "C4: 재개방 시 최대 1회" || no "C4: 재개방 dispatch 규칙 부재"
+{ grep -qE '상한[^.]{0,6}2' <<<"$covmap_flat" && grep -qF 'coverage_mapper_dispatches' <<<"$covmap_block"; } \
+  && ok "C4: 상한 2 + 카운터" || no "C4: 상한 2/카운터 부재"
+grep -qE 'coverage-mapper 0 \(unavailable' <<<"$covmap_block" \
+  && ok "C4: unavailable sentinel 규약" || no "C4: unavailable sentinel 부재"
 grep -q 'advisory' <<<"$covmap_block" \
   && ok "C11: coverage-mapper output is advisory (orchestrator admits)" \
   || no "C11: coverage-mapper output is advisory (orchestrator admits)"
+
+# 닫힘 · 재개방 (AC1/AC5/G2/C3, scoped) — 새 절. 헤더-satisfiable 회피는 presence 체크가,
+# rewrap 관용은 flatten 이 담당한다.
+close_block="$(awk '/^## 닫힘 · 재개방/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+close_flat="$(tr '\n' ' ' <<<"$close_block" | tr -s ' ')"
+{ [[ -n "$close_block" ]] && grep -qE '사용자가 답한 S[^.]{0,10}뒤에만 닫' <<<"$close_flat"; } \
+  && ok "AC1/G2: «차원은 사용자가 답한 S 뒤에만 닫는다»" || no "AC1/G2: 닫힘 규칙 부재"
+grep -qE '횟수[^.]{0,30}닫힘 근거가 아니' <<<"$close_flat" \
+  && ok "G2: 이벤트 횟수는 닫힘 근거 아님" || no "G2: 횟수-비근거 문장 부재"
+grep -qF 'closed → open' <<<"$close_block" \
+  && ok "AC5: closed → open 전이" || no "AC5: closed → open 부재"
+grep -qF '→ <차원> 재개방' <<<"$close_block" \
+  && ok "AC5: 상충 줄에 → 재개방" || no "AC5: 상충-재개방 표기 부재"
+grep -qE '다시 닫힐 때[^.]{0,20}새 S|새 S[^.]{0,20}인용' <<<"$close_flat" \
+  && ok "AC5: 재개방 후 닫힘은 새 S" || no "AC5: 새-S 규칙 부재"
+grep -qE '상한[^.]{0,10}없|무상한' <<<"$close_flat" \
+  && ok "C3: 재개방 무상한" || no "C3: 무상한 문장 부재"
+for dim in root_problem landscape skepticism blind_spot open_questions; do
+  grep -q "$dim" <<<"$close_block" && ok "§2.1: $dim 의 닫힘 발화 규약" || no "§2.1: $dim 닫힘 발화 규약 부재"
+done
 
 # blind-spot-prober dispatch (AC6/C8, scoped)
 blindspot_block="$(awk '/^## blind-spot-prober dispatch/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
@@ -481,10 +530,11 @@ grep -qE '§[68] OQ' <<<"$r3_block" \
 # E10 (오케스트레이터 미러) — R3 dispatch 지시에 병렬·투기적 금지 문구 부재.
 # steelman-builder.md 페르소나에서 지운 것과 같은 억제가 R3 dispatch 지시문에도 있었다
 # (C5/AP9 인용 둘 다 근거 없음 — fix round 1). 스코프가 전-파일이 아닌 이유는 코퍼스가
-# 바뀌어도 그대로다: SKILL.md 에 'teach-beat 최대 1회' 같은 legitimate 한 횟수 제한 문구가
-# 남아 있어 전-파일 grep 은 그것에 걸린다. 지금 "$r3_block" 은 SKILL.md 의 섹션 윈도우가
-# 아니라 **references/steelman.md 전문**이다 — 재는 대상은 같고(그 절차의 dispatch 지시),
-# 사는 파일만 옮겨갔다.
+# 바뀌어도 그대로다: 이 skill 표면에는 legitimate 한 횟수 제한 문구가 남아 있어 전-파일
+# grep 은 그것에 걸린다 — v0.57.0 이 teach-beat 절을 지웠지만 `재개방 시 최대 1회`(SKILL.md)·
+# `2회까지`(finishing.md)가 그 자리를 잇는다(문구만 바뀌고 근거는 그대로다). 지금
+# "$r3_block" 은 SKILL.md 의 섹션 윈도우가 아니라 **references/steelman.md 전문**이다 —
+# 재는 대상은 같고(그 절차의 dispatch 지시), 사는 파일만 옮겨갔다.
 grep -qE '병렬.{0,8}금지|투기적.{0,8}금지' <<<"$r3_block" \
   && no "E10: R3 dispatch에 병렬·투기적 금지 문구 잔존 (scoped to R3)" \
   || ok "E10: R3 dispatch에 병렬 금지 문구 없음 (scoped to R3)"
@@ -512,7 +562,9 @@ grep -qi 'breadth-keeper\|breadth_keeper' "${CI_ALL[@]}" \
   || ok "V7a: breadth-keeper term removed from SKILL"
 
 # interview_round confinement — migration section only (SHARP, Task 9 V9)
-mig_ir_count="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$SKILL" | grep -c interview_round)"
+# Task 11b: 절 전문이 $MIG_REF 로 옮겨갔으므로 그 파일 전체가 이제 "migration section"이다
+# (파일이 그 헤딩 하나로 시작해 끝까지가 그 절이므로 awk 윈도우는 그대로 유효하다).
+mig_ir_count="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$MIG_REF" | grep -c interview_round)"
 total_ir_count="$(ci_cat_all | grep -c interview_round)"
 [[ "$mig_ir_count" -eq "$total_ir_count" ]] \
   && ok "V9: interview_round confined to migration section (mig=$mig_ir_count total=$total_ir_count)" \
@@ -762,13 +814,32 @@ grep -qE 'request-framing[^.]{0,60}웹[^.]{0,20}보지 않' <<<"$r2_flat" \
   || no "R2(v0.41.0): 탐색 경계 명시 (request-framing…웹…보지 않, 한 문장 결속, rewrap-tolerant)"
 
 # --- v0.41.0: seed 입력 규약 (scoped — 헤더-satisfiable 회피 + rewrap 관용) ---
-seed_block="$(awk '/^## seed 를 입력으로 받았을 때/{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+# Task 11b: 절 전문이 $SEED_REF 로 옮겨갔다 — 윈도우도 거기서 뜬다.
+seed_block="$(awk '/^## seed 를 입력으로 받았을 때/{f=1;print;next} /^## /{f=0} f' "$SEED_REF")"
 seed_flat="$(tr '\n' ' ' <<<"$seed_block" | tr -s ' ')"
 # 리터럴은 finishing.md 의 S1 규약("<$ARGUMENTS 원문 그대로>", frontmatter 포함)과 같은
 # 값을 요구한다 — "seed 본문 전체"라는 표현은 frontmatter 제외로 읽힐 수 있어 규약과 갈린다.
 { [[ -n "$seed_block" ]] && grep -qF '§6 `S1` 은 `$ARGUMENTS` 원문 그대로다' <<<"$seed_flat"; } \
   && ok "v0.41.0: seed 본문이 §6 S1 이 된다 (finishing.md S1 규약과 같은 값)" \
   || no "v0.41.0: seed 본문 = §6 S1 규약이 없다"
+grep -qF '다시 검증할 것' <<<"$seed_flat" \
+  && ok "AC11: seed 의 «다시 검증할 것» 문단을 R1/coverage-mapper 입력으로" \
+  || no "AC11: seed 재검증 문단 소비 부재"
+# 위 단언의 코퍼스는 seed 참조 «산문» 뿐이라 dispatch 를 못 본다 — 실제 호출이 seed 를
+# 하나도 안 싣고 `<ledger_state>` 와 `<web_disabled>` 만 넘겨도 계속 green 이었다
+# (spec §4.1·AC11 위반). 첫 dispatch 는 R1 «전에» 돌고 그때 원장은 floor 다섯 줄뿐이라,
+# seed 가 없으면 이 agent 는 「이 주제가 요구하는 차원」을 제안하라는 과업의 **주제 자체를
+# 못 본다**. dispatch 펜스를 직접 코퍼스로 삼는다.
+mapper_fence="$(awk '/subagent_type: "spec-distill:coverage-mapper"/{f=1} f{print} f&&/\}\)/{exit}' "$SKILL")"
+[[ -n "$mapper_fence" ]] \
+  && ok "AC11(양성대조): coverage-mapper dispatch 펜스를 찾았다 (아래 단언이 실재한다)" \
+  || no "AC11(양성대조): dispatch 펜스를 못 찾았다 — 아래 단언이 공허하다"
+grep -qF '<reverify>' <<<"$mapper_fence" \
+  && ok "AC11: coverage-mapper dispatch 가 «다시 검증할 것» 문단을 실제로 싣는다" \
+  || no "AC11: dispatch 가 재검증 문단을 안 싣는다 — 산문만 그렇다고 말하고 있다"
+grep -qF '<seed>' <<<"$mapper_fence" \
+  && ok "AC11: coverage-mapper dispatch 가 seed 원문을 실제로 싣는다" \
+  || no "AC11: dispatch 가 seed 를 안 싣는다 — 주제 없이 주제-도출 차원을 요구한다"
 grep -qF 'type: interview-seed' <<<"$seed_flat" \
   && ok "v0.41.0: seed frontmatter 태그(type: interview-seed) 인식" \
   || no "v0.41.0: type: interview-seed 인식 규약이 없다"
@@ -853,5 +924,148 @@ grep -qF '전량은 **audit §6**에' "$FIN" \
 grep -qE '발화 전부를 payload §6|전부를 payload §6 에' "$FIN" \
   && no "U2-T6: 「전부를 payload §6 에」 옛 지시 잔존" \
   || ok "U2-T6: 옛 거처 지시 제거됨"
+
+# --- v0.57.0 Step A.7 깊이 측정 (finishing.md, 블록 스코프) --------------------
+a7_block="$(awk '/^### Step A\.7/{f=1;print;next} /^### /{f=0} f' "$FIN")"
+a7_flat="$(tr '\n' ' ' <<<"$a7_block" | tr -s ' ')"
+# 「산문이 파일명을 언급하는 것」과 「실제로 호출하는 것」은 다른 사실이다. 아래 둘을
+# `grep -qF '<파일명>' <<<"$a7_block"` 로 재던 동안 락은 **이빨이 없었다**: A.7 안에서
+# `depth_pairs.py` 는 호출 줄과 산문에, `depth_record.py` 는 호출 줄·산문·처분 줄에 나와서,
+# **호출 두 줄을 통째로 지워도 스위트가 196/196 GREEN 이었다**(실측). 그래서 코퍼스를
+# **bash 펜스 안**으로 좁히고 `python3 … <스크립트>` 라는 호출 «형태» 에 건다 — 산문은
+# 그 형태를 만족시킬 수 없다(줄 머리가 `python3` 인 산문은 없다).
+a7_bash="$(awk '/^```bash/{f=1;next} f&&/^```/{f=0;next} f' <<<"$a7_block")"
+[[ -n "$a7_bash" ]] \
+  && ok "A.7(양성대조): 절 안에서 bash 펜스를 추출했다 (아래 호출 단언이 실재한다)" \
+  || no "A.7(양성대조): bash 펜스를 못 뽑았다 — 아래 호출 단언이 공허하다"
+{ [[ -n "$a7_block" ]] && grep -qE '^[[:space:]]*python3 .*depth_pairs\.py' <<<"$a7_bash"; } \
+  && ok "A.7: 깊이 측정 절이 있고 bash 펜스에서 depth_pairs.py 를 «호출»한다" \
+  || no "A.7: 절 부재 또는 depth_pairs.py 호출 줄 없음 (산문 언급은 호출이 아니다)"
+grep -qF 'spec-distill:depth-auditor' <<<"$a7_block" && ok "A.7: depth-auditor dispatch" || no "A.7: depth-auditor dispatch 없음"
+grep -qF 'consumer=plugins/spec-distill/scripts/depth_record.py' <<<"$a7_block" && ok "A.7: 처분 줄이 depth_record.py 를 소비자로" || no "A.7: 처분 줄 부재"
+grep -qE '^[[:space:]]*python3 .*depth_record\.py' <<<"$a7_bash" \
+  && ok "A.7: bash 펜스에서 depth_record.py 를 «호출»한다" \
+  || no "A.7: depth_record.py 호출 줄 없음 (산문·처분 줄 언급은 호출이 아니다)"
+grep -qE 'pairs_rc[^.]{0,40}3[^.]{0,60}측정 불가' <<<"$a7_flat" && ok "A.7: rc 3 → «측정 불가» 기록" || no "A.7: rc 3 처분 없음"
+grep -qE '기록한다[^.]{0,20}막지 않는다|막지 않는다' <<<"$a7_flat" && ok "A.7: «기록한다, 막지 않는다» (C5)" || no "A.7: 비게이트 선언 없음"
+grep -qE '표본[^.]{0,10}0[^.]{0,30}(띄우지 않는다|호출 안 함|호출하지 않는다)' <<<"$a7_flat" && ok "A.7: 표본 0 이면 라벨 질문 없음" || no "A.7: 표본 0 처분 없음"
+grep -qF '미라벨' <<<"$a7_block" && grep -qF 'unavailable' <<<"$a7_block" && ok "A.7: 미라벨·unavailable 어휘" || no "A.7: 미라벨/unavailable 어휘 부재"
+grep -qE 'heredoc' <<<"$a7_block" && grep -qE '리다이렉트' <<<"$a7_block" && ok "A.7: raw 저장은 파일 리다이렉트(heredoc 금지)" || no "A.7: raw 저장 방식 미명시"
+grep -q '파고들었다' <<<"$a7_block" && grep -q '안 팠다' <<<"$a7_block" && grep -q '판단불가' <<<"$a7_block" && ok "A.7: 사람 라벨 선택지 셋" || no "A.7: 사람 라벨 선택지 부재"
+grep -qF 'min(4' <<<"$a7_block" && ok "A.7: 질문 수 min(4, 적격)" || no "A.7: 표본 상한 규칙 부재"
+# B-2 게이트 텍스트에 깊이 요약과 advisories 슬롯
+b2_block="$(awk '/^#### B-2/{f=1;print;next} /^#### /{f=0} f' "$FIN")"
+grep -qF '깊이:' <<<"$b2_block" && ok "B-2: question 에 깊이 요약 슬롯" || no "B-2: 깊이 요약 슬롯 부재"
+grep -qF 'coverage-mapper 0' <<<"$b2_block" && ok "B-2: coverage-mapper unavailable advisory 가 게이트 텍스트에" || no "B-2: mapper advisory 슬롯 부재"
+# Step A 4 항: 직렬화 규칙 (S앵커·재개방 접미)
+stepa4="$(awk '/^4\. \*\*Coverage Ledger 직렬화/{f=1} f&&/^5\. /{exit} f' "$FIN")"
+grep -qE 'S<N>|S\d\+|S 앵커' <<<"$stepa4" && grep -qF '재개방' <<<"$stepa4" && ok "Step A 4: 직렬화가 S앵커·재개방 접미를 요구" || no "Step A 4: 직렬화 규칙에 S앵커/재개방 부재"
+grep -qF 'coverage-mapper <k>' <<<"$stepa4" && ok "Step A 4: §2 coverage-mapper <k> 직렬화" || no "Step A 4: coverage-mapper <k> 부재"
+# audit 템플릿
+TPL="$REPO_ROOT/plugins/spec-distill/templates/interview-audit-template.md"
+# `depth_record.py` 는 stdout 으로 **네 줄**을 내고 finishing.md Step A.7 이 그 넷을 §2 에
+# 그대로 붙이라고 지시한다. 락이 셋만 세는 동안 `- 판정자 조건:` 줄은 템플릿에서 지워도
+# 스위트가 GREEN 이었다(실측) — 그 줄은 spec §3.4 의 판정자 투입 조건이 사람에게 도달하는
+# 유일한 자리다. 넷 다 데이터 불릿으로 실재하는지 센다.
+depth_rows=0
+for key in '깊이 측정(형식)' '깊이 측정(auditor)' '깊이 측정(사람)' '판정자 조건:'; do
+  grep -qE "^- .*$(printf '%s' "$key" | sed 's/[][\.*^$(){}?+|/]/\\&/g')" "$TPL" \
+    && depth_rows=$((depth_rows + 1))
+done
+[[ "$depth_rows" -eq 4 ]] \
+  && ok "AC10: audit 템플릿 §2 깊이 네 줄 (형식·auditor·사람·판정자 조건) 이 전부 데이터 불릿" \
+  || no "AC10: 템플릿 §2 깊이 줄이 4 가 아니라 $depth_rows — depth_record.py 의 네 줄과 어긋난다"
+grep -qF '(재개방' "$TPL" && ok "AC10: 템플릿 §1 재개방 접미 예시" || no "AC10: 재개방 접미 예시 부재"
+# 템플릿의 mapper 계수는 **데이터 줄**(불릿)에 있어야 하되 **숫자로 미리 채워선 안 된다**.
+# 두 요구는 R18 과 충돌했다: R18 은 「산문이 판정을 지지 않게」 데이터 줄에 실제 숫자를
+# 요구했는데, 그러면 출하 템플릿이 게이트의 통과값(`coverage-mapper 1`)을 나눠 주게 되어
+# dispatch 0 회 턴이 그대로 옮겨 적으면 게이트가 조용히 통과한다. 해소: 출하본에는 `<k>`
+# 를 두고, R18 이 막던 것은 **숫자를 치환한 합성 사본**에 대해 `check_brief.py` 의 실물
+# `budget_mapper_failures` 로 잰다 — `tests/test_audit_template_gate_shape.py`.
+# 여기서는 그 파일이 겨누는 대상(데이터 불릿)이 실재하는지만 값싸게 확인한다.
+grep -qE '^- .*coverage-mapper <k>' "$TPL" \
+  && ok "AC10: 템플릿 §2 데이터 줄의 mapper 계수가 placeholder (통과값 미배포)" \
+  || no "AC10: 템플릿 §2 mapper 계수가 «<k>» 가 아니다 — 통과값을 미리 채웠거나 줄이 사라졌다"
+grep -qE 'path \(a\|b\|c\|d\)' "$TPL" && no "AC10: 템플릿 §5 에 경로 (c) 잔존" || ok "AC10: 템플릿 §5 경로 (c) 제거"
+
+# --- v0.57.0 C43: 선언한 경로 수 == 실제 표 행 수 (블록 스코프) ------------------------
+# 왜 이 락이 생겼나: Task 10 이 경로 (c) 를 지우면서 표 행과 꼬리 문장은 고쳤지만 헤딩
+# `## C43 4-path routing` 과 산문 «다음 4 경로 중» 의 숫자를 남겼다. 표에는 셋뿐인데 모델이
+# 읽는 지시는 넷을 분류하라고 시키는 상태가 릴리스까지 살아남았다 — README(«3-path Socratic
+# routing»)와 CHANGELOG(«경로 (c) … 제거»)가 이미 셋이라고 적고 있어 **우리 문서 둘이 이
+# 파일과 모순**됐는데도 어떤 락도 그 축을 재지 않았다. 리뷰가 아니라 락이 잡았어야 할 것이다.
+#
+# 리터럴 3 을 핀하지 않는다 — 그러면 경로가 정당하게 늘 때 이 락은 「고칠 것」이 아니라
+# 「거스를 것」이 되고, 다음 사람이 숫자만 맞춰 통과시키는 길이 열린다. 대신 **파일 안의 두
+# 수를 서로 지배시킨다**: 선언한 수(헤딩·산문)가 실제 표 행 수와 같아야 한다. 어느 쪽을
+# 건드려도 짝이 어긋나면 RED 다(행 삭제·행 추가·숫자 변경 세 방향 전부).
+c43_block="$(awk '/^## C43 /{f=1;print;next} /^## /{f=0} f' "$SKILL")"
+c43_rows="$(grep -cE '^\| \([a-z]\) \*\*' <<<"$c43_block" || true)"
+c43_head_n="$(sed -n 's/^## C43 \([0-9][0-9]*\)-path.*/\1/p' <<<"$c43_block" | head -1)"
+c43_prose_n="$(sed -n 's/.*다음 \([0-9][0-9]*\) 경로 중.*/\1/p' <<<"$c43_block" | head -1)"
+# 양성 대조 — 넷 중 하나라도 추출에 실패하면 아래 «같다» 비교가 공허해진다(빈 문자열끼리
+# 같다고 통과할 수 있다). 앵커가 바뀌어 절을 못 뜨는 경우도 여기서 잡힌다.
+{ [[ -n "$c43_block" ]] && [[ "${c43_rows:-0}" -ge 1 ]] \
+  && [[ -n "$c43_head_n" ]] && [[ -n "$c43_prose_n" ]]; } \
+  && ok "C43(양성대조): 절·표 행 ${c43_rows}개·헤딩 수·산문 수를 전부 추출 (아래 비교가 공허하지 않다)" \
+  || no "C43(양성대조): 추출 실패 — rows=${c43_rows:-∅} head=${c43_head_n:-∅} prose=${c43_prose_n:-∅} (절을 못 떴거나 앵커가 바뀌었다)"
+[[ "$c43_head_n" == "$c43_rows" ]] \
+  && ok "C43: 헤딩이 선언한 경로 수 $c43_head_n == 표 행 수 $c43_rows" \
+  || no "C43: 헤딩 «${c43_head_n:-∅}-path» 가 표 행 수 ${c43_rows:-∅} 와 다르다 — 모델이 없는 경로를 분류한다"
+[[ "$c43_prose_n" == "$c43_rows" ]] \
+  && ok "C43: 산문이 선언한 경로 수 $c43_prose_n == 표 행 수 $c43_rows" \
+  || no "C43: 산문 «다음 ${c43_prose_n:-∅} 경로 중» 이 표 행 수 ${c43_rows:-∅} 와 다르다"
+
+# 위 락의 코퍼스는 `SKILL.md` 뿐이라 **README 를 못 본다**. 그래서 README 안에서 87줄 떨어진
+# 두 줄이 «4-path» 와 «3-path» 로 서로 모순한 채 릴리스까지 갔다 — 사용자가 가장 먼저 읽는
+# 파일이다. 코퍼스를 넓힌다: `<n>-path` 를 적는 **모든** 우리 문서가 표 행 수와 같아야 한다.
+# 파일을 열거하지 않고 grep 으로 도출하므로 새 문서가 같은 표기를 쓰면 자동으로 들어온다.
+README="$REPO_ROOT/plugins/spec-distill/README.md"
+path_claims="$(grep -ohE '[0-9]+-path' "$SKILL" "$README" | sort -u)"
+[[ -n "$path_claims" ]] \
+  && ok "C43(양성대조): «<n>-path» 표기를 찾았다 ($(tr '\n' ' ' <<<"$path_claims")) — 아래 단언이 실재한다" \
+  || no "C43(양성대조): 어느 문서에도 «<n>-path» 표기가 없다 — 아래 단언이 공허하다"
+[[ "$(wc -l <<<"$path_claims" | tr -d ' ')" == "1" && "$path_claims" == "${c43_rows}-path" ]] \
+  && ok "C43: SKILL·README 의 «<n>-path» 표기가 하나뿐이고 표 행 수 $c43_rows 와 같다" \
+  || { no "C43: «<n>-path» 표기가 여럿이거나 표 행 수 ${c43_rows} 와 다르다 — 문서끼리 모순한다"; \
+       printf '    발견: %s\n' "$(tr '\n' ' ' <<<"$path_claims")"; }
+
+# C51 5-type 라벨 강제는 이 릴리스가 없앴다(SKILL 본문·README 정의 불릿 모두 제거). 그런데
+# 5 의례 요약표의 R1 행이 «(d) ontological 5-type» 으로 그 죽은 규칙을 계속 인용했다 —
+# 독자가 본문보다 먼저 믿는 자리다. 코퍼스 전수로 막되, **«제거됐다»고 적은 줄은 위반이
+# 아니다** — 그것은 죽은 규칙의 인용이 아니라 죽었다는 기록이다(README 의 v0.57.0 변경 설명).
+# 그래서 단순 부재 검사가 아니라 «5-type 을 적은 모든 줄은 제거 표시를 함께 갖는다» 로 쓴다:
+# 살아 있는 요구로 읽히는 인용만 RED 다. 부재 검사로 두면 정정 노트가 자기 락에 걸린다.
+c51_live="$(grep -rn '5-type' "$SKILL" "$README" "$FIN" 2>/dev/null \
+  | grep -vE '제거|폐기|없앴|삭제' || true)"
+[[ -z "$c51_live" ]] \
+  && ok "C51: «5-type» 을 살아 있는 요구로 인용하는 줄 0건 (SKILL·README·finishing 전수)" \
+  || { no "C51: 삭제된 «5-type» 라벨 규칙이 살아 있는 요구처럼 인용된다 (요약표가 본문과 모순)"; \
+       printf '    %s\n' "$c51_live"; }
+# 양성 대조 — 위 단언은 «없으면 통과»라, 코퍼스를 못 읽어도(경로 오타·파일 이동) 조용히
+# green 이다. 세 파일이 실재하고 읽히는지 먼저 못 박는다.
+{ [[ -s "$SKILL" ]] && [[ -s "$README" ]] && [[ -s "$FIN" ]]; } \
+  && ok "C51(양성대조): 코퍼스 세 파일을 실제로 읽었다 (위 부재 단언이 공허하지 않다)" \
+  || no "C51(양성대조): 코퍼스 파일 중 비었거나 없는 것이 있다 — 위 단언이 공허하다"
+
+# kill switch 는 보안 컨트롤이고 README 의 스위치 목록이 그 문서화된 등재부다. AC12 가
+# SKILL 자신의 목록만 요구해서, 새 스위치가 SKILL·템플릿·CHANGELOG 에는 있는데 README
+# 등재부에만 빠져도 어떤 락도 발화하지 않았다. 등재부를 «도출»로 채운다 — 리포가 아는
+# 모든 `DEVBREW_SPEC_DISTILL_*` 스위치 이름이 README 목록에 있어야 한다.
+ks_list="$(awk '/^### 스위치 목록/{f=1;next} /^### /{f=0} f' "$README")"
+switches="$(grep -rhoE 'DEVBREW_SPEC_DISTILL_[A-Z_]*DISABLE[A-Z_]*' \
+  "$REPO_ROOT/plugins/spec-distill/skills" "$REPO_ROOT/plugins/spec-distill/templates" \
+  2>/dev/null | sort -u)"
+[[ -n "$ks_list" && -n "$switches" ]] \
+  && ok "C6(양성대조): README 스위치 목록과 코드의 스위치 이름을 둘 다 추출했다" \
+  || no "C6(양성대조): 목록 또는 스위치 이름 추출 실패 — 아래 단언이 공허하다"
+ks_missing=""
+while IFS= read -r sw; do
+  [[ -z "$sw" ]] && continue
+  grep -qF "$sw" <<<"$ks_list" || ks_missing="$ks_missing $sw"
+done <<<"$switches"
+[[ -z "$ks_missing" ]] \
+  && ok "C6: 코드가 읽는 모든 DEVBREW_SPEC_DISTILL_*DISABLE* 이 README 등재부에 있다" \
+  || no "C6: README 스위치 목록에 없는 kill switch:$ks_missing — 등재부가 보안 컨트롤을 감춘다"
 
 finish

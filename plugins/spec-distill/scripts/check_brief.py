@@ -793,13 +793,43 @@ def tried_discarded_ok(text: str) -> bool:
     return bool(real) or sentinel
 
 
+# 원장 행의 **정본** 형태 — `키 — 상태 — 근거` 세 부분. 아래 두 소비자가 같은 규칙을 쓴다:
+# `coverage_ledger_failures`(형태)와 `coverage_anchor_failures`(앵커). 둘이 서로 다른
+# 엄격도로 행을 읽으면 근거 없는 닫힘이 그 틈으로 빠져나간다 — v0.57.0 실측: 형태 검사가
+# derived 를 `startswith("derived:")` 로만 세고 앵커 검사는 세 부분을 요구해 매치 실패를
+# 조용히 건너뛰던 동안, derived 닫힘 행에서 **근거 필드 자체**를 지우면 게이트가
+# `{"pass": true}` rc=0 을 냈다. 같은 변이를 floor 행에 주면 잡혔다 — 비대칭이 곧 구멍이었다.
+#
+# derived 이름은 `[^—]+?` 라 **em-dash 를 담을 수 없다**. 이것은 한계가 아니라 규칙이다:
+# 구분자와 같은 문자를 이름에 넣으면 `키 — 상태 — 근거` 를 가를 방법이 없다. 그런 행은
+# 파싱 실패로 떨어지고, 파싱 실패는 아래에서 **그 자체가 failure** 다 —
+# 「셀 수 없음」을 「해당 없음」으로 흘려보내지 않는다.
+#
+# 구분자는 **앞에 공백을 요구한다**(`\s+—`). `\s*` 로 두면 이름에 em-dash 가 붙은 행이
+# 「매치 실패」가 아니라 **오파싱**된다: `derived:rendering—strategy — closed — 근거` 가
+# key=`derived:rendering` · status=`strategy` · evidence=`closed — 근거` 로 읽혀,
+# **닫힌 행이 열린 행으로 재분류돼** 앵커 요구를 통째로 벗어난다(v0.57.0 실측 — 그 행만
+# 근거 없이 pass rc=0). 뒤쪽 공백은 요구하지 않는다(`—\s*`): `- floor:skepticism — closed —`
+# 처럼 근거가 빈 행은 「evidence empty」로 잡혀야지 「읽을 수 없음」이 되면 안 된다
+# (fixture `interview-brief-floor-evidence-empty.audit.md`). 리포의 원장 행은 전부 ` — ` 다.
+LEDGER_ROW_RE = re.compile(r"^(floor:\w+|derived:[^—]+?)\s+—\s+(\S+)\s+—\s*(.*)$")
+
+# `derived: N/A` sentinel 은 세 부분 형태의 예외다(상태·근거가 없는 것이 정상). 그래서
+# 아래 루프에서 **파싱 실패 판정보다 먼저** 걸러야 한다.
+DERIVED_NA_RE = re.compile(r"^derived:\s*N/?A\b", re.IGNORECASE)
+
+
 def coverage_ledger_failures(text: str) -> list[str]:
     """audit §1 Coverage Ledger form 검증 (AC10).
 
     입력은 **audit 텍스트**다 — 원장은 v0.23.0에서 payload §6을 떠나 audit §1로 옮겨갔다.
     Form-level only: floor 5행 각 존재 + status 토큰 'closed' + evidence 세그먼트
     non-empty; derived는 >=1 derived 행 OR N/A sentinel. 'closed'가 실질적으로 참인지는
-    검사하지 않는다(모델 + 독립 adversary의 몫 — 게이트는 이 한계를 숨기지 않는다)."""
+    검사하지 않는다(모델 + 독립 adversary의 몫 — 게이트는 이 한계를 숨기지 않는다).
+
+    `floor:`/`derived:` 로 시작하는데 `LEDGER_ROW_RE` 로 읽히지 않는 줄은 **그 자체가
+    failure** 다(floor·derived 대칭). 이 판정이 `coverage_anchor_failures` 의 `continue`
+    를 안전하게 만든다 — 거기서 건너뛴 행은 여기서 이미 red 다."""
     sec = _section_text(text, "1", "Coverage Ledger")
     if not sec.strip():
         return ["Coverage Ledger empty or absent"]
@@ -809,14 +839,19 @@ def coverage_ledger_failures(text: str) -> list[str]:
     derived_sentinel = False
     for ln in _entry_lines(sec):
         body = _strip_bullet(ln).strip()
-        fm = re.match(r"^floor:(\w+)\s*—\s*(\S+)\s*—\s*(.*)$", body)
-        if fm:
-            floor_rows[fm.group(1)] = (fm.group(2).strip(), fm.group(3).strip())
-            continue
-        if re.match(r"^derived:\s*N/?A\b", body, re.IGNORECASE):
+        if DERIVED_NA_RE.match(body):
             derived_sentinel = True
             continue
-        if body.startswith("derived:"):
+        if not body.startswith(("floor:", "derived:")):
+            continue
+        m = LEDGER_ROW_RE.match(body)
+        if not m:
+            fails.append(f"ledger row unparseable (키 — 상태 — 근거 아님): {body!r}")
+            continue
+        key, status, evidence = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+        if key.startswith("floor:"):
+            floor_rows[key[len("floor:"):]] = (status, evidence)
+        else:
             derived_rows += 1
     for key in FLOOR_KEYS:
         if key not in floor_rows:
@@ -830,6 +865,77 @@ def coverage_ledger_failures(text: str) -> list[str]:
     if derived_rows == 0 and not derived_sentinel:
         fails.append("derived: no derived row and no N/A sentinel")
     return fails
+
+
+# 닫힘 근거 앵커 (v0.57.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
+# 우연 토큰이 앵커로 잡힌다 — 앞이 영문자가 아니어야 한다.
+ANCHOR_RE = re.compile(r"(?<![A-Za-z])S\d+\b")
+
+
+def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
+    """audit §1 의 **닫힌 행마다** evidence 가 실재 `S<N>` 앵커를 인용하는가 (AC3).
+
+    Form-only: «그 S 가 닫힘을 정당화하는가»는 보지 않는다(spec §2.1 이 그 한계를
+    OQ6 으로 공시한다). 인용된 앵커는 **전부** 실재해야 한다 — 재개방 접미의
+    `conflicts_with` S 도 사용자 발화이므로 같은 요구를 받는다. `derived: N/A`
+    sentinel 과 open 행은 대상이 아니다(form 검사가 따로 잡는다).
+
+    아래 `continue` 두 개는 **`coverage_ledger_failures` 와 짝일 때만** 안전하다:
+    `LEDGER_ROW_RE` 로 안 읽히는 `floor:`/`derived:` 행을 거기서 failure 로 잡기 때문에,
+    여기서 건너뛴 행이 판정 밖으로 사라지지 않는다. 두 함수는 **같은 `LEDGER_ROW_RE`** 를
+    쓴다 — 갈라지면 그 틈이 곧 fail-open 이다(위 regex 주석의 실측)."""
+    sec = _section_text(audit_text, "1", "Coverage Ledger")
+    fails: list[str] = []
+    for ln in _entry_lines(sec):
+        body = _strip_bullet(ln).strip()
+        m = LEDGER_ROW_RE.match(body)
+        if not m or m.group(2).strip() != "closed":
+            continue
+        key, evidence = m.group(1).strip(), m.group(3)
+        cited = ANCHOR_RE.findall(evidence)
+        if not cited:
+            fails.append(f"{key} evidence cites no S<N> anchor")
+            continue
+        for s in cited:
+            if s not in anchors:
+                fails.append(f"{key} evidence anchor {s} not found in §6")
+    return fails
+
+
+# **불릿(데이터) 줄에 앵커한다.** 앵커가 없으면 §2 머리 «설명 산문»의 예시
+# (`coverage-mapper 0 (unavailable: <사유>)`)가 데이터 줄보다 먼저 매치돼 판정을 대신
+# 진다 — 실측: 출하 템플릿의 T-TPL green 을 그 설명 문장 하나가 전부 지고 있었고,
+# 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.57.0 수정 라운드 1 F4).
+# 산문은 그대로 둔다: 판정에 참여하지 않은 채 퇴화 모양을 계속 가르친다.
+#
+# 불릿 문자는 `[-*]` — 이 파일의 형제 둘(`ENTRY_BULLET_RE`·`BODY_ITEM_RE`)과 **같은 어휘**여야
+# 한다. `-` 단독으로 좁히면 이 파일이 이미 한 번 겪은 결함이 되돌아온다: 같은 줄을 `-` 로
+# 쓰면 red 인데 `*` 로 쓰면 green(ENTRY_BULLET_RE 주석의 실증). 방향만 반대다 — 여기서는
+# `*` 로 쓴 정당한 데이터 줄이 «없는 줄»로 읽혀 `coverage-mapper <k> line missing` 오탐-red 가
+# 난다. 좁히기가 우회를 막는 대신 정당한 입력을 거부하는 자리다(수정 라운드 2).
+MAPPER_RE = re.compile(
+    r"^\s*[-*]\s.*?coverage-mapper\s+(\d+)(?:\s*\((unavailable:[^)]*)\))?",
+    re.MULTILINE)
+
+
+def budget_mapper_failures(audit_text: str) -> tuple[list[str], list[str]]:
+    """audit §2 Budget 의 `coverage-mapper <k>` (v0.57.0, spec §2.3·C4).
+
+    k>=1 통과. `coverage-mapper 0 (unavailable: <이유>)` 는 advisory 통과 — 침묵과 0 을
+    가른다. 대상은 §2 의 **불릿 줄**이다(`MAPPER_RE` 주석) — 머리 설명 산문의 예시는
+    판정에 참여하지 않는다. **이 검사가 못 잡는 것**: sentinel 은 피검자가 쓰는 문구라,
+    dispatch 를 건너뛴 턴이 같은 문구를 적으면 «도구 부재»와 구분하지 못한다. 그래서
+    advisory 는 조용히 통과하지 않고 Step B 게이트 텍스트로 사람에게 간다."""
+    sec = _section_text(audit_text, "2", "Budget")
+    m = MAPPER_RE.search(sec)
+    if not m:
+        return ["§2 Budget: coverage-mapper <k> line missing"], []
+    k, reason = int(m.group(1)), m.group(2)
+    if k >= 1:
+        return [], []
+    if reason:
+        return [], [f"coverage-mapper 0 ({reason}) — dispatch 없이 통과 (advisory, 사람이 확인)"]
+    return ["§2 Budget: coverage-mapper 0 without unavailable reason"], []
 
 
 def frontmatter_errors(text: str) -> list[str]:
@@ -900,6 +1006,8 @@ def gate(path: Path) -> int:
     # "판정 없는 steelman"으로 오탐된다(§5가 없으면 refs가 항상 공집합이므로).
     sec5_absent = any(m.startswith("5.") for m in miss)
 
+    advisories: list[str] = []
+
     # --- audit 해석 (fail-closed): 못 열면 audit 측 검증 전체를 skip하지 않고 red ---
     audit_path, audit_err = resolve_audit(path, fm)
     audit_text = ""
@@ -943,6 +1051,10 @@ def gate(path: Path) -> int:
                 nk = landscape_keys_declared(text, audit_text)
                 if nk:
                     failures.append(f"landscape keys not declared in audit §7: {nk}")
+            if not any(m.startswith("2.") for m in amiss):
+                bf, ba = budget_mapper_failures(audit_text)
+                failures += [f"coverage-mapper budget: {x}" for x in bf]
+                advisories += ba
 
     sec4_absent = any(m.startswith("4.") for m in miss)
     if not sec4_absent and not landscape_present(text):
@@ -971,9 +1083,12 @@ def gate(path: Path) -> int:
         cov = coverage_ledger_failures(audit_text)
         if cov:
             failures.append(f"coverage ledger: {cov}")
+        anc = coverage_anchor_failures(
+            audit_text, payload_verbatim_anchors(text) | verbatim_anchors(audit_text))
+        if anc:
+            failures.append(f"coverage anchors: {anc}")
 
     ok = not failures
-    advisories: list[str] = []
     # 킬 스위치가 verdict를 뒤집을 수 있으면 **반드시** 말한다. v0.44.0 N1a 이후
     # `_web_disabled()`가 완화하는 것은 `landscape_present`의 §4 sentinel 경로(#12) 하나
     # 뿐이지만, 그 하나조차 흔적 없이 완화되면 이전 세션에서 export한 env가 남아 있을 때
@@ -1039,7 +1154,10 @@ def main(argv: list[str]) -> int:
             print(json.dumps({"failures": [f"audit pairing: {p}" for p in pair]},
                              ensure_ascii=False))
             return 1
-        print(json.dumps({"failures": coverage_ledger_failures(audit_text)},
+        print(json.dumps({"failures": coverage_ledger_failures(audit_text),
+                          "anchor_failures": coverage_anchor_failures(
+                              audit_text,
+                              payload_verbatim_anchors(text) | verbatim_anchors(audit_text))},
                          ensure_ascii=False))
         return 0
     if sub == "frontmatter":

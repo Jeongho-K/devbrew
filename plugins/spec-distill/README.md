@@ -4,8 +4,8 @@
 
 ## What it does
 
-`/interview <rough request>` 호출 시 4-block Korean Socratic 인터뷰가 **강한 문제공간 stage**로
-동작합니다: 요청을 재구성(메타프롬프팅)하고, 외부 사례를 웹으로 조사하고(bounded), 약한 방향을
+`/interview <rough request>` 호출 시 «직전 답에서» 블록 + 질문 둘 형식의 Korean Socratic
+인터뷰가 **강한 문제공간 stage**로 동작합니다: 요청을 재구성(메타프롬프팅)하고, 외부 사례를 웹으로 조사하고(bounded), 약한 방향을
 steelman으로 깨뜨려, **interview brief**(brainstorming용 meta-prompt)를 **2파일 쌍**으로
 산출합니다 — payload `docs/superpowers/interview/YYYY-MM-DD-<topic>-interview.md`(8섹션 역피라미드,
 `templates/interview-brief-template.md`) + audit `…-interview.audit.md`(5섹션 텔레메트리,
@@ -19,7 +19,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 /interview todo 앱 만들어줘
 ```
 
-`conducting-interview` skill이 4-block format ("현재 이해 / 막힌 결정 / 추천 답안 / 질문")으로 첫 round를 시작합니다.
+`conducting-interview` skill이 «직전 답에서» 블록 + 질문 둘 형식으로 첫 round를 시작합니다.
 
 ## Flow (v0.41.0)
 
@@ -33,7 +33,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
                                    interview-seed → docs/superpowers/interview/   ← 문서가 아니라 다음 세션 첫 턴에 붙여넣는 메시지
                                        ▼ 새 세션 첫 턴 = `/interview <seed 파일 전문>` (frontmatter 포함, 한 턴)
 /interview ─→ [0] Trivia escape ─→ [1] Interview (문제공간 stage)
-                                       · 4-block Socratic + 4-path (web=path(a))
+                                       · «직전 답에서» 블록 + 질문 둘 + 3-path (web=path(a))
                                        · R1 Problem Reframe / R2 Landscape / R3 Steelman / R4 Tried&Discarded / R5 OQ
                                        ▼ 5 의례 통과 (check_brief.py gate, Law 1)
                                    interview brief (payload + audit) → docs/superpowers/interview/   ← terminal 산출물
@@ -84,7 +84,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 - **Law 2 강화 (v0.3.0, v0.36.0 재배선)** — Writer/Reviewer 분리를 turn-boundary 결정론으로 끌어올림. Stop hook이 턴 경계에서 스코프 문서의 dirty 집합을 **git 에서 직접 발견**해 구조 게이트를 차단(`decision:"block"`)하고, 통과하면 *다음 turn 첫 액션*으로 reviewer dispatch를 강제. 연료가 git 관측이라 **어떤 도구로 썼든**(Write/Edit/Bash/외부 편집기) 게이트를 우회할 수 없다 — 도구 이름을 열거하던 이전 설계의 구멍이 이것이다.
 - **Law 2 (Writer/Reviewer Never Share a Pass) — infrastructure operability**: spec-reviewer agent의 writer/reviewer 물리 분리가 의미를 가지려면 reviewer dispatch가 Claude context에 *실제로* 도달해야 한다. v0.5.0의 dual-target output fix가 이 baseline을 보장. dispatch가 silent하게 lost되면 reviewer persona 분리 자체가 무의미.
 - **Law 3 (Compounding) — 처분 회계(adjudication `Ledger`)** (v0.52.0) — 리뷰 findings 가 버려지는 자리가 `shared/adjudication/adjudication.py` 의 처분을 부른다. 소비자는 `scripts/merge_review.py`·`scripts/merge_brief_review.py`·`hooks/review-dispatch.py`(종단 결정자). 집행은 `shared/tests/test_adjudication_{wiring,consumed}.sh`. **범위**: `consumer=orchestrator`/`human` 인 dispatch 자리는 `disclosure=` 리터럴 실재까지만 검사된다(CLAUDE.md 축 C 한계) — 이 플러그인의 앵커 다수가 그쪽이다.
-- **Law 2 (입력 오염 차단) — `input_slots`** (v0.52.0) — 이 플러그인의 agent 아홉이 frontmatter 에 받는 입력의 `tag`/`var`/`kind` 를 선언한다. 금지 종류(`prior_verdict`·`score`·`orchestrator_framing`)는 C6 인용과 함께 `tools/adjudication/check_slots.py` 의 `EXEMPT_SLOTS` 등재를 요구한다 — `blind-spot-prober.framing` 이 그 하나다(과업의 대상이 오케스트레이터의 재구성 그 자체라서). 집행은 `shared/tests/test_agent_input_slots.sh`.
+- **Law 2 (입력 오염 차단) — `input_slots`** (v0.52.0) — 이 플러그인의 agent 열이 frontmatter 에 받는 입력의 `tag`/`var`/`kind` 를 선언한다. 금지 종류(`prior_verdict`·`score`·`orchestrator_framing`)는 C6 인용과 함께 `tools/adjudication/check_slots.py` 의 `EXEMPT_SLOTS` 등재를 요구한다 — `blind-spot-prober.framing` 이 그 하나다(과업의 대상이 오케스트레이터의 재구성 그 자체라서). 집행은 `shared/tests/test_agent_input_slots.sh`.
 - **Law 3 (Compounding)** — spec.md 파일 자체가 named, versioned, diff-able artifact (P5). state.local.md 보존 (실패 시) → 디버깅 + future session 추적.
 - **Law 3 (Every Cycle Must Leave the System Smarter)**: v0.5.0 PR이 hook 코드 fix + `tests/test_hook_output_schema.py` 회귀 방지 test + CHANGELOG 명시 + design.md (아카이브됨: `git show pre-slim-archive-2026-07-09:docs/superpowers/specs/2026-05-17-spec-distill-hook-context-injection-design.md`) — 4-layer compounding 흔적. 같은 클래스의 silent-output mistake가 미래에 들어오면 CI에서 즉시 잡힘.
 - **Law 3 (Compounding) — model diversity (v0.20.0)** — codex 병렬 co-reviewer를 design-doc 리뷰에 추가. codex가 Claude persona가 반복해 놓치는 결함류(fail-open)를 잡으면 → `spec-reviewer.md` 체크리스트 편집(persona = 보안-민감 코드)이 compounding 이벤트. quality-gates codex 패턴의 실증 이력을 상속.
@@ -103,6 +103,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
   compounding substrate다. 리뷰가 놓친 결함류가 나오면 그 열거와 체크리스트를 편집하는 것이
   compounding 이벤트다(persona = 보안-민감 코드).
 - **Law 3 (Compounding) — 문서 리뷰 엔진 기반 (v0.56.0)** — 네 문서 리뷰 자리를 통일하는 `shared/docreview/` 를 호출자 0 으로 심었다. 처분(decide·ask·fix·defer·drop)이 finding 의 수신자를 정하고, 회귀는 편집 범위·얼림·보호 부류로 막는다. 자리별 전환은 후속 PR(design doc·brief·seed). 집행은 `shared/tests/test_docreview_*.sh` + 변이 매트릭스.
+- **Law 3 (Compounding) — 깊이 측정 원장 (v0.57.0)** — 인터뷰마다 «답→다음 행동» 짝을 세 층(스크립트·`depth-auditor`·사람 ≤4 라벨)으로 재어 `docs/superpowers/interview/depth/<basename>.json` 에 남긴다. `depth_record.py` 가 `depth/*.json` 을 읽어 판정자 투입 조건(적격 5건·not_dug 30%·일치 70%)을 audit 에 한 줄로 낸다 — 게이트 아님(spec C5).
 
 ### Principles 흡수
 
@@ -111,6 +112,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 - **P12 (Trivia escape)** — `/interview` first-step rule (typo / 주석-only / formatting / rename / <10 토큰 + 단일 action). 파일 수는 자격 기준이 아니다.
 - **P14 (State preservation)** — `.claude/spec-distill/<session-id>/state.local.md` (실패/abort 시 보존).
 - **P17 (User sovereignty)** — `needs_interview` user confirm gate, [5] Human Review, all kill switches.
+- **P17 (User sovereignty) — 사용자가 시계 (v0.57.0)** — 차원은 사용자 발화 `S<N>` 을 인용해야 닫히고(`check_brief.py` 앵커 게이트), 재개방에 상한이 없다 — 라운드는 사용자 답으로만 돈다.
 - **P18 (Stagnation detection)** — issue `raised_count ≥ 3 unresolved` 시 P18 stagnation 명시 + forced [5] escalate.
 - **P21 (Secret 기록 금지 / untrusted input)** — state.local.md token/key/credential placeholder 치환. **v0.23.0**: `audit_file`은 frontmatter에서 오는 신뢰 경계 밖 입력이므로 basename으로 제한한다(`../`·절대경로·서브경로 전부 거부).
 - **P22 (Cost class)** — 모든 skill cost_class 선언 (conducting-interview: variable / reviewing-spec: medium).
@@ -119,18 +121,17 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 
 ### Roadmap absorption (C-numbers)
 
-- **C43** 4-path Socratic routing (factual auto-confirm / judgment→user / ambiguity→sub-agent / ontological→5-type).
+- **C43** 3-path Socratic routing (factual auto-confirm / judgment→user / ontological, 라벨 강제 없음 — v0.57.0에서 ambiguity→sub-agent 경로·5-type 라벨 요구 제거).
 - **C44** Dialectic Rhythm Guard (env: `DEVBREW_SPEC_DISTILL_RHYTHM_GUARD_THRESHOLD`, default 3).
 - **C1** 사용자-발화 floor 탈출구 — Unbounded-autonomy 가드(사용자가 언제든 종료를 요청하면 미충족 floor를 사용자-승인 박제로 닫고 payload §3 Open Questions로 이월).
-- **C11** coverage-mapper agent (`tools: Read, Grep, Glob, WebSearch, WebFetch` — advisory 주제-도출 차원 제안자) + **blind-spot-prober** agent (`tools: Read, Grep, Glob, WebSearch, WebFetch` — 적대적 premortem, fan-out 1).
-- **C51** 5-type ontology (ESSENCE / ROOT_CAUSE / PREREQUISITES / HIDDEN_ASSUMPTIONS / EXISTING_CONTEXT).
+- **C4** coverage-mapper agent (`tools: Read, Grep, Glob, WebSearch, WebFetch` — advisory 주제-도출 차원 제안자, dispatch 상한 2) + **blind-spot-prober** agent (`tools: Read, Grep, Glob, WebSearch, WebFetch` — 적대적 premortem, fan-out 1).
 
 ### Anti-pattern 회피
 
 - **AP3 (Self-approval)** — writer/reviewer 물리적 분리 (frontmatter scoping).
 - **AP2 (Polite stop)** — **정본은 `references/proceed-gate.md`** (v0.31.0). 두 proceed 게이트(reviewing-spec Phase 5 · conducting-interview 종료 Step B)가 그 파일의 골격·두 가드·예외 경로를 공유하며, 각 skill 은 자기 어휘(옵션 라벨 · verbatim `/compact` 템플릿 · 고유 스텝)만 인라인으로 갖는다. 아래는 그 계약의 **요약**이지 별개 저술이 아니다 — 계약이 바뀌면 정본을 고치고 여기를 따라 고친다. Phase 5 approve tail = proceed 게이트(AskUserQuestion) → handoff sequence (spec_path 검증 + 세션 cleanup). 게이트를 skip한 narrate-only 종료 금지. cross-compact 조기 진행(옵션 ① 노출 후 같은 턴 writing-plans 직진)도 게이트 P17 우회의 대칭 실패로 금지 (v0.11.0 AC19). interview→brainstorming Step B의 **4옵션**: ①/compact 후 brainstorming / ②바로 brainstorming / ③확정 목록 수정 / ④brief만 종료 (③ 추가는 v0.23.0) — 전용 handoff 스크립트를 호출하지 않음(brief는 막 검증됨, 하류/SessionEnd가 cleanup) (v0.13.0).
 - **AP5 (Trivia ceremony)** — `/interview` first-step trivia escape (5 패턴).
-- **AP9 (Subagent spray)** — agent 4종(spec-reviewer/steelman-builder/coverage-mapper/blind-spot-prober), coverage-mapper C11 rate-limit + blind-spot-prober fan-out 1.
+- **AP9 (Subagent spray)** — agent 4종(spec-reviewer/steelman-builder/coverage-mapper/blind-spot-prober), coverage-mapper dispatch 상한 2 + blind-spot-prober fan-out 1.
 - **P11 (Cross-Model Adversarial)** — sub-agent reviewer adversarial review + **`steelman-builder` 의심 게이트(v0.12.0, v0.54.0 재설계)**: 의심 방향에 대해 builder 가 원안·대안 **양쪽**의 최강 케이스를 사용자 goal 기준으로 쓰고 근거가 핵심 전제에 닿는지 판정한다. 재검토를 여는 열쇠는 전제 충돌 하나 — 그 외 근거는 원안 강화·경계 다듬기에 쓴다. 판정 어휘 유지/보완/전환/보류(kept/refined/switched/deferred), 선택은 사용자.
 - **AP16 (Unbounded autonomy)** — re-review max 5 (hybrid policy, v0.3.0: hard cap + stagnation early-exit), rhythm guard 3, **자동 dispatch 재시도 상한 3 (v0.25.0, 세션당·문서당)**, kill switch.
 - **P14 (State Survives Compaction)** — state.local.md frontmatter 보존.
@@ -139,7 +140,7 @@ Law 1 구조 게이트입니다. brief는 단독 완결 산출물이며, superpo
 
 ## External source absorption
 
-- **devbrother2024 deep-interview** — 4-block Korean format (현재 이해 / 막힌 결정 / 추천 답안 / 질문).
+- **devbrother2024 deep-interview** — 초기 영향은 4-block Korean format (현재 이해 / 막힌 결정 / 추천 답안 / 질문). v0.57.0에서 **라운드 규약의** 4-block 이 «직전 답에서» 블록 + 질문 둘로 대체됐다. 형식 자체가 리포에서 사라진 것은 아니다 — **R3 steelman 게이트**는 제시 형식으로 4-block 을 그대로 쓴다(`skills/conducting-interview/references/steelman.md` Step 3). 같은 어휘를 쓰는 다른 물건이라 한쪽의 제거가 다른 쪽의 제거가 아니고, `tests/test_conducting_interview_stage.sh` 의 G7 부재 락이 그 파일 하나만 예외로 두되 그 예외가 vacuous 하지 않은지를 양성 대조로 함께 잰다.
 - **gstack** — Structural baseline (11 필수 섹션) + concrete-next-action refusal pattern + ETHOS ("AI recommends, users decide").
 - **OMC** — env-var configurable threshold (steelman antithesis는 plan-reviewer PR로 defer, v0.2.0+ 회귀 도입).
 - **superpowers** — 산출물 위치(`docs/superpowers/specs/`) + plan-document-reviewer 출력 형식 (Status / Issues / Recommendations) + brainstorming drop-in 대체.
@@ -230,6 +231,9 @@ dispatch 뿐입니다. 완전히 clean 한 문서는 발견 자체가 되지 않
   **세 소비자**의 웹 접근을 끈다: interview 웹 리서치(landscape, v0.12.0), codex design-doc
   co-reviewer(`run_spec_codex_reviewer.sh`), codex brief co-reviewer(`run_brief_codex_reviewer.sh`,
   둘 다 AC21). 어느 쪽이든 loud log와 함께 생략, crash 없음 (graceful degradation, AC8).
+- `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` (v0.57.0) — `framing-requests` 진입 직후의 워크트리
+  질문을 **묻지 않고** 현재 디렉토리에서 진행한다. `EnterWorktree` 도구 부재와 같은 경로다.
+  audit §5 에 «워크트리 없음 —» 강등 기록이 남고, 어느 경우도 seed 작성을 막지 않는다.
 - `DEVBREW_SPEC_DISTILL_DISABLE_BRIEF_REVIEW=1` (v0.24.0) — brief 리뷰 파이프라인 전체 skip.
   `component: pipeline` degradation record + loud advisory를 남기고 Step B로 직행한다(조용한
   생략이 아니다). 충실도·방향성·냉독 전부 미검증 상태가 게이트 질문에 표시된다.
@@ -253,7 +257,6 @@ dispatch 뿐입니다. 완전히 clean 한 문서는 발견 자체가 되지 않
 
 ## Prerequisites
 
-- **Claude Code built-in `general-purpose` agent** — 항상 사용 가능 (별도 설치 불필요). `conducting-interview` skill의 C43 ambiguity path가 dispatch.
 - **`jq`** (CLI, recommended) — hook 스크립트가 stdin JSON payload 파싱과 `{"systemMessage": "..."}` JSON 출력에 사용. 없으면 regex fallback + loud warning (devbrew "loud-logging graceful degradation").
 - **superpowers** (외부, optional) — 있으면 brief를 `brainstorming` 해답공간으로 넘기고 `writing-plans`로 이어집니다. 없으면 interview는 brief를 완료하고 loud advisory 후 정지 (단독 완결, AC13).
 - **codex CLI** (외부, optional) — 있으면 Phase 3 design-doc 리뷰에 병렬 독립 co-reviewer로 참여(model diversity). 없거나 auth 미설정이면 Claude-only로 graceful degrade + loud advisory(crash 없음). kill switch `DEVBREW_SPEC_DISTILL_DISABLE_CODEX=1`.

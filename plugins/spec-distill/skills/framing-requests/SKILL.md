@@ -31,6 +31,115 @@ skill 에 옵니다. 5패턴 정의는 `${CLAUDE_PLUGIN_ROOT}/references/trivia-
 (`## 상태` 표에 그 행이 있습니다). 세션 state 에 두지 않는 이유는 TTL-GC 가 기본 24시간에
 그 폴더를 통째로 걷기 때문입니다 — 압축이 무엇을 떨어뜨렸는지는 그보다 오래 남아야 합니다.
 
+### 확정 표시와 «다시 검증할 것»
+
+seed 는 태그를 쓰지 않습니다(`check_seed.py` 가 본문 태그를 금지하고, 슬롯 존재 검사 추가는
+`tests/test_seed_one_sentence.sh` 가 막습니다). 대신 산문 규약 셋으로 Phase 1 이 무엇을 다시 물을지
+가릅니다:
+
+- **확정 표시는 «(사용자 확인)» 하나.** 이 표시가 붙은 문장만 Phase 1 이 재확인 질문에서 제외합니다.
+  brief §2 로 옮겨질 때 `source: verbatim`, ✎ 에 «Phase 0 확인».
+- **마지막 문단은 «다시 검증할 것 —»로 시작**해, Phase 0 이 추론·외부·열린 것으로 아는 항목을 산문으로
+  나열합니다. 예: «다시 검증할 것 — 종료 술어가 이벤트 완료라는 것은 Phase 0 이 구현을 읽고 본 원인
+  후보이지 확정이 아니다. …». Phase 1 은 이 문단을 R1 의 «직전 답에서 — S1» 블록과 coverage-mapper 첫
+  dispatch 의 입력으로 씁니다.
+- **그 밖의 모든 문장은 미확인**입니다. 필요하면 Phase 1 이 되비추기로 검증합니다.
+
+문단이 없어도 깨지지 않습니다 — 지금과 같은, 태그를 쓰지 않는 산문으로 떨어질 뿐이고, 냉독
+(seed-readback)이 **그 문단의 부재**를 사람에게 보입니다. **마커 오용**(추론 문장에
+«(사용자 확인)» 을 잘못 붙이는 것 — 사용자 결정처럼 표현된 모델 자신의 추론)은 냉독의 몫이
+아닙니다: `seed-readback` 은 `<seed>` 하나만 받고 원문·`CLAUDE.md` 와 대조할 근거가 없어
+자기 정의에 «판정·점수·개선 무엇도 하지 마세요»가 못 박혀 있습니다. 그것을 잡는 것은 억제
+리뷰의 격리 critic(`seed-critic`) **축 4**입니다 — 초안·원문·`CLAUDE.md` 를 함께 받아
+«사용자 결정처럼 표현된 에이전트 추론 — 누가 정했는지가 뒤바뀐 문장»을 봅니다.
+
+## 워크트리 — 진입 직후
+
+이 skill 에 들어온 **첫 행동**이다 — `## 확산` 1번(audit 첫 write) **전**에 묻는다. 그래야 audit 이
+처음부터 워크트리 안에 쓰이고 «main 에 쓴 audit 을 옮기는» 절차가 필요 없다. 이름 파일
+(`interview-basename`)은 세션 디렉토리(main repo 의 state root)에 있어 cwd 이동과 무관하다.
+
+`DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` 이거나 `EnterWorktree` 도구가 없으면 **묻지 않고** 현재
+디렉토리에서 진행한다. 그 밖에는 **질문을 띄우기 전에** 로컬 전용 커밋 여부부터 확인한다 —
+기본 base 가 origin 의 기본 브랜치라 push 안 한 로컬 커밋은 새 워크트리에 안 들어오는데, 그
+사실을 질문 **뒤**에 적으면 사용자는 이미 고른 뒤에야 안다(사용자가 실제로 읽는 것은
+질문·옵션 텍스트뿐이다):
+
+**기준은 워크트리가 실제로 쓰는 base 다** — `EnterWorktree` 의 기본(`worktree.baseRef=fresh`)은
+origin 의 **기본 브랜치**이므로, 재야 할 것은 「HEAD 에 있는데 `origin/<기본>` 에 없는 커밋」이다.
+tracking branch(`@{u}`)를 재면 **자기 remote 를 추적하는 브랜치가 0 을 보고하면서 실제로는
+`origin/main` 과 발산해 있을 수 있다** — push 를 마쳤어도 그 커밋들은 새 워크트리에 안 들어온다.
+그러면 경고가 0 건으로 뜨고 워크트리가 조용히 커밋을 빠뜨린다. 그래서 base 를 도출해서 잰다:
+
+```bash
+base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
+if [ -z "$base" ]; then
+  for cand in origin/main origin/master; do
+    if git rev-parse --verify --quiet "$cand" >/dev/null 2>&1; then base="$cand"; break; fi
+  done
+fi
+if [ -n "$base" ]; then
+  local_only_n="$(git rev-list --count "$base"..HEAD 2>/dev/null)"
+else
+  local_only_n=""
+fi
+if [ -z "$base" ] || ! [[ "$local_only_n" =~ ^[0-9]+$ ]]; then
+  LOCAL_ONLY_NOTE="확인 못함 — origin 기본 브랜치를 못 찾았거나 git rev-list 실패(사유 불명)"
+elif [ "$local_only_n" -gt 0 ]; then
+  LOCAL_ONLY_NOTE="$base 에 없는 커밋 ${local_only_n}개 — 워크트리 기본 base 엔 안 들어온다"
+else
+  LOCAL_ONLY_NOTE="$base 에 없는 커밋 0개"
+fi
+echo "$LOCAL_ONLY_NOTE"
+```
+
+origin 의 기본 브랜치를 못 찾는 환경(원격 미설정 · `origin/HEAD` 미설정 + main/master 둘 다 부재)
+에서도 이 블록은 죽지 않는다 — `rev-list` 를 아예 돌리지 않고 **«확인 못함»**으로 떨어진다.
+**빈 값과 0 은 다른 사실이다** — 확인에 실패하거나 base 를 못 찾아서 못 잰 것을 0건으로 읽으면
+이 풋건이 그대로 재현된다(명령 실패 시 `local_only_n` 은 빈 문자열이라 숫자 정규식에 걸리지
+않고 «확인 못함» 으로만 떨어진다).
+
+`origin/<기본>` 은 마지막 fetch 시점의 값이다 — 여기서 fetch 하지 않는다(네트워크는 이 절의
+책임이 아니다). stale 하면 **더 많이** 세는 쪽으로 틀리므로 경고가 과해질 뿐 빠지지 않는다.
+`worktree.baseRef=head` 로 바꾼 사용자에게는 이 경고가 무해한 과다 경고다 — 그 설정에서는
+base 가 로컬 HEAD 라 아무것도 안 빠진다.
+
+`${LOCAL_ONLY_NOTE}` 를 질문 본문과 «만들고 시작» 옵션 설명에 그대로 실어 단독
+`AskUserQuestion` 하나를 띄운다:
+
+```javascript
+AskUserQuestion({ questions: [{
+  header: "워크트리",
+  question: "`feature/<kebab-topic>` 워크트리를 만들고 거기서 시작할까요? 이 브랜치 하나에서 인터뷰·설계·계획·구현까지 갑니다. (${LOCAL_ONLY_NOTE}) 거절하면 현재 디렉토리에서 진행합니다.",
+  options: [
+    {label: "만들고 시작 (권장)", description: "고르면 이 세션의 cwd 가 그 워크트리로 옮겨지고 audit·seed 가 그 안에 쓰인다. ${LOCAL_ONLY_NOTE}"},
+    {label: "현재 디렉토리에서", description: "고르면 워크트리 없이 지금 위치에 쓴다 — 자료는 현재 브랜치에 남는다"}],
+  multiSelect: false }] })
+```
+
+승낙 시 절차 — 순서 고정, **각 단계는 단순 명령 하나**(격리 세션의 git 가드가 복합 명령을 막는다):
+
+1. `EnterWorktree(name=<kebab-topic>)` — native 도구 우선(superpowers `using-git-worktrees` 와 같은 원칙). 실측(v6): 요청한 이름 그대로가 아니라 `worktree-` 접두가 붙은 브랜치가 된다 — 그래서 2단계의 rename 이 항상 필요하다.
+2. `git branch -m feature/<kebab-topic>` — project-init 검증기가 제안하는 바로 그 형태. 실측(v6): rename 은 거부되지 않았다.
+3. audit·seed 를 그 워크트리 안의 `docs/superpowers/interview/` 에 쓴다(`## 상태` 의 경로 그대로).
+4. proceed 게이트에서 ①/② 를 고르면 **handoff 직전** 커밋 1회(`## 확정 — proceed 게이트` 의 절차).
+5. 게이트 텍스트의 «다음 세션 첫 턴» 안내에 워크트리 **절대경로**를 함께 낸다 — 사람이 그 디렉토리에서
+   새 세션을 열어 `/interview <seed 전문>` 을 친다.
+
+거절·도구 부재·스위치 → 현재 디렉토리에서 진행하고, audit §5 에 «워크트리 없음 — <거절|EnterWorktree 부재|
+DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE>» 한 줄을 남기며, 어느 경우도 seed 작성을 막지 않는다.
+
+**자동으로 `worktree.baseRef=head` 로 바꾸지 않는 이유** — 위 확인이 이미 질문 시점에
+로컬 전용 커밋 여부를 사용자에게 보였으므로(v6 실측: 기본 base 는 origin 의 기본
+브랜치라 로컬에만 있는 커밋은 들어오지 않는다), 그 커밋이 이번 워크트리에 정말
+필요한지는 사용자 판단으로 남긴다 — 무조건 `head` 로 바꾸면 반대 방향의 놀람(불필요한
+커밋까지 딸려 온다)이 생긴다. 필요하면 사용자 설정 `worktree.baseRef=head` 로 로컬
+HEAD 기준으로 바꾼다.
+
+이 절은 **실측한 것**(브랜치명 접두 · rename 무거부 · base-ref 기본값)만 단정하고,
+**실측 밖**(슬래시 포함 이름의 결과 · 사람의 정상 종료 후 워크트리 정리)은 단정하지
+않는다 — 실측 결과는 CHANGELOG `[0.57.0]` 에 있다.
+
 ## 확산
 
 1. **원문 보존** — 사용자가 준 원문(요청·생각·대화 로그·자료)을 **`$AUDIT` 파일의
@@ -478,10 +587,25 @@ Step A 도 그것을 읽습니다. 승인이 여는 것은 파일 쓰기가 아�
 
 | # | 이 skill 의 옵션 |
 |---|---|
-| ① | `/compact` 후 `/interview <seed 전문>` (권장) — verbatim `/compact` 명령을 노출하고 **턴 종료** |
-| ② | 바로 `/interview <seed 전문>` — compact 없이 즉시 진행 |
+| ① | `/compact` 후 `/interview <seed 전문>` (권장, 커밋 후) — verbatim `/compact` 명령을 노출하고 **턴 종료** |
+| ② | 바로 `/interview <seed 전문>` (커밋 후) — compact 없이 즉시 진행 |
 | ③ | 수정 필요 — 압축을 다시 깎고 이 게이트로 돌아옵니다 |
 | ④ | 멈춤 — seed 와 audit 을 남기고 종료 |
+
+**handoff 직전 커밋(①/② 에서만).** 워크트리 안이면 ①/② 를 고른 직후 handoff 직전
+커밋을 한 번 합니다 — `/compact` 노출(①) 또는 `/interview` 진입(②) 바로 앞입니다.
+③(수정)·④(멈춤)에서는 커밋하지 않습니다 — 수정마다 커밋이 늘고 멈춤에도 커밋이 남는
+것을 막기 위해서입니다. 단순 명령 셋, 메시지는 파일로:
+
+```bash
+printf 'docs(interview): <topic> interview seed + audit\n' > "$SEED_DIR/commit-msg.txt"
+git add "$AUDIT" "$SEED"
+git commit -q -F "$SEED_DIR/commit-msg.txt"
+```
+
+워크트리가 아니면(거절·부재·스위치) 커밋하지 않고 «미커밋 — 현재 디렉토리» 를 게이트 텍스트에
+적습니다. ①/② 의 «다음 세션 첫 턴» 안내에는 **워크트리 절대경로**(`pwd`)를 함께 냅니다 —
+사람이 그 디렉토리에서 새 세션을 열어야 하기 때문입니다.
 
 게이트를 띄우기 **직전에** 구조 검사를 돌립니다:
 
@@ -521,3 +645,4 @@ payload 를 양식으로 만드는 유일한 경로이고, `tests/test_seed_one_
 
 - `DEVBREW_SPEC_DISTILL_DISABLE=1` — 즉시 abort, state 보존.
 - `DEVBREW_SPEC_DISTILL_DISABLE_CODEX=1` — codex 억제 축만 skip, 격리 critic 은 정상.
+- `DEVBREW_SPEC_DISTILL_DISABLE_WORKTREE=1` — 워크트리 질문·생성을 건너뛰고 현재 디렉토리에서 진행(audit §5 에 사유).
