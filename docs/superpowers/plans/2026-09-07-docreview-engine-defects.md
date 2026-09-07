@@ -54,10 +54,11 @@
 
 ```bash
 cd /Users/jeonghokim/Downloads/devbrew
-PYTHONDONTWRITEBYTECODE=1 python3 plugins/quality-gates/tests/lib/extract_codex_invocations.py > /tmp/pop-before.txt 2>&1 || true
+PYTHONDONTWRITEBYTECODE=1 python3 plugins/quality-gates/tests/lib/extract_codex_invocations.py . > /tmp/pop-before.txt 2>&1
 grep -c docreview /tmp/pop-before.txt
 ```
 Expected: `0` — 링크로 배포된 러너가 모집단에 없다. 이 0 이 이 태스크가 닫는 공백이다.
+**`.`(root_dir)는 필수 인자다** — 빼면 스크립트가 `Usage:` 만 찍고 종료해 수정 여부와 «무관하게» 0 이 나온다. 그 0 은 관측이 아니다.
 
 - [ ] **Step 2: 두 수집기와 `obs_invoke` arm 을 같은 편집으로 고친다**
 
@@ -96,10 +97,10 @@ Expected: `0` — 링크로 배포된 러너가 모집단에 없다. 이 0 이 �
 
 ```bash
 cd /Users/jeonghokim/Downloads/devbrew
-PYTHONDONTWRITEBYTECODE=1 python3 plugins/quality-gates/tests/lib/extract_codex_invocations.py > /tmp/pop-after.txt 2>&1
+PYTHONDONTWRITEBYTECODE=1 python3 plugins/quality-gates/tests/lib/extract_codex_invocations.py . > /tmp/pop-after.txt 2>&1
 grep -c docreview /tmp/pop-after.txt
 ```
-Expected: `1` 이상. 0 이면 skip 제거가 안 먹은 것이다 — 스캔 root 가 `shared/` 를 안 덮는지 먼저 보라.
+Expected: `1` 이상(실측 기준 3 — 링크 둘 + 정본 하나). 0 이면 skip 제거가 안 먹은 것이다 — 스캔 root 가 `shared/` 를 안 덮는지 먼저 보라.
 
 - [ ] **Step 4: 두 락을 돌린다**
 
