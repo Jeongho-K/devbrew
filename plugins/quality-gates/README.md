@@ -81,6 +81,7 @@ Claude Code용 2-게이트 품질 검증 파이프라인. 멀티 플러그인 �
   이 검사가 죽은 무게라고 결론짓지 말 것 — 가장 위험한 클래스가 바로 그 축이다. regression:
   `tests/test_qa_ledger.sh`, `tests/harness/test_skill_orchestration_behavior.sh`.
 - **Law 3 (Compounding) — 문서 리뷰 엔진 기반 (v7.4.0)** — 네 문서 리뷰 자리를 통일하는 `shared/docreview/` 를 호출자 0 으로 심었다. `generic` 프로필(`references/docreview-profiles/generic.md`)이 non-code 아티팩트 자리를 데이터로 선언. `/qg critique` 의 전환(agent·reference 링크 배선, `artifact_commit.sh` 자율 커밋 루프 소멸)은 후속 major PR. 집행은 `shared/tests/test_docreview_*.sh` + 변이 매트릭스.
+- **모집단에 안 들어간 것은 검사되지 않는다 (v7.5.0)** — 심볼릭 링크로 배포되는 러너가 `extract_codex_invocations.py` 의 `is_symlink()` skip 과 `codex_observation.sh` 양쪽 모집단에서 빠져, `test_sandbox_enforced.sh` 가 «통과»하면서도 그 러너를 한 번도 안 봤다. 링크 배포본을 모집단에 넣고 관측 캡처를 basename 이 아니라 «경로»로 키잉했다(같은 basename 후보 둘이 서로를 가렸다). **락의 PASS 는 이빨의 증거가 아니다** — 무엇이 모집단에 있는지를 먼저 물어야 한다. v7.4.0 CHANGELOG 가 「PR 2 에서 다시 판단한다」로 미뤘던 항목이고, 그 판단은 이 릴리스가 했다.
 
 ## 구조
 

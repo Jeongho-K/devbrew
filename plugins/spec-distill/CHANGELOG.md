@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.58.0] — 2026-09-08
+
+### Fixed
+
+- **문서 리뷰 엔진 `shared/docreview/` 의 엔진 결함 일곱 (호출자 여전히 0, PR 1b).** 아직 어떤 자리도 이 엔진을 부르지 않는다 — 첫 호출자가 붙기 «전에» fail-open 을 닫는다. 이 플러그인은 `scripts/docreview_{state,anchor,route}.py` 심볼릭 링크로 엔진을 배포하므로 같이 bump 한다(cache key).
+  - **승인 차단 술어를 전방 포인터로 (AC20).** 만료된 decide 의 차단 해제를 「후속이 존재하는가」의 **역방향** `supersedes` 스캔이 아니라 `st["decides"][fid]["superseded_by"]` **전방 포인터**로 판정한다. 역방향 스캔은 의무와 무관한 후속(같은 bucket 에 우연히 들어온 새 finding)에도 풀려 승인 게이트를 조용히 열었다. 포인터는 후속의 최종 id 가 확정된 뒤 한 곳에서만 쓰이고, 관측·재결정 시점에 초기화된다.
+  - **재상승 예약의 누적·dedup·계수 (AC21).** `cmd_observe_diff` 가 예약을 **대입**으로 덮어써, finalize 를 건너뛴 조기 반환 라운드의 예약이 다음 관측에서 사라졌다. 누적 + 같은 `finding_id` dedup 으로 바꾸고, 대상 finding 이 없어 소비되지 못한 예약은 버리지 않고 `reraise_unconsumed` 로 **센다**(CLAUDE.md 「판정기가 항목을 버리면 센다」).
+  - **만료 재결정 탈출구 (AC22).** `cmd_decide` 가 `expired` 상태를 받는다 — 채택·기각 둘만, 「보류」는 거부한다(보류 한 번에 승인이 열리는 구멍). 후속이 끝내 안 생기면 사용자에게 길이 없던 영구 차단이 열린다. `post` 만료는 원복 관측 생략을 렌더가 밝힌다. 재결정 시점에 자기 자신의 낡은 전방 포인터를 지운다.
+  - **check-intent 일반 fix 경로의 앵커 실재 검사 (AC23).** 슬러그 오타 하나가 보호·불변 검사를 통째로 건너뛰었다 — insert-after 분기에만 있던 실재 검사를 일반 경로에도 세웠다.
+  - **`_permit_covers` 의 라운드 경계에 이빨 (AC24).** 조건 자체는 있었으나 그것을 재는 케이스가 없어, 조건을 지워도 매트릭스가 조용했다. 낡은 permit 픽스처로 「지난 라운드의 permit 은 이번 라운드의 보호 승격을 막지 못한다」를 잰다.
+  - **어휘 밖 재비판 verdict 의 강제 계수 (AC27).** `confirm`/`raise`/`reject` 밖의 값이 조용히 `confirm` 으로 흘렀다 — 형제 `normalize()` 가 처분에 대해 하는 것과 같은 계약으로 `coerced` 에 센다.
+  - **`same_as` 허상 타겟의 병합 스킵 계수 (AC27 쌍둥이).** union-find 의 `parent` 에 없는 대상을 가리킨 병합 지시가 아무 원장에도 안 남고 사라졌다. 두 변(`x`·`y`)을 독립으로 세서 「하나가 허상」과 「둘 다 허상」을 뭉개지 않는다.
+
+### Changed
+
+- **`cmd_finalize` 를 책임 단위 아홉으로 분해 (AC26).** 재비판 읽기 · 재비판 반영 · `same_as` 흡수 · 프로필/보호 분류 · 사후·이월 auto decide 생성 · id/계보 해소 · `blocks` 재매핑 · 보고서 조립이 한 함수에 있었다. 값은 인자와 반환값으로만 오가고 `nonlocal` 은 분해 전과 같이 계보 해소의 하나뿐이다. 부수 성과: 「재상승 후속은 `items` 파이프라인(같은 라운드의 `same_as` 흡수·재비판 `reject`·처분 강제)을 안 지난다」는 불변식이 **줄 위치가 아니라 스코프로** 보장된다 — `_auto_decides()` 에 `items` 가 아예 없다.
+
+### Added
+
+- **AC26 오라클 — 골든 캡처.** `shared/tests/fixtures/docreview/capture_finalize_golden.sh` 와 대표 케이스 셋의 실제 `fin.json`·`docreview-state.md`. 어떤 단언도 읽지 않는 출력 필드(`by_disposition`·`defers`·`advisory`·`blocks`·`adjudication_*`)의 회귀는 케이스 스위트가 **원리적으로** 못 본다 — 양성 대조로 실증했다(`finalize` 출력에서 `defers` 키를 빼면 골든 diff 만 깨지고 같은 세 케이스의 단언은 전부 GREEN). 골든은 캡처 스크립트가 케이스 몸통을 안 건드리고 `rm` 을 함수 스코프에서만 shadow 해 가로챈다.
+- **변이 셀 스무 개** (매트릭스 12 → 31 셀). 계보 해소 2패스 순서 · `blocks` 의 `keep_of` 재매핑 · `escalated` 이월 · bucket 충돌 계수 · 재상승 불변식을 겨눈 다섯은 **분해 «전에»** 세웠다 — 분해가 그것을 깨면 소리가 나게. 분해가 앵커를 녹인 셀 둘(`freeze_off`·`reraise_leaks_into_items`)은 재앵커하고 before/after 를 셀 주석에 남겼다(`sed` 는 매치 0 건에도 성공을 내므로 재앵커 없이는 조용히 무동작이 된다).
+- **행동 케이스 아홉** (`cases.sh`) + 상태 강제 픽스처 셋(`st_set_reraise.py`·`st_set_stale_pointer.py`·`st_open_permit.py`). 픽스처는 `load_state`/`save_state` 를 **사본이 아니라 리포에서** import 한다 — 지금은 무해하지만 상태 직렬화기 자체를 겨눈 미래 셀에는 눈이 멀므로 매트릭스 헤더에 사각지대로 기록했다.
+
 ## [0.57.0] — 2026-09-07
 
 ### Added
