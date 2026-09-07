@@ -273,6 +273,27 @@ def cmd_finalize(a) -> int:
     for x, y in same_as:
         if x in parent and y in parent:
             parent[find(x)] = find(y)
+        else:
+            # `x`(재비판 verdict 의 `f`)는 위(`if not it: L.hold(...); continue`)에서
+            # 이미 items 키로 검증됐고 items 항목은 삭제 경로가 없으므로(추가만 되는
+            # `added` 루프뿐) `x not in parent` 는 이 시점에 도달 불가 — 실제로
+            # 도달하는 갈래는 `y`(same_as 타겟)가 허상인 경우 하나뿐이다. 그래도
+            # 가드 모양이 바뀌어도 조용히 소실되지 않도록 두 변을 독립으로 세서
+            # 각각 accounts — 「값이 하나 대체됐다」와「값이 둘 대체됐다」는 다른
+            # 사실이라 뭉개지 않는다.
+            # hold 가 아니라 coerced 를 고른 이유 — hold 는 "판정하지 못했다, 사람이
+            # 봐야 한다"는 뜻인데(Ledger.hold 의 unknown-f 용례), 이건 그게 아니다:
+            # 병합 지시 자체가 허상을 가리켰을 뿐 `x` 항목은 이미 정상 처분으로
+            # 처리가 끝났다. "병합하라"를 "병합하지 않는다"(None)로 대체한
+            # coerced 이고, 형제는 어휘 밖 verdict 를 confirm 으로 대체한 위쪽의
+            # `L.coerced("verdict", vd, "confirm")`(Task 7)다. 다음 소비자가 셀
+            # 결론 — coerced 건수는 "이 라운드 재비판이 존재하지 않는 항목을
+            # 겨눴다"는 뜻일 뿐 그 지목이 병합 없이 무시된 것으로 이미 처리가
+            # 끝났다는 뜻이다(hold 처럼 사람의 추가 판단을 기다리는 게 아니다).
+            if x not in parent:
+                L.coerced("same_as", x, None)
+            if y not in parent:
+                L.coerced("same_as", y, None)
     groups = {}
     for f in items:
         groups.setdefault(find(f), []).append(f)

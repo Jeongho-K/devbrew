@@ -324,4 +324,12 @@ mut reraise_leaks_into_items case_reraise_successor_immune_to_recritic sed_route
   '/if not d0 or d0\.get("state") != "expired":/,/"_source": "reraise"}/{
 s/final\.append({"f": None,/items["_reraise_leaked"] = ({"f": None,/
 }'
+
+# ── same_as 가 가리키는 대상이 union-find 의 `parent` 에 없을 때의 강제 계수 (Task 7b, AC7b) ──
+# ㉜ union-find 의 y-not-in-parent(및 x-not-in-parent) 갈래에서 coerced 호출 둘을
+#    지운다 — 병합만 조용히 스킵되고 다시 원장 어디에도 안 남는 Task 7b 이전 상태로
+#    돌아간다(AC27 의 어휘 밖 verdict 와 같은 종류의 하향). 두 줄 다 이 파일에 유일.
+mut same_as_unknown_target_silent case_AC7b_unknown_same_as_target_coerced sed_route \
+  's/^                L\.coerced("same_as", x, None)$/                pass/
+s/^                L\.coerced("same_as", y, None)$/                pass/'
 finish

@@ -540,6 +540,22 @@ case_AC27_unknown_verdict_coerced() {
   assert_eq "$(jget "$d/fin.json" 'd["adjudication_coerced"] >= 1')" "True" "AC27(1b): 어휘 밖 verdict 는 조용히 confirm 이 되지 않고 coerced 로 계수된다"
   rm -rf "$d" "$rt"
 }
+# AC27 의 쌍둥이 공백(Task 7b) — 재비판이 `same_as` 로 존재하지 않는 대상(전 라운드
+# id·오타 등)을 지목하면, union-find 의 `if x in parent and y in parent:` 가드가
+# 병합만 조용히 스킵하고 원장 어디에도 안 남았다(재상승 불변식 케이스
+# `case_reraise_successor_immune_to_recritic` 의 주석에서 실측 확인됨). f1 은 known
+# item 이라 unknown-f hold 를 안 타므로 union-find 단계까지 실제로 도달한다 — 그
+# 사실을 먼저 단언(hold==0)한 뒤에 coerced 를 본다.
+case_AC7b_unknown_same_as_target_coerced() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md" "$FX/critic-r1.txt" "$FX/codex-failed.yaml" "--skip")"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-r1.txt" --codex "$FX/codex-failed.yaml" > "$d/prep.json"
+  local rt; rt="$(mktemp -t rt-XXXXXX.txt)"
+  printf '```docreview-recritic\nverdicts:\n  - f: "f1"\n    verdict: confirm\n    same_as: ["zzzz9999#r1.1"]\nadded: []\n```\n' > "$rt"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$rt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'd["adjudication_held"]')" "0" "AC7b: f1 은 known item — hold 를 안 타고 union-find 단계에 실제로 도달한다(중간 사실)"
+  assert_eq "$(jget "$d/fin.json" 'd["adjudication_coerced"]')" "1" "AC7b: 존재하지 않는 same_as 타겟은 조용히 스킵되지 않고 coerced 로 계수된다(union-find y-not-in-parent, AC27 의 쌍둥이)"
+  rm -rf "$d" "$rt"
+}
 case_T07_codex_no_disposition() {
   local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
   assert_eq "$(fsum "$d" 'Deferred to plan 표' '["disposition"]')" "fix" "T07: recritic 이 to 로 붙인 값을 쓴다"
@@ -1041,12 +1057,13 @@ case_escalated_round_mismatch_carries_over() {
 # `f: <원본id>` reject 시도는 `items.get(f)` 가 None 이라 `unknown f → L.hold()` 로
 # 걸린다. `f: "f1"` + `same_as: [<원본id>]` 시도는 f1 자체는 실재 항목이라 hold 를
 # 안 타고, union-find 의 `if x in parent and y in parent:` 가드에서 `y`(원본id)가
-# `parent` 에 없어 병합만 조용히 스킵된다 — 이 스킵은 원장 어디에도 기록되지 않는다
-# (Ledger 의 hold·reject·coerced·absorbed·source_failed 어느 메서드도 이 분기에서
-# 안 불린다 — CLAUDE.md 「판정기가 항목을 버리면 센다」에 대한 미해결 공백 후보,
-# Task 7 이 고친 어휘 밖 verdict 와 같은 종류. 이 케이스의 셋째 단언은 첫 시도
-# (reject)만으로 이미 참이라 이 공백 자체를 가두지는 않는다). 어느 경로든 후속은
-# 여전히 open decide 로 남아야 한다.
+# `parent` 에 없어 병합만 스킵된다 — 이 갈래는 Task 7b 전까지 원장 어디에도 기록되지
+# 않았다(CLAUDE.md 「판정기가 항목을 버리면 센다」에 대한 미해결 공백이었다, Task 7 이
+# 고친 어휘 밖 verdict 와 같은 종류). Task 7b 가 이 갈래를 `L.coerced("same_as", …)`
+# 로 계수하도록 고쳤다 — 전용 케이스는 `case_AC7b_unknown_same_as_target_coerced`.
+# 이 케이스의 목적은 여전히 다른 불변식(재상승 후속이 `items` 를 안 지난다)이라
+# 손대지 않았고, 셋째 단언(hold)은 reject 시도만으로 이미 참이다. 어느 경로든
+# 후속은 여전히 open decide 로 남아야 한다.
 case_reraise_successor_immune_to_recritic() {
   local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
   local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
@@ -1063,6 +1080,6 @@ case_reraise_successor_immune_to_recritic() {
   local succid; succid="$(jget "$d/fin.json" 'next((x["id"] for x in d["findings"] if x.get("supersedes")=="'"$gid"'"), "")')"
   local succ_state; if [ -n "$succid" ]; then succ_state="$(st_yaml "$d" 'st["decides"].get("'"$succid"'", {}).get("state")')"; else succ_state="MISSING"; fi
   assert_eq "$succ_state" "open" "재상승 불변식: 후속의 decides 상태는 open 그대로 — 처분 강제·재비판 reject 어느 것도 안 지났다"
-  assert_eq "$(jget "$d/fin.json" 'd["adjudication_held"] >= 1')" "True" "재상승 불변식: 원본 id 를 직접 겨눈 reject 시도(f: 원본id)는 unknown f 로 안전하게 hold 된다(무시되지, 크래시하지 않는다) — same_as 시도(f1→원본id)는 별도 경로(union-find y-not-in-parent 가드)로 조용히 스킵되고 이 카운트엔 안 잡힌다, 위 주석 참조"
+  assert_eq "$(jget "$d/fin.json" 'd["adjudication_held"] >= 1')" "True" "재상승 불변식: 원본 id 를 직접 겨눈 reject 시도(f: 원본id)는 unknown f 로 안전하게 hold 된다(무시되지, 크래시하지 않는다) — same_as 시도(f1→원본id)는 별도 경로(union-find y-not-in-parent 가드)로 가고 hold 가 아니라 coerced 로 잡힌다(Task 7b, 위 주석 참조) — 이 단언은 hold 쪽만 본다"
   rm -rf "$d" "$t" "$rt"
 }
