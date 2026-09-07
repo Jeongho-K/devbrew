@@ -2,16 +2,19 @@
 """decides 레코드에 «낡은» superseded_by 를 심고 같은 id 를 겨눈 새 미소비 permit 을
 연다(픽스처 전용, st_set_reraise.py 와 같은 종류의 상태 강제 도구).
 
-**Task 3 시점 한정** — CLI 로는 이 조합에 도달할 수 없다: `cmd_decide` 는
-`state == "open"` 인 decide 만 받고(§`docreview_state.cmd_decide`), `record-findings`
+**Task 3 시점엔 한정이었다** — 그때는 CLI 로 이 조합에 도달할 수 없었다: `cmd_decide` 는
+`state == "open"` 인 decide 만 받았고(§`docreview_state.cmd_decide`), `record-findings`
 로 같은 id 를 다시 심으면 `record_findings` 가 decides 레코드를 통째로 새 dict 로
-덮어써 기존 `superseded_by` 를 지운다(§`docreview_state.record_findings`). 하지만
-Task 4 의 만료 재결정 탈출구(`cmd_decide` 가 `state in ("open", "expired")` 를 받게
-넓어짐)는 이 조합을 실경로로 만든다 — 그 탈출구는 `st["reraise"]` 의 미소비 예약만
-폐기하고 `superseded_by` 는 안 지우므로, 재결정이 낡은 포인터를 그대로 들고 새
-permit 을 연다. 그래서 이 픽스처는 영원히 도달 불가한 상태를 증명하는 게 아니라
-다음 태스크가 열 창을 미리 격리해 재는 것이다 — `cmd_observe_diff` 의
-`d.pop("superseded_by", None)` 가 그 상태에서 작동하는지를 지금 잰다.
+덮어써 기존 `superseded_by` 를 지웠다(§`docreview_state.record_findings`). Task 4 의
+만료 재결정 탈출구(`cmd_decide` 가 `state in ("open", "expired")` 를 받게 넓어짐)가
+이 조합을 실경로로 만들었다 — `shared/tests/fixtures/docreview/cases.sh` 의
+`case_AC22_stale_pointer_cleared_via_redecide` 가 픽스처 없이 그 경로(만료 → finalize
+가 포인터를 씀 → 탈출구로 재결정 → 재만료)를 그대로 걷는다. 이 픽스처는 그래도
+남는다 — `cmd_decide` 는 재결정 시점에 **자기 자신의** `superseded_by` 를 지우므로
+(Task 4 의 별도 정정), CLI 경로만으로는 「포인터가 찍힌 채로 같은 id 가 새 permit 을
+받는」 순간을 만들 수 없다. `cmd_observe_diff` 의 `d.pop("superseded_by", None)` 를
+그 코드 하나만 격리해서 — `cmd_decide` 의 정정이 있든 없든 — 재는 자리는 이 픽스처가
+유일하다.
 
 경로 계산은 st_set_reraise.py 와 같다: `parents[3]` 이 이미 `shared/` 이므로 "shared"
 세그먼트를 다시 붙이지 않는다.

@@ -244,19 +244,16 @@ case_AC20_reexpiry_blocks_again() {
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"'"$succ"'" in d["blocked_expired"]')" "True" "AC20③: 재만료는 다시 막는다(낡은 포인터가 안 푼다)"
   rm -rf "$d"
 }
-# [Task 3 실행 노트, fix round 1 에서 수명 명시] `cmd_observe_diff` 의
-# `d.pop("superseded_by", None)` 가 실제로 막아야 하는 상태 — 「포인터가 찍힌 decides
-# 레코드가 같은 id 로 새 permit 을 다시 받는다」 — 는 **Task 3 시점 한정** 으로 지금
-# CLI 경로로는 도달 불가다: `cmd_decide` 는 `state == "open"` 인 것만 받고,
-# `record-findings` 로 같은 id 를 다시 심으면 decides 레코드를 통째로 덮어써 기존
-# `superseded_by` 가 먼저 지워진다. 하지만 Task 4 의 만료 재결정 탈출구(`cmd_decide` 가
-# `state in ("open", "expired")` 를 받게 넓어짐)는 이 조합을 **실경로로** 만든다 — 그
-# 탈출구는 `st["reraise"]` 의 미소비 예약만 폐기하고 `superseded_by` 는 안 지우므로,
-# 재결정이 낡은 포인터를 그대로 들고 새 permit 을 연다. 그래서 이 픽스처는 「영원히
-# 도달 불가한 상태를 증명하는 defense-in-depth」가 아니라 「다음 태스크가 열 창을
-# 미리 격리해 재는 것」이다 — Task 4 구현 시 이 케이스와 픽스처를 지우지 말 것.
-# 그 조합을 픽스처(`st_set_stale_pointer.py`)로 강제해 pop 가드가 «실제로 작동함»을
-# 잰다.
+# [Task 4 실행 노트 — 수명 갱신] Task 3 시점엔 이 픽스처가 강제하는 조합(포인터가
+# 찍힌 decides 레코드가 같은 id 로 새 permit 을 다시 받는 것)이 CLI 로 도달 불가였다.
+# Task 4 의 만료 재결정 탈출구(`cmd_decide` 가 `state in ("open", "expired")` 를 받게
+# 넓어짐)가 그 창을 실경로로 열었다 — `case_AC22_stale_pointer_cleared_via_redecide`
+# (아래, Task 4 절)가 픽스처 없이 그 경로(만료 → finalize 가 포인터를 씀 → 탈출구로
+# 재결정 → 재만료)를 그대로 걷는다. 이 픽스처 케이스는 그래도 남긴다 — `cmd_decide`
+# 가 재결정에서 포인터를 지우는 것(Task 4 의 별도 정정)과 무관하게, `cmd_observe_diff`
+# 의 `d.pop("superseded_by", None)` **하나만** 격리해서 잴 수 있는 유일한 자리이기
+# 때문이다(탈출구 코드가 재결정 시점에 먼저 지워버리면 이 관측-시점 가드 자체를 그
+# CLI 경로에서는 따로 못 잰다).
 case_AC20_stale_pointer_cleared_on_reobserve() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
@@ -265,6 +262,62 @@ case_AC20_stale_pointer_cleared_on_reobserve() {
   next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 픽스처가 연 permit 을 observe-diff 가 처리
   assert_eq "$(st_yaml "$d" 'st["decides"]["aaaa0001#r1.1"].get("superseded_by")')" "None" "AC20: 재평가된 만료는 낡은 포인터를 지운다(다음 만료가 그걸로 안 풀림)"
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"aaaa0001#r1.1" in d["blocked_expired"]')" "True" "AC20: 낡은 포인터를 지운 뒤엔 다시 막는다"
+  rm -rf "$d"
+}
+# ── 만료 재결정 탈출구 (Task 4, AC22) ───────────────────────────────────────
+case_AC22_expired_escape_hatch() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # expired + 예약
+  # ① 렌더 본문에 차단 항목의 id 가 나온다.
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c 'aaaa0001#r1.1')" "1" "AC22①: 차단 중인 만료 항목이 게이트 본문에 렌더된다"
+  # ② 「보류」는 거부한다 — held 는 열린 decide 에도 차단 만료에도 안 들어 승인을 열어 버린다.
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice hold --quote '나중에' >/dev/null 2>&1
+  assert_eq "$?" "1" "AC22②: 만료의 「보류」는 거부된다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "False" "AC22②: 거부됐으므로 여전히 막힌다"
+  # ③ 「기각」이 예약을 함께 폐기한다.
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice reject --quote '이건 안 한다' >/dev/null
+  assert_eq "$(st_yaml "$d" 'st["decides"]["aaaa0001#r1.1"]["state"], st["reraise"]')" "('rejected', [])" "AC22③: 만료 기각 → rejected + 미소비 예약 폐기"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "True" "AC22③: 사용자가 치웠으므로 승인이 열린다"
+  rm -rf "$d"
+}
+case_AC22_nonexpired_states_still_refused() {
+  local d st
+  for st in reject hold; do
+    d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+    py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice "$st" --quote '첫 결정' >/dev/null
+    py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '다시' >/dev/null 2>&1
+    assert_eq "$?" "1" "AC22③: 첫 결정이 $st 였던 항목의 재결정은 거부된다"
+    rm -rf "$d"
+  done
+  d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample-r2.md" >/dev/null     # 변경 관측 → applied
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice reject --quote '되돌려' >/dev/null 2>&1
+  assert_eq "$?" "1" "AC22③: applied 의 재결정도 거부된다"
+  rm -rf "$d"
+}
+# [Task 4 실행 노트] Task 3 의 픽스처(`st_set_stale_pointer.py`)가 강제하던 조합 — 포인터가
+# 찍힌 만료 항목이 같은 id 로 새 permit 을 다시 받는 것 — 을 이제 픽스처 없이 CLI 로 그대로
+# 걷는다: 만료 → finalize(재상승 루프가 전방 포인터를 씀) → 탈출구로 재결정(채택) → 다음
+# 라운드 무변경(재만료). 중간 단언(재결정 직후)은 `cmd_decide` 자신의 pop(위 Task 4 정정 —
+# 재결정이 expired 를 벗어날 때 포인터를 비운다)을 겨눈다 — `cmd_observe_diff` 의 독립
+# pop(위 `case_AC20_stale_pointer_cleared_on_reobserve` 가 격리해 재는 그 코드)은 다음
+# 라운드 관측까지 기다려야 걸리므로 이 창을 못 잰다.
+case_AC22_stale_pointer_cleared_via_redecide() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
+  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
+  local succ; succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if "expired" in x["summary"]][0]')"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$gid"'"].get("superseded_by")')" "$succ" "AC22: finalize 가 gid 에 전방 포인터를 남긴다(재상승, Task 3)"
+  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '재결정: 다시 채택' >/dev/null
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$gid"'"].get("superseded_by")')" "None" "AC22: 탈출구 재결정이 그 자리에서 낡은 포인터를 지운다"
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 또 변경 없음 → 재만료
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$gid"'"].get("superseded_by")')" "None" "AC22: 재만료 뒤에도 포인터는 비어 있다(옛 succ 를 안 물려받음)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"'"$gid"'" in d["blocked_expired"]')" "True" "AC22: 재만료는 다시 막는다(픽스처 없이 CLI 로)"
   rm -rf "$d"
 }
 case_T23_post_adopt_applied() {
@@ -846,22 +899,21 @@ case_AC21_reraise_accumulates() {
 # 다시는 처리되지 않으므로, 같은 finding_id 가 «자연 경로»로 reraise 에 두 번 들어올 방법이
 # 없다(라운드를 더 돌려도 매번 로컬 reraise 는 비어 있어 dedup 분기 자체가 안 밟힌다).
 # dedup 이 실제로 막아야 하는 상황을 만들려면 같은 finding_id 에 대한 permit 이 «두 번»
-# 생겨야 한다 — `seed_findings` 로 같은 id 를 disposition=decide 로 다시 심으면
-# `record_findings` 가 `st["decides"][fid]["state"]` 를 무조건 "open" 으로 되돌리는 것을
-# 이용해(라우터 밖 픽스처 재심기), 같은 id 를 두 번째로 채택 → 두 번째 permit(라운드 3
-# 만료) → 같은 finding_id 가 로컬 reraise 에 다시 나타나게 만든다. 이 상태에서 dedup 이
-# 없으면 목록 길이가 2 로 벌어진다(실측: (2, 1)) — 있으면 1 로 유지된다.
-# 리뷰 R1(fix round 1) — 이 픽스처 재심기는 Task 3·4 를 다 지나도 CLI 만으로는 재현되지
-# 않는 상태다(재만료는 항상 새 id, 만료 재결정은 같은 id 의 예약을 새 permit 을 열기 전에
-# 폐기한다). 이 케이스가 증명하는 것은 「엔진이 이 상태에 이를 수 있다」가 아니라
-# 「이르렀을 때 가드가 실제로 작동한다」다 — 이 픽스처 재심기가 없어져야 할 임시 우회가
-# 아니라, 지금 CLI 로는 못 만드는 상태를 강제로 만들어 가드를 재는 유일한 방법이다.
+# 생겨야 한다.
+# [Task 4 fix round 1 — 정정] R1 이 여기 뒀던 원안(`seed_findings` 로 같은 id 를
+# disposition=decide 로 다시 심어 `record_findings` 가 그 decides 레코드를 "open" 으로
+# 되돌리는 것을 이용해 두 번째로 `cmd_decide` 채택)은 Task 4 에서 실측 `no_teeth` 로
+# 무너졌다 — 재심기 자체는 `cmd_decide` 를 안 거치지만, 바로 다음 줄의 실제 `cmd_decide`
+# 채택이 Task 4 의 재결정 탈출구를 그대로 탄다: 그 탈출구는 **모든** `cmd_decide` 호출에서
+# 대상 id 의 미소비 예약을 새 permit 을 열기 «전에» 폐기한다(§6.4 상호배제의 절반) —
+# 원안은 스스로 첫 예약을 지워버려 dedup 이 막아야 할 「같은 id 의 예약 둘」 조합을 만들지
+# 못했다(실측: 변이 있든 없든 결과가 똑같이 `(1, 1)`). `cmd_decide` 를 완전히 우회해
+# 두 번째 permit 을 여는 픽스처(`st_open_permit.py`)로 바꾼다 — 첫 예약을 그대로 둔 채로.
 case_AC21_reraise_dedup() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
   next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약 1건
-  seed_findings "$d" "[$F_DEC]"                            # 같은 id 를 다시 decide=open 으로 되돌린다(픽스처)
-  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '다시 채택' >/dev/null
+  python3 "$FX/st_open_permit.py" "$d/docreview-state.md" 'aaaa0001#r1.1' '#12-files-to-modify'   # cmd_decide 우회 — 예약을 안 건드리고 permit 하나 더
   next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 같은 finding_id 가 다시 만료
   assert_eq "$(st_yaml "$d" 'len(st["reraise"]), len({r["finding_id"] for r in st["reraise"]})')" "(1, 1)" "AC21: 같은 finding_id 의 예약이 두 번째 만료에도 하나로 유지된다(dedup)"
   rm -rf "$d"

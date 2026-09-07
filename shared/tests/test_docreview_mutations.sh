@@ -208,4 +208,27 @@ mut fwd_pointer_not_cleared case_AC20_stale_pointer_cleared_on_reobserve sed_sta
 #    앞의 둘은 «막느냐 마느냐» 만 흔들고 방향을 구별하지 않는다.
 mut predicate_backward_scan case_AC20_nonobligation_successors_still_block sed_state \
   's/if d\["state"\] == "expired" and not d\.get("superseded_by")/if d["state"] == "expired" and i not in {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")}/'
+
+# ── 만료 재결정 탈출구 (Task 4, AC22) ───────────────────────────────────────
+# ⑲ 탈출구를 되돌린다 → expired 는 다시 열지 않는다(영구 차단, 후속이 끝내 안 생기면
+#    사용자에게 길이 없다).
+mut expired_redecide_refused case_AC22_expired_escape_hatch sed_state \
+  's/if d\["state"\] not in ("open", "expired"):/if d["state"] != "open":/'
+# ⑳ 만료의 「보류」 거부를 지운다 → 보류 한 번에 승인이 열린다(구멍) — 위 BEFORE 재현이
+#    바로 이 변이가 실제로 만드는 상태다.
+mut expired_hold_allowed case_AC22_expired_escape_hatch sed_state \
+  's/^    if d\["state"\] == "expired" and a\.choice == "hold":$/    if False:/'
+# ㉑ 가드를 세 상태까지 «넓힌다» — 음의 요구(rejected·held·applied 거부)는 넓히는 변이로만
+#    잰다(좁히는 변이는 이 술어에 닿지 않는다).
+mut redecide_guard_widened case_AC22_nonexpired_states_still_refused sed_state \
+  's/if d\["state"\] not in ("open", "expired"):/if False:/'
+# ㉒ 재결정이 자기 자신의 낡은 포인터를 지우는 것(설계 §6.4 규칙②, 브리프에 없던 정정 —
+#    Task 3 은 `cmd_observe_diff` 의 관측-시점 pop 하나만 구현했다)을 지운다. 4-space
+#    들여쓰기로 앵커해 `cmd_observe_diff` 의 8-space pop(⑰ 이 잡는 그 줄)과 구별한다 —
+#    둘 다 똑같이 `d.pop("superseded_by", None)` 라 들여쓰기가 유일한 변별기다.
+#    `case_AC22_stale_pointer_cleared_via_redecide` 의 중간 단언(재결정 «직후», 다음
+#    라운드 관측 전)만 이 pop 을 격리해서 잰다 — 그 관측-시점 pop 은 다음 라운드까지
+#    기다려야 걸리므로 이 창을 못 잡는다.
+mut decide_pointer_not_cleared case_AC22_stale_pointer_cleared_via_redecide sed_state \
+  's/^    d\.pop("superseded_by", None)$/    pass/'
 finish

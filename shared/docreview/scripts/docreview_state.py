@@ -387,8 +387,16 @@ def cmd_decide(a) -> int:
     d = st["decides"].get(a.id)
     if not d:
         return fail("unknown_decide", id=a.id)
-    if d["state"] != "open":
+    # 만료(expired)만 재결정을 받는다(설계 §6.4 탈출구) — 후속이 끝내 안 생기는 입력에
+    # 사용자의 길이 없으면 영구 차단이다. rejected · held · applied 는 이미 누군가 의무를
+    # 졌거나 소멸한 것이라 다시 열지 않는다.
+    if d["state"] not in ("open", "expired"):
         return fail("decide_not_open", id=a.id, state=d["state"])
+    # 만료의 선택지는 「채택」과 「기각」 둘뿐이다. 「보류」는 항목을 held 로 내려
+    # 열린 decide 에도 차단 만료에도 안 들게 만들어 «한 번의 보류로 승인이 열린다» —
+    # 탈출구가 아니라 구멍이다.
+    if d["state"] == "expired" and a.choice == "hold":
+        return fail("decide_hold_not_allowed_for_expired", id=a.id)
     n = int(st["round"])
     f = st["findings"][a.id]
     entry = {"decision_id": "D%d.%d" % (n, len(st["decision_log"]) + 1), "round": n,
@@ -425,6 +433,14 @@ def cmd_decide(a) -> int:
         st["permits"][entry["decision_id"]] = permit
     d["decision_id"] = entry["decision_id"]
     st["decision_log"].append(entry)
+    # 예약과 사용자 결정 중 «먼저 온 하나만» 후속을 만든다(설계 §6.4). 재결정이 왔으므로
+    # 이 finding 의 미소비 예약은 폐기한다 — 안 그러면 뒤늦게 소비된 예약이 이미 처리된
+    # 계보에 후속을 또 만들어 한 계보에 병렬 의무가 선다.
+    st["reraise"] = [r for r in (st.get("reraise") or []) if r["finding_id"] != a.id]
+    # 항목이 expired 를 벗어났다 — 낡은 포인터를 지운다(설계 §6.4 규칙②: 사용자
+    # 재결정, 그 계보에 새 permit 이 열릴 때 포인터를 비운다). 안 그러면 이 재결정이
+    # 다시 만료했을 때 옛 포인터가 그 새 만료를 조용히 풀어버린다.
+    d.pop("superseded_by", None)
     if a.log_file:
         heading = prof["decision_log"].get("heading")
         if not heading:
@@ -644,6 +660,11 @@ def render_gate(st, g) -> str:
         out.append("  근거: %s" % dv.get("basis", f.get("evidence") or "—"))
         out.append("  대안: %s" % " / ".join(dv.get("alternatives") or ["채택", "기각", "보류"]))
         out.append("  영향: %s" % dv.get("impact", f.get("anchor")))
+    for fid in g["blocked_expired"]:
+        f = F[fid]
+        d = st["decides"].get(fid) or {}
+        tail = " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
+        out.append("[만료·차단] %s — %s (채택 / 기각%s)" % (fid, f.get("summary"), tail))
     for fid in g["blocking_ask_open"]:
         f = F[fid]
         out.append("[ask 비차단] %s — %s → 전제인 fix: %s" % (fid, f.get("summary"), ", ".join(f.get("blocks") or [])))
