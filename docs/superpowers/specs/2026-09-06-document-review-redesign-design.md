@@ -338,7 +338,7 @@ refs`). 자동 채움은 게이트 텍스트에 `[auto]` 로 표시돼 사람이
 
 ### 6.4 승인의 도출
 
-verdict 는 산출물이 아니라 집계다. `decide` 의 상태는 다섯이다 — `open`(게이트 대기) → 사용자
+verdict 는 산출물이 아니라 집계다. `decide` 의 상태는 여섯이다 — `open`(게이트 대기) → 사용자
 선택으로 `adopted`(적용 대기, `permit` 발급) / `rejected` / `held`(`ask` 로 하향) → `adopted` 는 다음
 라운드 얼림 diff 가 `permit.apply_anchors` 의 변경을 관측하면 `applied`, 관측하지 못하면 `expired`
 (같은 계보의 새 `decide` 로 다시 올라온다). **`open` 과 `adopted` 가 0 이고 미적용 `fix` 가 0** 이면
