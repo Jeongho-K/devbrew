@@ -900,6 +900,24 @@ case_AC6_reject_reasons_extra() {
   rm -rf "$d"
 }
 
+# ── check-intent 일반 fix 경로의 앵커 실재 검사 (Task 5, AC23) ─────────────
+# classify_anchor 는 앵커를 못 찾으면 `"fix_allowed": "*" in prof["fix_anchors"]` 를 낸다 —
+# fix_anchors:["*"] 프로필(generic)에서는 «없는 앵커»가 fix_allowed 로 분류된다. 슬러그
+# 오타가 보호 부류 검사를 통째로 건너뛰는 구멍이라 일반 경로에도 found 검사가 필요하다.
+case_AC23_general_fix_anchor_unresolved() {
+  local d; d="$(r1 "$PROF_QG/generic.md" "$FX/design-sample.md")"
+  local f='{"id":"eeee0001#r1.1","lineage":"eeee0001#r1.1","bucket":"eeee0001","origin":"reviewer","layer":2,"category":"placeholder","anchor":"#12-files-to-modifyy","edit_scope":"#12-files-to-modifyy","disposition":"fix","summary":"슬러그 오타","evidence":null,"blocks":[]}'
+  seed_findings "$d" "[$f]"
+  local out; out="$(_ci 'eeee0001#r1.1' --intent '#12-files-to-modifyy' --state-dir "$d")"; local rc=$?
+  assert_eq "$rc" "1" "AC23: 스냅샷에 없는 앵커의 일반 fix 는 거부된다"
+  # d.get(...) — 이 검사가 빠지면 이 프로필(와일드카드)에서 나머지 검사가 전부 통과해
+  # "reason" 키 자체가 없는 accept json 이 나온다. d["reason"] 이면 mutation 사본에서
+  # KeyError → traceback → run_case 가 unmeasurable 로 오판정한다(caught 를 기대하는 셀).
+  assert_eq "$(printf '%s' "$out" | jgets 'd.get("reason")')" "anchor_unresolved" "AC23: 사유는 anchor_unresolved — insert_after_unresolved 와 다른 문자열"
+  assert_eq "$(st_yaml "$d" 'st["fixes"]["eeee0001#r1.1"]["state"], [e["finding_id"] for e in st["escalated"]]')" "('escalated', ['eeee0001#r1.1'])" "AC23: 거부는 escalate 경로 — 다음 라운드 decide 로 올라간다(단순 거부면 pending 으로 남아 영구히 승인을 막는다)"
+  rm -rf "$d"
+}
+
 # ── 재상승 예약 누적·dedup·미소비 계수 (Task 2, AC21) ─────────────────────
 case_AC21_reraise_accumulates() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"

@@ -16,4 +16,5 @@ case_AC6_insert_after
 case_AC6_R13_insert_after_protection
 case_AC6_permit_contract
 case_AC6_reject_reasons_extra
+case_AC23_general_fix_anchor_unresolved
 finish

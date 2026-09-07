@@ -238,7 +238,9 @@ def cmd_check_intent(a) -> int:
     결정이 보호/불변 둘에 한정됐다(R13 범위); 새 섹션이 어느 절 "안"으로 들어가는지를 재는 것이
     아니라서 fix_anchors 의 질문과 다르다. 일반 앵커(비-insert-after)에서는 immutable 을 가장 먼저
     본다: brief §6 류는 fix_anchors 밖이기도 하지만 그 사유를 anchor_not_in_fix_anchors 로 흐리면
-    「immutable 은 예외 0」이라는 더 강한 사실이 하류에 안 보인다.
+    「immutable 은 예외 0」이라는 더 강한 사실이 하류에 안 보인다. 일반 경로도 앵커 실재를 본다
+    (AC23) — `fix_anchors: ["*"]` 프로필에서 없는 앵커가 `fix_allowed` 로 분류되기 때문이다
+    (insert-after 경로의 `insert_after_unresolved` 와 사유 문자열이 다르다).
     """
     st = load_state(a.state_dir)
     prof = load_profile(st["profile"])
@@ -291,6 +293,8 @@ def cmd_check_intent(a) -> int:
     else:
         if cls["immutable"]:
             return escalate("anchor_immutable")
+        if not cls["found"] and target != PREAMBLE:
+            return escalate("anchor_unresolved")
         if not cls["fix_allowed"]:
             return escalate("anchor_not_in_fix_anchors")
         if cls["protected"]:
