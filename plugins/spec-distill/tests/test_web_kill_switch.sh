@@ -101,7 +101,9 @@ else
       # 이 표는 "러너 자체의 posture"가 아니라 "이 관측 호출(obs_invoke)이 실제로
       # 넘기는 profile의 posture"를 잰다 — obs_invoke의 docreview arm은 frontmatter
       # 없는 최소 profile 파일을 만들어 넘기므로(codex_observation.sh) 러너 쪽
-      # 파싱이 `fm={}` → `web=false`로 떨어져 off가 맞다.
+      # 파싱이 `fm={}` → `web=false`로 떨어져 off가 맞다. ON 경로와 kill switch를
+      # **실제로 재는 곳**은 여기가 아니라 `shared/tests/test_docreview_codex.sh`다 —
+      # 그 락이 profile web 필드 × 두 호스트 kill switch의 조합 넷을 실행 관측으로 덮는다.
       run_docreview_codex_reviewer.sh) echo off ;;
       *) echo '' ;;
     esac
@@ -213,7 +215,15 @@ EOF_KNOWN
         continue
       fi
 
-      cap_normal="$SCRATCH/ac21-normal-$bn"
+      # capture 디렉토리는 **경로** 기반 슬러그로 키를 잡는다 — basename($bn)만
+      # 쓰면 서로 다른 경로의 두 후보(예: plugins/{quality-gates,spec-distill}/
+      # scripts/run_docreview_codex_reviewer.sh — 둘 다 shared/docreview/scripts/
+      # 정본을 가리키는 심볼릭 링크)가 같은 디렉토리로 떨어져 둘째의 실제 호출이
+      # `call-1`에 밀려나고, 아래 `call-*` 순회는 매 후보에서 같은(첫째의)
+      # 디렉토리를 재단언한다 — 오판정은 아니지만(값이 동일해 우연히 안전) stale
+      # 캡처를 계속 잰다. capture 디렉토리가 후보별로 갈리므로 이 문제가 없어진다.
+      slug="$(printf '%s' "${f#$OBS_REPO/}" | tr '/.' '__')"
+      cap_normal="$SCRATCH/ac21-normal-$slug"
       mkdir -p "$cap_normal"
       if ! obs_invoke "$f" "$cap_normal"; then
         no "$bn: 후보인데 실행할 방법이 없다 (obs_invoke 인자 표에 부재이거나 mock 준비 실패)"
@@ -241,7 +251,7 @@ EOF_KNOWN
           continue
         fi
 
-        cap_killed="$SCRATCH/ac21-killed-$bn"
+        cap_killed="$SCRATCH/ac21-killed-$slug"
         mkdir -p "$cap_killed"
         export "$sw=1"
         obs_invoke "$f" "$cap_killed" || true
@@ -266,7 +276,7 @@ EOF_KNOWN
         # 이 실행에서 값이 off로 뒤집혀 잡힌다. `DEVBREW_SPEC_DISTILL_DISABLE_WEB=false`
         # 처럼 "끄지 마라"는 의도로 값을 채운 사용자가 조용히 웹을 잃는 사고를
         # 겨냥한다.
-        cap_strict="$SCRATCH/ac21-strict-$bn"
+        cap_strict="$SCRATCH/ac21-strict-$slug"
         mkdir -p "$cap_strict"
         export "$sw=yes"
         obs_invoke "$f" "$cap_strict" || true

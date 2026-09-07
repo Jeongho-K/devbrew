@@ -30,6 +30,12 @@ OBS_INVOKE='(^|[[:space:]])codex[[:space:]]+exec[[:space:]]'
 # `shared/docreview/scripts/`) `-S` 없이는 실측 0건이었다 —
 # `extract_codex_invocations.py`의 `p.is_file()`(링크를 따라가는 판정)과
 # 같은 모집단을 내려면 이쪽도 링크를 따라가야 한다(설계 §16 S17).
+#
+# `-S`는 **모든** 심볼릭 링크를 따라가므로 디렉토리 링크도 든다. 파이썬 쪽
+# `rglob`은 디렉토리 링크로 안 내려간다 — 두 수집기의 대칭은 **파일 링크에서만**
+# 성립한다. `plugins/` 아래 디렉토리 링크가 생기면 합치 standing assertion이
+# 곧바로 RED다(fail-loud) — `test_sandbox_enforced.sh`의 "두 수집기가 같은
+# 후보 집합을 낸다" 판정 참고.
 codex_candidates() {
   local f
   while IFS= read -r f; do
