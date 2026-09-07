@@ -75,17 +75,11 @@ def collect(root: Path) -> list[str]:
     # 곧바로 이 괴리를 RED로 잡는다 — 조용히 통과하지 않는다.
     out = []
     for p in root.rglob("*"):
-        if not p.is_file() or p.is_symlink():
-            # 알려진 공백 — **심볼릭 링크로 배포된 러너는 모집단에 안 든다.**
-            # `shared/docreview/scripts/run_docreview_codex_reviewer.sh` 가 그것이다:
-            # 정본은 `shared/` 라 스캔 root(`plugins`) 밖이고, 두 플러그인의 사본
-            # (`plugins/{quality-gates,spec-distill}/scripts/`)은 링크라 여기서 걸러진다.
-            # 그래서 `test_sandbox_enforced.sh`(codex 격리의 유일한 기둥 `-s read-only`
-            # 를 실행 관측으로 집행)와 `test_runner_disposition.sh`(처분 공시)가 이 러너를
-            # 한 번도 안 본다 — 잘못된 통과가 아니라 **검사되지 않음**이다.
-            # 고칠 때: 그 러너에 첫 호출자가 생기는 PR 2. 링크가 완성되는 때가 아니라
-            # 실제로 codex 를 태우기 시작하는 때가 위험 창이 열리는 때다. 이 skip 을
-            # 건드리는 것은 보안 락의 모집단을 바꾸는 일이라 그때 한 번에 판단한다.
+        # 심볼릭 링크로 배포된 러너도 모집단이다. `p.is_file()` 은 링크를 따라가므로
+        # 링크 대상이 실재 파일이면 여기 든다. 예전엔 `p.is_symlink()` 로 건너뛰었고
+        # 그 결과 `shared/docreview/` 의 러너가 이 보안 락에 한 번도 안 보였다 —
+        # 위험 창(첫 호출자)이 열리기 전에 모집단을 먼저 넓힌다(설계 §16 S17).
+        if not p.is_file():
             continue
         # **스캔 root 기준 상대 경로**로만 판정한다. 절대 경로 성분을 보면 root의
         # *조상*에 있는 디렉토리 이름까지 걸린다 — devbrew의 워크트리 관례가

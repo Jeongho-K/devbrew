@@ -20,12 +20,22 @@ OBS_INVOKE='(^|[[:space:]])codex[[:space:]]+exec[[:space:]]'
 # ── (1) 후보 수집 ────────────────────────────────────────────────────────────
 # **비-주석** 줄에 호출이 있는 파일만. 주석에만 있는 파일(검사 스크립트·문서)은
 # 실행 대상이 아니다 — 실측: 이 필터가 test_sandbox_enforced.sh를 정확히 걸러낸다.
+#
+# `-S`(macOS BSD grep 2.6.0-FreeBSD 전용 — "모든 심볼릭 링크를 따라간다") —
+# 이 grep 구현에서는 `-r`도 `-R`도 기본값이 `-p`(심볼릭 링크를 안 따라간다)라
+# 실측으로 동일하다(`man grep`: "-p If -R is specified, no symbolic links are
+# followed. This is the default."). 명시적으로 `-S`를 줘야 실제로 링크를
+# 따라간다. `run_docreview_codex_reviewer.sh`는 `plugins/{quality-gates,
+# spec-distill}/scripts/`에 파일 단위 링크로만 배포되므로(정본은
+# `shared/docreview/scripts/`) `-S` 없이는 실측 0건이었다 —
+# `extract_codex_invocations.py`의 `p.is_file()`(링크를 따라가는 판정)과
+# 같은 모집단을 내려면 이쪽도 링크를 따라가야 한다(설계 §16 S17).
 codex_candidates() {
   local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -vE '^[[:space:]]*#' "$f" | grep -qE "$OBS_INVOKE" && printf '%s\n' "$f"
-  done < <(grep -rlE "$OBS_INVOKE" "$OBS_REPO"/plugins/ 2>/dev/null) | sort
+  done < <(grep -RlSE "$OBS_INVOKE" "$OBS_REPO"/plugins/ 2>/dev/null) | sort
 }
 
 # ── (2) 관측 환경 ────────────────────────────────────────────────────────────
@@ -118,6 +128,22 @@ obs_invoke() {
     run_audit_codex_reviewer.sh)
       PATH="$OBS_MOCKBIN:$PATH" CODEX_CAPTURE_DIR="$capture" CLAUDE_PLUGIN_ROOT="$pa" \
         bash "$cand" "$input" "$OBS_REPO" "$work/out.json" >/dev/null 2>&1 || rc=$?
+      ;;
+    run_docreview_codex_reviewer.sh)
+      # 인자 넷 — <profile> <doc-or-bundle> <project_dir> <out_yaml>. 러너 자신의
+      # 파싱(`PROFILE="${1:-}"; DOC="${2:-}"; PROJECT_DIR="${3:-}"; OUTPUT_PATH="${4:-}"`,
+      # shared/docreview/scripts/run_docreview_codex_reviewer.sh)을 그대로 따른다 —
+      # 형제 러너들과 인자 개수·순서가 다르다(profile 이 앞에 하나 더 붙는다).
+      # profile 은 frontmatter 정규식이 미매치면 `fm={}`로 안전하게 빠지므로
+      # (같은 파일의 인라인 python 빌더) frontmatter 없는 최소 파일로 충분하다.
+      # 정본이 `shared/`에 있고 두 플러그인 모두에 파일 단위 링크로 배포되므로
+      # (`plugins/{quality-gates,spec-distill}/scripts/`) CLAUDE_PLUGIN_ROOT는 둘 중
+      # 아무 쪽이어도 무방하다 — prompt-preamble.md·codex_findings_to_yaml.py가
+      # 두 플러그인 모두에서 shared/codex/의 같은 대상으로 링크돼 있다.
+      local profile; profile="$work/docreview-profile.md"
+      printf 'devbrew observation profile\n' > "$profile"
+      PATH="$OBS_MOCKBIN:$PATH" CODEX_CAPTURE_DIR="$capture" CLAUDE_PLUGIN_ROOT="$qg" \
+        bash "$cand" "$profile" "$input" "$OBS_REPO" "$out" >/dev/null 2>&1 || rc=$?
       ;;
     test_codex_json_extraction.sh)
       # ⚠ 이 spike는 성공 시 **리포에 fixture를 쓴다**(`:73-76`,

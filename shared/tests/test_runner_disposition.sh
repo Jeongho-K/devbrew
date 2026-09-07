@@ -30,14 +30,15 @@
 # 건너뛰지 않고 `unverifiable_consumer=N` 으로 개수를 낸다(셀 수 없으면 셀 수 없음을
 # 내라는 이 리포의 규약 — 침묵과 0 은 다른 사실이다).
 #
-# **모집단의 알려진 공백 — 심볼릭 링크로 배포된 러너.** 도출기가 링크를 건너뛰므로
-# (`extract_codex_invocations.py` 의 `is_symlink()` skip) 정본이 `shared/` 에 있고
-# 플러그인에는 링크로만 있는 러너는 이 락과 `test_sandbox_enforced.sh` 양쪽의 모집단에서
-# 빠진다. 지금 해당하는 것은 `shared/docreview/scripts/run_docreview_codex_reviewer.sh`
-# 하나다 — 이 락은 그 러너의 `disclosure=` 를 못 보고, 형제 락은 그 러너가 `-s read-only`
-# 로 codex 를 태우는지 못 본다. 살아 있는 취약점이 아니라 **검증 공백**이다(호출자 0).
-# 위험 창은 그 러너에 첫 호출자가 생기는 PR 2 에 열린다 — 링크가 완성되는 때가 아니라
-# 실제로 codex 를 태우기 시작하는 때다. 그때 도출기의 skip 을 다시 판단한다.
+# **모집단 — 심볼릭 링크로 배포된 러너도 이제 든다.** PR 1b 에서 모집단을 넓혔다
+# (설계 §16 S17) — 이 락은 이제 링크 배포 러너를 본다. `extract_codex_invocations.py`
+# 는 더 이상 `is_symlink()` 로 건너뛰지 않는다(`p.is_file()` 만 판정 — 링크 대상이
+# 실재 파일이면 포함된다). 정본이 `shared/` 에 있고 플러그인에는 파일 단위 심볼릭
+# 링크로만 있는 러너 — 지금은 `shared/docreview/scripts/run_docreview_codex_reviewer.sh`
+# 하나(`plugins/{quality-gates,spec-distill}/scripts/` 양쪽에 링크) — 도 이 락의
+# `disclosure=` 검사와 형제 `test_sandbox_enforced.sh` 의 `-s read-only` 검사 모집단에
+# 든다. 여전히 호출자는 0 이라 살아 있는 취약점은 아니지만, 그 러너에 첫 호출자가
+# 생기는 시점(위험 창이 열리는 때)보다 먼저 두 락이 이미 그 러너를 보고 있다.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/assert.sh"

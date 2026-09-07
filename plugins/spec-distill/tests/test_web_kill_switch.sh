@@ -94,6 +94,15 @@ else
       # (run_seed_codex_reviewer.sh 자체에 켤 대상이 없다).
       run_seed_codex_reviewer.sh) echo off ;;
       test_codex_json_extraction.sh) echo off ;;
+      # docreview 러너 하나가 프로필 넷(generic·design-doc·seed·brief)을 흡수한다
+      # (설계 §5.2) — web on/off는 러너가 아니라 **프로필**의 frontmatter가 정한다.
+      # 넷 중 brief.md만 `web: true`고 나머지 셋은 `web: false`
+      # (plugins/{quality-gates,spec-distill}/references/docreview-profiles/*.md).
+      # 이 표는 "러너 자체의 posture"가 아니라 "이 관측 호출(obs_invoke)이 실제로
+      # 넘기는 profile의 posture"를 잰다 — obs_invoke의 docreview arm은 frontmatter
+      # 없는 최소 profile 파일을 만들어 넘기므로(codex_observation.sh) 러너 쪽
+      # 파싱이 `fm={}` → `web=false`로 떨어져 off가 맞다.
+      run_docreview_codex_reviewer.sh) echo off ;;
       *) echo '' ;;
     esac
   }

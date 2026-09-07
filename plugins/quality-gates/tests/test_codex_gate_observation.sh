@@ -60,6 +60,7 @@ obs_setup "$SCRATCH"
 UNGATED_run_codex_reviewer_sh='quality-pipeline/SKILL.md 이 산문 게이트 — 이 사이클 범위 밖 (설계 §10 미해결 1)'
 UNGATED_run_artifact_codex_reviewer_sh='critiquing-artifacts/SKILL.md 이 산문 게이트 — 이 사이클 범위 밖 (설계 §10 미해결 1)'
 UNGATED_test_codex_json_extraction_sh='수동 spike — 어떤 SKILL도 부르지 않는다'
+UNGATED_run_docreview_codex_reviewer_sh='호출자 0 — docreview_route.py 가 아직 이 러너를 안 부른다 (설계 §16 S17·AC25: 1b 는 위험 창이 열리기 전에 모집단만 넓힌다 — 첫 호출자 연결은 이 계획 밖의 이후 작업)'
 ungated_key() { printf 'UNGATED_%s' "$(printf '%s' "$1" | tr '.-' '__')"; }
 
 # ── 마킹된 게이트 블록 수집 ──────────────────────────────────────────────────
