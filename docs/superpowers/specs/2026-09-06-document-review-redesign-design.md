@@ -344,24 +344,51 @@ verdict 는 산출물이 아니라 집계다. `decide` 의 상태는 다섯이�
 (같은 계보의 새 `decide` 로 다시 올라온다). **`open` 과 `adopted` 가 0 이고 미적용 `fix` 가 0** 이면
 승인 게이트가 열린다 — 채택만 되고 안 고친 결정은 승인을 막는다.
 
-**여기서 `adopted` 는 문자 그대로의 상태값이 아니라 승인을 막는 술어다.** 실제로 집계되는 것은
-`state == "adopted"` 이거나, **`state == "expired"` 이면서 아직 그 계보의 후속(다른 finding 의
-`supersedes` 가 이 id 를 가리킴)이 없는 것**이다 — 후속이 실제로 생기면(같은 계보에 새 `decide` 가
-열리거나, 사용자가 그 후속을 기각·보류하면) 의무는 후속이 지고 만료 항목 자신은 더 이상 막지 않는다.
-「같은 계보의 새 `decide` 로 다시 올라온다」는 그 재상승 변환이 항상 성공한다는 전제 위에 있는데,
-실제로는 재상승이 두 단계다 — `docreview_state.py` 의 `observe-diff` 가 예약만 `st["reraise"]` 에
-적어 두는데, 그 대입(`st["reraise"] = reraise`)은 append 가 아니라 라운드마다 덮어쓰기다. 그 예약을
-실제 `decide` finding 으로 바꾸는 재상승 루프는 `docreview_route.py` 의 `finalize` 안에 있다. 그
-라운드의 `finalize` 가 그 루프에 이르기 전에 빠져나가면(예: `pending_recritic` 부재로 조기
-반환하는 `no_pending_recritic` 가드) 예약은 디스크에 남은 채 소비되지 않고, 다음 라운드
-`observe-diff` 가 새로 계산한 값으로 그 자리를 덮어써 예약 자체가 사라진다. 그 창에서는 후속도
-사용자도 의무를 지지 않으므로 만료 항목 자신이 계속 승인을 막는다 — fail-closed.
+**여기서 `adopted` 는 문자 그대로의 상태값이 아니라 승인을 막는 술어다.** 집계되는 것은
+`state == "adopted"` 이거나, **`state == "expired"` 이면서 `superseded_by` 가 비어 있는 것**이다.
+게이트 요약은 이 둘을 한 키에 합치지 않고 **「채택 대기」와 「미승계 만료」로 나눠 낸다** — 렌더가
+후자만 따로 보여야 하기 때문이다. `superseded_by` 는 **`decides` 레코드의 필드**이지 finding 계약의
+필드가 아니다(§6.2) — 리뷰어는 쓰지 못하고, `record-findings` 의 공개 필드 필터를 지나지도 않는다.
+이 절이 규정하는 넷은 §10 의 **PR 1b** 가 만든다.
 
-**알려진 한계 둘(PR 2 가 고칠 것).** (a) 해제 술어는 「나를 가리키는 finding 이 있다」뿐이라, 의무를
-실제로 지지 않는 후속 — 비차단 `ask` · `drop` · `defer` · 재비판자 `reject` — 도 차단을 푼다. (b)
-후속이 영영 안 생기면 사용자에게 탈출구가 없다 — `cmd_decide` 는 `state != "open"` 인 finding 의
-재결정을 거부하고(만료 항목은 이미 `open` 이 아니다), `render_gate` 는 `adopted` 집합을 렌더하지
-않아 막힌 사실 자체가 게이트 텍스트에 보이지 않는다.
+**전방 포인터.** `superseded_by` 는 만료 항목이 자기 후속을 가리키고, 그것을 쓰는 곳은 하나뿐이다 —
+재상승 루프가 그 계보의 새 `decide` 를 만든 **그 라운드의 `finalize` 안에서, 후속의 id 가 확정된
+뒤 한 번**. 게이트는 「후속이 있나」를 추론하지 않고 의무를 생성한 코드가 남긴 기록만 본다. 기록이
+없으면 만료 항목 자신이 계속 막는다 — fail-closed.
+
+**역방향으로 세면 안 되는 이유.** 「다른 finding 의 `supersedes` 가 이 id 를 가리킨다」는 의무의
+증거가 아니다. 라우터의 자동 계보 연결이 지목 없는 finding 에도 `supersedes` 를 붙이므로, 의무를
+지지 않는 후속 — 비차단 `ask` · `drop` · `defer` · 재비판자 `reject` — 이 같은 bucket 에 하나만 와도
+차단이 풀린다. 후속의 처분값을 열거해 술어를 좁히는 것도 답이 아니다: 처분 어휘가 늘면 그 열거가
+낡고 같은 fail-open 이 이름만 바꿔 재발한다.
+
+**포인터는 그 만료 «1회»에만 유효하다.** 한 계보는 여러 번 만료할 수 있다 — 재채택한 permit 이 또
+미적중하면 같은 항목이 다시 `expired` 가 된다. 포인터를 계보 단위로 두면 첫 만료 때 찍힌 기록이
+두 번째 만료의 차단을 풀어, 이 절이 닫으려는 조용한 승인이 그대로 재발한다. 그래서 규칙 셋이다:
+① 재상승 루프는 대상 `decide` 의 상태가 **`expired` 일 때만** 후속을 만들고 포인터를 쓴다(이미
+재결정돼 `adopted` 인 항목에는 쓰지 않는다) ② 항목이 `expired` 를 벗어날 때 — 사용자 재결정,
+그 계보에 새 permit 이 열릴 때 — 포인터를 **비운다** ③ 따라서 게이트가 보는 포인터는 언제나
+「지금 이 만료를 누가 받았다」이지 「이 id 가 언젠가 후속을 얻은 적이 있다」가 아니다.
+
+**재상승 예약은 누적하고, 소비 경로는 하나다.** `observe-diff` 가 예약을 `st["reraise"]` 에 **append**
+한다 — 대입으로 덮어쓰면 `finalize` 가 재상승 루프 전에 빠져나간 라운드(`pending_recritic` 부재로
+조기 반환하는 `no_pending_recritic` 가드 등)의 예약이 다음 `observe-diff` 에 지워져 후속이 영영
+안 생긴다. 누적이 「포인터가 언젠가 찍힌다」를 참으로 만들고, 포인터가 「찍히기 전에는 막는다」를
+참으로 만든다. 다만 누적은 **예약과 사용자 재결정이 같은 만료를 두 경로로 소비**할 수 있게 만들므로
+상호배제가 필요하다: 예약은 `finding_id` 로 dedup 하고(같은 계보에 라운드당 후속 하나), 사용자가
+그 항목을 재결정하면 미소비 예약을 **함께 폐기**하며, 재상승 루프는 위 ①로 이미 재결정된 항목을
+건너뛴다. 소비되지 못한 예약(대상 finding 부재 등)은 조용히 버리지 않고 **계수해 게이트에 공시**한다.
+
+**탈출구 — 선택지는 둘이다.** 후속이 끝내 안 생기는 입력이 남으므로 사용자에게 길이 있어야 한다.
+게이트 텍스트는 차단 중인 만료 항목을 **렌더한다** — 막힌 사실이 화면에 없으면 그것은 차단이 아니라
+정지다. 그리고 `cmd_decide` 는 `state == "expired"` 인 finding 의 재결정을 받되 **「채택」과 「기각」
+둘뿐이고 「보류」는 거부한다.** 만료는 사용자가 이미 한 번 채택한 의무라 미결로 되돌릴 자리가 없고,
+「보류」는 그 항목을 `held` 로 내려 열린 `decide` 에도 차단 만료에도 들지 않게 만들어 **한 번의 보류로
+승인이 열린다** — 탈출구가 아니라 구멍이다. 「기각」은 그 계보의 미소비 예약을 폐기하고 계보 기각을
+기록한다; 그럼에도 그 계보에 후속이 다시 서면 「기각 계보 재상승」으로 **공시된다**(§6.3). 나머지
+상태(`rejected` · `held` · `applied`)의 재결정은 계속 거부한다 — 이미 누군가 의무를 졌거나 소멸한
+것이라 다시 열 이유가 없다. **사후(`post`) 만료**의 재결정에서 「채택」은 원복 의무를 관측 없이
+종결한다는 뜻이므로, 게이트 텍스트가 그 뜻을 그 항목 옆에 밝힌다.
 
 **사후 `decide`(얼림 diff 가 만든 `origin: auto`)는 변경이 이미 일어난 것**이라 전이가 다르다 —
 「채택」은 관측된 변경을 승인하는 것이므로 즉시 `applied` 이고, 「기각」은 **원복 의무**를 만든다:
@@ -369,8 +396,8 @@ verdict 는 산출물이 아니라 집계다. `decide` 의 상태는 다섯이�
 관측해야 `applied`(원복 완료)다. 원복되지 않으면 `expired` 로 다시 올라온다.
 
 상한·stagnation 으로 열리는 승인 게이트에 열린 `decide` 나 미적용 `fix` 가 남아 있을 수 있다. 그때
-게이트는 **두 단계**다. 1단계는 라운드 게이트와 같은 형태 — 열린 `decide` 묶음(채택 / 기각 / 보류)과
-미적용 `fix` 목록(적용 예정 / **`drop`**)을 묻는다. `fix` 의 `drop` 이 사용자에게 열리는 곳이 여기다
+게이트는 **두 단계**다. 1단계는 라운드 게이트와 같은 형태 — 열린 `decide` 묶음(채택 / 기각 / 보류) ·
+**차단 중인 만료 `decide`**(채택 / 기각 — 보류 없음) · 미적용 `fix` 목록(적용 예정 / **`drop`**)을 묻는다. `fix` 의 `drop` 이 사용자에게 열리는 곳이 여기다
 (C4 — 리뷰어와 저자는 올리기만 하고 내리는 손은 사용자다; 재비판을 통과한 오탐 `fix` 하나가 승인을
 영구히 막지 않게 한다). 1단계의 답으로 `open`·`adopted` 가 0 **이고** 미적용 `fix` 가 0(적용 또는
 `drop`) 이 된 뒤에만 2단계 — `proceed-gate.md` 의 진행 옵션(①/②) — 이 활성이다. 그렇지 않으면
@@ -421,14 +448,17 @@ critic 의 눈에 남는다. 문장 단위 diff 로 더 촘촘히 가는 것은 
 `apply_anchors` 안이면 **`fix_anchors` · 보호 부류와 무관하게** 통과시키고(`immutable` 만은 절대
 아니다) ② 얼림 diff 가 그 앵커들의 변경을 자동 `decide` 로 만들지 않는다. 적용하는 손은 저자
 세션이고 무엇을 바꾸는지는 채택된 `decide` 의 변경 내용이다. 라운드가 지나 변경이 관측되지 않으면
-`expired` — 같은 계보의 `decide` 로 다시 올라온다.
+`expired` 이고 재상승 예약이 쌓인다 — **그 예약을 소비하는** `finalize` 가 그 계보의 새 `decide` 를
+만들면서 만료 항목에 `superseded_by` 를 쓰고, 그 기록이 생기기 전까지 만료 항목 자신이 승인을
+막는다(§6.4). 그 `finalize` 는 다음 라운드의 것이 아닐 수 있다 — 그래서 예약이 누적이다.
 「기각」은 그 finding id 를 다음 라운드 집합에서 빼고 결정 기록에 남긴다(§8.4 의 stagnation 입력).
 
 ### 8.2 승인 게이트
 
-열린 `decide` 0 · `adopted`(후속 없는 `expired` 포함, §6.4) 0 · 미적용 `fix` 0 일 때, 또는 상한
-도달·stagnation 시에 뜬다. 보이는 것은 남은 `ask`·`defer` 목록 · 기각 계수 · degrade · (상한
-도달이면) 마지막 라운드의 새 결함 목록이다.
+열린 `decide` 0 · `adopted`(`superseded_by` 없는 `expired` 포함, §6.4) 0 · 미적용 `fix` 0 일 때, 또는 상한
+도달·stagnation 시에 뜬다. 보이는 것은 **차단 중인 만료 `decide`**(있으면 — 재결정 가능, §6.4) ·
+남은 `ask`·`defer` 목록 · 기각 계수 · 소비되지 못한 재상승 예약 계수 · degrade · (상한 도달이면)
+마지막 라운드의 새 결함 목록이다.
 선택지는 `references/proceed-gate.md` 의 4옵션 그대로이고(Non-goal), 열린 것이 남아 있으면 §6.4 의
 두 단계 규칙이 앞에 선다 — 그때의 「다음 라운드」는 예산이 남았으면 예산을 쓰고, 상한 도달 시에만
 「추가 라운드 1회 열기」(D19, 개별 승인)가 된다. 두 가드(AP2 polite stop 금지 · AC19 cross-compact 조기
@@ -473,7 +503,7 @@ supersedes?}`. 뒤집힘은 삭제가 아니라 `supersedes` 가 붙은 새 항�
 | `doc-critic` 출력에 sentinel 블록이 없거나 깨짐 | `source_failed(primary=True)` | **예** — 라운드를 세지 않고 재dispatch 1회, 또 실패면 승인 게이트를 「미검증」 라벨로 연다 |
 | `doc-recritic` 사망 또는 skip | `source_failed(primary=False)` + 「기각 경로 0 — 오탐이 걸러지지 않았다」 | 아니오 — critic 처분이 그대로 간다(올리기만이라 안전 방향) |
 | 층 1 블록만 있고 층 2 가 없음 — **프로필이 층 2 를 요구할 때만** | 층 2 `uncountable` | 아니오 — 게이트에 「상세 미검증」. seed 처럼 `layer_rubric` 이 층 2 를 비운 프로필에서는 부재가 정상이라 아무 기록도 남기지 않는다 |
-| 문서에 헤딩이 없음(브리프 OQ6) | 「앵커 불가 — 얼림·보호 부류 비활성, 모든 `fix` 가 문서 전체 범위」 | 아니오 — generic 프로필만 허용. 나머지 셋은 구조 게이트가 먼저 막는다 |
+| 문서에 헤딩이 없음(브리프 OQ6) | 「앵커 불가 — 얼림·보호 부류 비활성, 모든 `fix` 가 문서 전체 범위. **채택된 결정의 적용 관측도 문서 하나로 뭉개진다** — 무관한 편집 한 번이 그 라운드의 모든 permit 을 적중시키므로 §6.4 의 「채택만 되고 안 고친 결정은 승인을 막는다」가 이 자리에서는 관측 해상도만큼만 산다. fail-closed 자체는 유지된다(포인터가 없으면 막는다)」 | 아니오 — generic 프로필만 허용. 나머지 셋은 구조 게이트가 먼저 막는다 |
 | seed 자리 — `state.local.md` 없음(브리프 OQ4) | `framing-requests` 가 이미 만드는 세션 디렉토리에 `docreview-state.md` 를 따로 둔다. `state.local.md` 는 만들지 않는다 | 아니오 |
 | 세션 id 미해석(진입 skill 이 `--state-dir` 를 못 만듦) | 스냅샷·카운터 불가 → 얼림 diff 불가 | **예** — 회귀 장치가 통째로 없는 라운드는 돌리지 않는다. 안내문은 호스트의 것 — spec-distill 은 `DEVBREW_SPEC_DISTILL_SESSION_ID`, quality-gates 는 `CLAUDE_CODE_SESSION_ID` |
 | 프로필 필드 누락 | 진입 실패 advisory | **예** |
@@ -494,6 +524,7 @@ supersedes?}`. 뒤집힘은 삭제가 아니라 `supersedes` 가 붙은 새 항�
 | PR | 내용 | 버전 |
 |---|---|---|
 | 1 | `shared/docreview/` 엔진 + 프로필 스키마 + 행동 락. 호출자 0 인 상태로 머지(링크만 두 플러그인에 심는다) | spec-distill minor · quality-gates minor |
+| 1b | 엔진 결함 — §6.4 의 전방 포인터 · 재상승 예약 누적 · 만료 탈출구 · `check-intent` 일반 경로의 앵커 실재 · `_permit_covers` 락 · 심볼릭 링크 러너의 수집기 모집단 · `cmd_finalize` 분해. 호출자 여전히 0 | spec-distill minor · quality-gates minor |
 | 2 | design doc 자리 — `reviewing-spec` 껍데기화, §5.5 의 삭제, 상한 락 **재작성**(아래), stagnation 술어 교체, `mark-reviewed` 시점 이동(§5.4). Stop 훅 무변경 | spec-distill **major**(verdict 계약이 깨진다 → 1.0.0) |
 | 3 | brief 자리 — `reviewing-brief` 껍데기화, §5.5 의 삭제 | spec-distill minor |
 | 4 | generic 자리 — `critiquing-artifacts` 껍데기화, 자율 커밋 루프 소멸 | quality-gates **major** |
@@ -504,6 +535,12 @@ cap」 문구 · design 라우팅 행 · README 흐름도에서 CAP 을 **도출
 지우므로 「5 를 2 로 바꾸는」 치환이 아니라 재작성이다. 새 락의 정본은 `references/reviewing-document.md`
 의 `rereview_cap: 2` 한 줄이고, 검사 대상은 네 진입 skill 과 두 README 의 상한 언급 전부다(PR 2 에서
 design doc 자리부터, 이후 PR 마다 코퍼스에 자리를 더한다).
+
+1b 를 PR 2 에 접지 않고 따로 두는 이유는 둘이다. PR 2 는 삭제 전수와 껍데기화와 major bump 를
+한 diff 에 담는데, 거기에 엔진 동작 변경까지 섞이면 회귀가 났을 때 무엇이 무엇을 깼는지 구별되지
+않는다. 그리고 1b 는 **엔진에 호출자가 0 인 마지막 시점**이라 `cmd_finalize` 분해처럼 락을 통째로
+흔드는 재구조화가 가장 싸다. 1b 안에서도 모집단을 바꾸는 수집기 수정이 첫 커밋이고 분해가 마지막
+커밋이며, 그 사이가 동작 변경이다 — 변이 매트릭스가 각 커밋에서 무엇을 재는지 구별할 수 있게.
 
 각 PR 은 그 자리의 README 「Principles Instantiated」 · CHANGELOG · `plugin.json` bump 를 같은
 커밋에 담는다(CLAUDE.md). 삭제 자리의 전수는 plan 이 네 축(식별자 · 개념 별칭 · 의존 폐포 ·
@@ -561,6 +598,52 @@ design doc 자리부터, 이후 PR 마다 코퍼스에 자리를 더한다).
   emit 한다. 기존 `default` · `design` keyset 의 출력은 바이트 단위로 변하지 않는다.
 - AC19 — 한 bucket 에 finding 이 둘 이상이면 각각 다른 `#r<round>.<k>` 를 갖고, 다른 라운드의 새 finding 은 이전 라운드의 id 를 재사용하지 않으며, 한 id 의 reject·기각이 같은
   bucket 의 다른 id 를 지우지 않는다.
+- AC20 — 차단 술어. ① `superseded_by` 가 빈 `expired` 는 승인을 막고, 같은 계보에 **비의무 후속**
+  (비차단 `ask` · `drop` · `defer` · 재비판 `reject`) 이 와도 계속 막는다 — 넷을 각각 케이스로 세운다.
+  ② 재상승 루프가 후속을 만들며 포인터를 쓴 뒤에는 막지 않는다 — 이 케이스는 `record-findings` 로
+  못 만든다(그 경로는 공개 필드 필터를 지나 포인터를 쓰지 않는다). **실제 `finalize` 재상승을 태우는
+  픽스처**여야 한다. ③ 재채택 후 **다시 만료**한 항목은 낡은 포인터가 아니라 빈 포인터로 다시 막는다.
+  변이 셋이 각각 지정 케이스에서 판정 `caught` 다 — 포인터 대입 삭제 · 포인터 초기화 삭제 ·
+  **술어를 역방향 `supersedes` 스캔으로 복원**. 셋째가 이 AC 의 변별 변이다: 앞 둘은 「막느냐 마느냐」만
+  흔들고 「전방이냐 역방이냐」를 구별하지 않는다.
+- AC21 — 재상승 예약. ① 누적된다 — `finalize` 가 재상승 루프 전에 조기 반환한 라운드의 예약이 다음
+  라운드 `observe-diff` 뒤에도 남고 그것을 소비하는 `finalize` 가 소비한다. ② `finding_id` 로 dedup
+  한다 — 같은 계보에 라운드당 후속 하나. ③ 소비되지 못한 예약은 버리지 않고 계수해 게이트에 공시한다.
+  셋 각각에 되돌리는 변이가 있고 판정이 `caught` 다.
+- AC22 — 탈출구. ① 게이트 렌더 **본문**에 차단 중인 만료 항목의 id 가 나온다(오늘 렌더 본문을 재는
+  케이스는 `--render | head -1` 하나뿐이라 새 케이스가 필요하다). ② `cmd_decide` 가 `expired` 의
+  「채택」·「기각」을 받고 **「보류」를 거부한다**. ③ `rejected` · `held` · `applied` 의 재결정을 거부한다 —
+  셋 각각 단언한다. 변이 셋이 `caught` 다: `expired` 수용을 되돌리기 · `expired`+보류 거부를 지우기 ·
+  **가드를 세 상태까지 넓히기**(③의 짝 — 이 음의 요구는 넓히는 변이로만 잴 수 있다).
+- AC23 — `check-intent` 의 일반 `fix` 경로가 스냅샷에서 해소되지 않는 앵커를 거부하고, 그 거부는
+  다른 일반-경로 거부와 같은 `escalate` 경로를 지나 그 `fix` 를 다음 라운드 `decide` 로 올린다
+  (단순 거부면 그 `fix` 가 미적용으로 남아 영구히 승인을 막는다). 사유 리터럴은 `anchor_unresolved`
+  이며 insert-after 경로의 `insert_after_unresolved` 와 다르다 — 「내 fix 앵커가 없다」와 「내 삽입
+  자리가 없다」는 다른 사실이다. `fix_anchors: ["*"]` 프로필 픽스처에서 잰다(그 와일드카드가 미해소
+  앵커를 `fix_allowed` 로 만드는 것이 이 결함의 기전이다).
+- AC24 — `_permit_covers` 의 라운드 비교를 지우는 변이가 `caught` 다. **오늘 그 함수를 지나는 케이스는
+  전부 permit 라운드가 곧 현재 라운드라 그 비교를 지워도 값이 안 변한다** — 새 픽스처가 필요하다:
+  라운드 1 에 채택해 permit(라운드 2)을 만들고, 라운드 3 에서 같은 보호 앵커의 `fix` finding 이
+  `decide` 로 승격되는지. 비교를 지우면 `fix` 로 남아 RED. 이 라운드 수명을 묶는 지점은 여기 말고도
+  셋(`check-intent` 의 `permit_round_mismatch` — AC6 이 이미 잰다 · `exempt-anchors` · `observe-diff`)
+  이 있으므로, 이 AC 가 덮는 것은 **라우터의 보호 승격 우회**에 대한 수명이다.
+- AC25 — 심볼릭 링크로 배포된 codex 러너가 두 수집기의 모집단에 들어오고
+  `test_sandbox_enforced.sh` 가 `run_docreview_codex_reviewer.sh` 의 `-s read-only` 를 실제로 잰다.
+  편집은 **셋이고 한 커밋이어야 한다** — 파이썬 수집기의 심볼릭 링크 skip 제거 · 셸 관측기의 재귀
+  스캔 · 그 관측기 `obs_invoke` 의 인자 표에 새 러너 arm 추가. 셋이 갈라지면 두 수집기의 후보 집합이
+  달라 그 테스트의 standing assertion 이 곧바로 RED 이고, arm 만 먼저 넣어도 후보 도출이 어긋나 RED 다.
+  러너에서 `-s read-only` 를 지우는 변이가 `caught` 다.
+- AC26 — `cmd_finalize` 분해가 동작을 바꾸지 않는다. 오라클은 변이 매트릭스 판정 비교 **하나로는
+  부족하다**(셀 밖 동작 변화가 통과한다): 행동 케이스 전수의 단언별 통과/실패가 동일하고, 대표
+  `finalize` 시나리오의 출력·state 가 골든과 동치이며, **각 변이의 치환 앵커가 여전히 적중하는지**를
+  확인한다(치환기는 매치 0 건에도 성공을 내므로, 분해로 앵커가 사라지면 변이가 무동작이 되어 사유가
+  오도된 판정을 낸다). 분해가 깨뜨리기 쉬운 넷 — 계보 해소의 2패스 순서 · `blocks` 재매핑 ·
+  `escalated` 이월 · bucket 충돌 계수 — 에 셀을 새로 세우고, **재상승 후속이 흡수·재비판 기각·처분
+  강제를 지나지 않는다**는 불변식(이 절의 fail-closed 가 그 위에 선다)에도 셀을 세운다.
+- AC27 — `doc-recritic` sentinel 의 검사는 두 질문이라 자리도 둘이다. **1b**: 파서가 어휘 밖 verdict
+  를 조용히 `confirm` 으로 흘리지 않고 **강제로 계수**한다(형제 처분 정규화는 이미 그렇게 한다 —
+  「판정기가 항목을 버리면 센다」). 오늘 합성 픽스처로 잰다. **PR 2**: `verdicts`/`added` 의 컨테이너
+  타입과 실제 agent 출력의 스키마 합치 — 첫 호출자의 e2e 산출물로만 잴 수 있다.
 
 ## 12. Files to Modify
 
@@ -577,6 +660,17 @@ design doc 자리부터, 이후 PR 마다 코퍼스에 자리를 더한다).
 
 **수정(shared, 추가만)** — `shared/codex/codex_findings_to_yaml.py`(`--emit-keys docreview` 추가, 기존
 keyset 불변) · `shared/tests/test_copy_of_contract.sh`(축 1a 구조 도출을 `agents`·`references` 로 확장).
+
+**수정(1b — 엔진 결함)** — `shared/docreview/scripts/docreview_state.py`(전방 포인터 술어 · 예약
+누적 · 만료 재결정 · 게이트 렌더) · `docreview_route.py`(재상승 루프가 `superseded_by` 를 쓴다 ·
+`cmd_finalize` 분해) · `docreview_anchor.py`(일반 fix 경로의 앵커 실재) ·
+`plugins/quality-gates/tests/lib/extract_codex_invocations.py`(심볼릭 링크 skip **제거** — 링크로
+배포된 러너를 모집단에 넣는다) · `plugins/quality-gates/tests/lib/codex_observation.sh`(재귀 스캔
+모집단 **+ `obs_invoke` 인자 표에 새 러너 arm**) · `shared/tests/test_docreview_mutations.sh` ·
+`shared/tests/fixtures/docreview/cases.sh`. 앞의 세 편집은 **한 커밋**이어야 한다(AC25) — 두 수집기가
+같은 후보 집합을 낸다는 standing assertion 이 갈라진 상태를 즉시 RED 로 잡는다. 같은 커밋에서
+그 두 파일의 **연기 주석**(파이썬 수집기의 skip 사유 · `test_runner_disposition.sh` 헤더)도 갱신한다 —
+둘 다 「PR 2 에서 판단한다」를 못 박고 있어 1b 뒤에는 거짓 인용으로 남는다.
 
 **수정** — `plugins/spec-distill/skills/reviewing-spec/SKILL.md`(껍데기화) · `reviewing-brief/SKILL.md` ·
 `framing-requests/SKILL.md`(검증 절) · `plugins/quality-gates/skills/critiquing-artifacts/SKILL.md` ·
@@ -698,6 +792,10 @@ keyset 불변) · `shared/tests/test_copy_of_contract.sh`(축 1a 구조 도출�
 | S11 (리뷰 라운드 2 이후) | 리뷰어 임시 `ref` + 라운드 박힌 id + 라우터 자동 계보 · `permit.apply_anchors` · `decide` 상태 다섯 · `applied_scopes` 얼림 예외 · 완료 기록은 승인 게이트 도달 시점 · 링크 로더 사전 측정(§13 항목 0) | Claude 6건 · codex 7건 — 라운드 1 수정이 만든 계약 공백. 브리프 확정 불변 | 각 행의 규칙을 이름으로 |
 | S12 (리뷰 라운드 3 이후) | `docreview_state.py` 는 state 디렉토리를 인자로 받고 호스트 모듈을 import 하지 않음 · 완료 기록은 승인 게이트 **진행 선택 뒤**, ④ 는 `clear-inflight` 만, 자동 재개 없음 · 얼림 술어는 §7 한 곳 · 상한/stagnation 게이트는 두 단계 · 진행 = fix 적용 + permit 적용 · 부활 대조는 라우터 · emit keyset 은 §6.2 전부 · 스위치는 호스트별 둘 · 집행·락 코퍼스는 진입 skill 넷 | Claude 6건 · codex 4건 — 라운드 2 수정이 남긴 좁은 공백 | 각 행의 규칙을 이름으로 |
 | S13 (리뷰 라운드 4 이후 — 사용자 승인 추가 라운드) | 사후 auto `decide` 의 전이(채택=즉시 applied · 기각=원복 permit) · 승인 게이트 1단계에서 사용자가 미적용 `fix` 를 `drop` 가능 · 완료 기록은 진행 선택 뒤로 문구 통일 · stagnation 게이트의 「다음 라운드」는 예산 우선 · `blocks` 는 최종 id 를 따름 · `refs` 서브커맨드 표 등재 · `check-intent` 계약 둘 | Claude 2건 · codex 5건 — 상태 기계의 문장 정합 | 각 행의 규칙을 이름으로 |
+| S14 | 만료 채택의 차단 해제는 역방향 `supersedes` 스캔이 아니라 재상승 루프가 쓰는 전방 포인터 `superseded_by` 로 판정하고, 그 포인터는 **그 만료 1회에만** 유효하다(재결정·새 permit 에 비워진다) (2026-09-07, 사용자 동의로 §6.4 재결정) | 「후속이 있나」를 추론하면 의무를 안 지는 후속도 차단을 푼다 · 처분 어휘가 늘면 열거가 낡는다 · 계보 단위로 두면 첫 만료의 기록이 두 번째 만료를 푼다 | 「설계 원래 문면(`open` + `adopted` 만)으로」 — 재상승 성공이 모든 경로에서 구조적으로 보장된다면 |
+| S15 | 재상승 예약을 덮어쓰기에서 **누적**으로 바꾸고, 예약 소비와 사용자 재결정을 상호배제로 정의한다(dedup · 재결정이 예약을 폐기 · 미소비 예약은 계수·공시) | 덮어쓰기는 `finalize` 조기 반환 라운드의 예약을 소멸시켜 후속이 영영 안 생긴다 · 누적만 하면 한 만료를 두 경로가 소비해 한 계보에 병렬 의무가 선다 | 「덮어쓰기로」 — `finalize` 가 항상 재상승 루프에 이른다는 것이 구조적으로 보장되면 |
+| S16 | `cmd_decide` 의 수용 집합을 `open` 에서 `open` + `expired` 로 넓히되, 만료의 선택지는 **「채택」·「기각」 둘뿐**이고 「보류」는 거부한다 | 후속이 영영 안 생기는 입력에 탈출구가 없으면 영구 차단이다 · 「보류」를 받으면 그 항목이 열린 `decide` 에도 차단 만료에도 안 들어 한 번의 보류로 승인이 열린다 | 「`open` 만 수용으로」 — 재상승이 모든 경로에서 보장돼 탈출구가 불필요해지면 |
+| S17 | 심볼릭 링크 배포 러너의 수집기 모집단 수정을 PR 2 가 아니라 **1b** 에서 한다 | 보안 락의 모집단 변경은 위험 창(첫 호출자)이 열리기 **전에** 끝내는 편이 낫고, PR 2 의 diff 는 삭제 전수·껍데기화·major bump 가 겹쳐 회귀 귀속이 안 된다 · 1b 는 선재 RED 가 하나뿐인 baseline 위에서 돈다 | 「PR 2 로」 — 두 수집기 수정이 1b 의 다른 변경과 회귀를 섞기 시작하면 |
 
 ## 17. Concrete Next Action
 
