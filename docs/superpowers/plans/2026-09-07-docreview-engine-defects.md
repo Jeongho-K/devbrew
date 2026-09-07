@@ -957,7 +957,10 @@ done
 ```bash
 cd /Users/jeonghokim/Downloads/devbrew
 export PYTHONDONTWRITEBYTECODE=1
-red=""; for f in shared/tests/test_*.sh plugins/*/tests/test_*.sh; do bash "$f" >/dev/null 2>&1 || red="$red $(basename $f)"; done
+red=""
+for f in $(find shared/tests plugins/*/tests -name 'test_*.sh' | grep -v '/spike/'); do
+  bash "$f" >/dev/null 2>&1 || red="$red $f"
+done
 echo "셸 RED:${red:- none}"
 for P in spec-distill quality-gates; do
   for f in plugins/$P/tests/test_*.py; do
@@ -965,7 +968,7 @@ for P in spec-distill quality-gates; do
   done
 done
 ```
-Expected: 셸 RED 는 **`test_no_write_matcher_hooks_repo.sh` 하나뿐**(선재 — Global Constraints 참조), python RED 없음. 다른 이름이 나오면 이 PR 이 만든 것이다.
+Expected: 셸 RED 는 **선재 둘뿐**(`test_no_write_matcher_hooks_repo.sh` · `harness/test_skill_orchestration_behavior.sh` — Global Constraints 참조), python RED 없음. 다른 이름이 나오면 이 PR 이 만든 것이다 — 단 flaky 둘은 단독 재실행으로 재현부터 하라.
 
 - [ ] **Step 8: 커밋 + PR**
 
