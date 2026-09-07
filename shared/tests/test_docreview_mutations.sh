@@ -166,14 +166,19 @@ mut same_as_min case_T02_same_as_max sed_route 's/keep = max(live, key=lambda m:
 # 낸다. 미래에 엔진이 바뀌어 이 sed 가 더는 안 죽어도 같은 방식으로 소리 낸다(판정이
 # caught 가 되어 기대 unmeasurable 과 불일치) — 조용히 멎지 않는다.
 mut_expect unmeasurable canary_crash case_T05_T06_reject sed_route 's/if v.get("evidence"):/if True:/'
-# [Task 3 실행 노트] ⑫(expired_blocks_forever) 는 여기 있었다 — 만료의 차단 해제를
-# «후속 존재» 의 역방향 스캔으로 재던 시절의 셀이다. 그 술어 자체가 전방 포인터로
-# 바뀌면서 대상 문장이 사라져 sed 가 매치 0 건으로 무동작(no_teeth 실측)이 됐고, 그
-# 셀이 재던 케이스(T22b 의 「채택·적용하면 승인이 다시 열린다」 꼬리)도 함께 지워졌다
-# (위 실행 노트). 같은 개념 — 의무 이행이 실제로 승인을 여는가 — 은 이제
-# case_AC20_reexpiry_blocks_again 이 실제 finalize 경로로 행동으로 재고, 그 경로의
-# 각 걸음(포인터를 쓰는가·비우는가)은 아래 ⑯⑰ 이 하향으로 흔든다. 번호는 당겨 채우지
-# 않는다(과거 커밋 인용의 자릿수 정합).
+# [Task 3 실행 노트, fix round 1 에서 정정] ⑫(expired_blocks_forever) 는 여기 있었다 —
+# 만료의 차단 해제를 «후속 존재» 의 역방향 스캔으로 재던 시절의 셀이다. 그 술어 자체가
+# 전방 포인터로 바뀌면서 대상 문장이 사라져 sed 가 매치 0 건으로 무동작(no_teeth
+# 실측)이 됐고, 그 셀이 재던 케이스(T22b 의 「채택·적용하면 승인이 다시 열린다」 꼬리)도
+# 함께 지워졌다(위 실행 노트). [정정] 그 꼬리가 재던 개념 — 의무 이행이 «승인 게이트를
+# 여는가» — 은 case_AC20_reexpiry_blocks_again 이 재지 않는다(그 케이스는 approval_ready
+# 를 한 번도 안 읽고, 결말도 여전히 열린 계보로 끝난다) — case_T21_permit_applied 끝에
+# 단언 하나(adopted·blocked_expired 둘 다 빈 채 승인 게이트가 열림)를 더해 되살렸다.
+# case_AC20_reexpiry_blocks_again 이 실제로 재는 것은 다른 개념 — 의무 이행이 «차단
+# 술어에서 항목을 빼는가»(`blocked_expired` 에서 사라지는가) — 이고, 술어에서
+# `and not d.get("superseded_by")` 만 지워보면(수동 확인) 그 케이스가 그대로 RED 로
+# 죽는다. 그 경로의 각 걸음(포인터를 쓰는가·비우는가)은 아래 ⑯⑰ 이 하향으로 흔든다.
+# 번호는 당겨 채우지 않는다(과거 커밋 인용의 자릿수 정합).
 # ⑬ 예약 누적 → 대입 복원. 조기 반환 라운드의 예약이 다음 observe-diff 에 사라진다.
 mut reraise_overwrite case_AC21_reraise_accumulates sed_state \
   's/^    st\["reraise"\] = pending$/    st["reraise"] = reraise/'

@@ -169,6 +169,12 @@ case_T21_permit_applied() {
   assert_eq "$(jget "$df" '[c["anchor"] for c in d["changed"]], [e["anchor"] for e in d["exempt_applied"]]')" "(['#2-goals'], ['#12-files-to-modify'])" "T21: permit 앵커의 변경은 changed 가 아니다(예외 ②)"
   assert_eq "$(jget "$d/obs2.json" 'd["applied"], d["progress"]')" "(['aaaa0001#r1.1'], 1)" "T21: 변경 관측 → applied, progress 1"
   assert_eq "$(st_yaml "$d" 'st["decides"]["aaaa0001#r1.1"]["state"], list(st["permits"].values())[0]["consumed"]')" "('applied', True)" "T21: 상태 applied · permit 소모"
+  # [Task 3 fix round 1 — I2a] AC20 로 "adopted"·"blocked_expired" 가 갈라진 뒤에도 정상
+  # 종결(적용) 경로가 승인 게이트를 실제로 여는지 재는 자리가 남아 있어야 한다 — 이
+  # 락이 없어지면 「의무 이행이 승인을 다시 연다」는 통째로 case_T22b 의 삭제된 꼬리와
+  # 함께 사라진다(그 사실 자체는 case_AC20_reexpiry_blocks_again 이 재지 않는다, 아래
+  # ⑫ 은퇴 노트 정정 참조).
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["adopted"], d["blocked_expired"], d["approval_ready"]')" "([], [], True)" "T21: 정상 적용 뒤엔 adopted·blocked_expired 둘 다 비고 승인 게이트가 열린다"
   rm -rf "$d"
 }
 case_T22_permit_expired_reraise() {
@@ -227,17 +233,30 @@ case_AC20_reexpiry_blocks_again() {
   # 후속을 채택했는데 또 미적중 → 재만료. 낡은 포인터가 아니라 빈 포인터로 다시 막아야 한다.
   py docreview_state.py decide --state-dir "$d" --id "$succ" --choice adopt --quote '이번엔 적용' >/dev/null
   next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 또 변경 없음
+  # [Task 3 fix round 1 주석] 이 단언은 자연 경로에서 공허하게 참이다 — succ 는 애초에
+  # superseded_by 를 받은 적이 없어서(자기 자신이 후속이지 원본이 아니다) None 은 그저
+  # 「한 번도 안 찍힘」이다. 「만료 인스턴스당 포인터 한 번」이 여기서 실제로 지키는
+  # 힘은 `pop()` 이 아니라 **id 신선도**다 — 재만료는 항상 새 permit·같은 finding_id 라
+  # 새 포인터를 쓸 대상 자체가 없다. `pop()` 이 실제로 막는 「낡은 포인터가 새 만료를
+  # 남몰래 푸는」 상태는 이 케이스가 아니라 case_AC20_stale_pointer_cleared_on_reobserve
+  # (픽스처로 그 조합을 강제) 가 잰다 — 둘의 분업은 그렇게 갈린다.
   assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["state"], st["decides"]["'"$succ"'"].get("superseded_by")')" "('expired', None)" "AC20③: 재만료한 항목의 포인터는 비어 있다"
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"'"$succ"'" in d["blocked_expired"]')" "True" "AC20③: 재만료는 다시 막는다(낡은 포인터가 안 푼다)"
   rm -rf "$d"
 }
-# [Task 3 실행 노트] `cmd_observe_diff` 의 `d.pop("superseded_by", None)` 가 실제로 막아야
-# 하는 상태 — 「포인터가 찍힌 decides 레코드가 같은 id 로 새 permit 을 다시 받는다」 —
-# 는 지금 CLI 경로로는 도달 불가다: `cmd_decide` 는 `state == "open"` 인 것만 받고,
+# [Task 3 실행 노트, fix round 1 에서 수명 명시] `cmd_observe_diff` 의
+# `d.pop("superseded_by", None)` 가 실제로 막아야 하는 상태 — 「포인터가 찍힌 decides
+# 레코드가 같은 id 로 새 permit 을 다시 받는다」 — 는 **Task 3 시점 한정** 으로 지금
+# CLI 경로로는 도달 불가다: `cmd_decide` 는 `state == "open"` 인 것만 받고,
 # `record-findings` 로 같은 id 를 다시 심으면 decides 레코드를 통째로 덮어써 기존
-# `superseded_by` 가 먼저 지워진다(case_AC21_reraise_dedup 과 같은 종류의 도달 불가).
+# `superseded_by` 가 먼저 지워진다. 하지만 Task 4 의 만료 재결정 탈출구(`cmd_decide` 가
+# `state in ("open", "expired")` 를 받게 넓어짐)는 이 조합을 **실경로로** 만든다 — 그
+# 탈출구는 `st["reraise"]` 의 미소비 예약만 폐기하고 `superseded_by` 는 안 지우므로,
+# 재결정이 낡은 포인터를 그대로 들고 새 permit 을 연다. 그래서 이 픽스처는 「영원히
+# 도달 불가한 상태를 증명하는 defense-in-depth」가 아니라 「다음 태스크가 열 창을
+# 미리 격리해 재는 것」이다 — Task 4 구현 시 이 케이스와 픽스처를 지우지 말 것.
 # 그 조합을 픽스처(`st_set_stale_pointer.py`)로 강제해 pop 가드가 «실제로 작동함»을
-# 잰다 — 이 상태가 살아있는 위협이라는 뜻이 아니다.
+# 잰다.
 case_AC20_stale_pointer_cleared_on_reobserve() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
