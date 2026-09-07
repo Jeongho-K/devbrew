@@ -34,4 +34,6 @@ case_T38_stagnation
 case_T39_gate_derivation
 case_T45_decision_log_append_only
 case_T12_immutable_permit_targets_summary
+case_AC21_reraise_accumulates
+case_AC21_reraise_dedup
 finish

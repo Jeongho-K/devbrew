@@ -347,9 +347,11 @@ def cmd_finalize(a) -> int:
                       "supersedes": e["finding_id"], "evidence": e.get("reason"), "origin": "auto",
                       "kind": "pre", "immutable": bool(f0.get("immutable")), "_source": "escalated"})
     st["escalated"] = keep_esc
+    reraise_unconsumed = 0
     for r in st.get("reraise") or []:
         f0 = prev.get(r["finding_id"])
         if not f0:
+            reraise_unconsumed += 1   # 대상 finding 부재 — 버리지 않고 센다(공시는 게이트가)
             continue
         final.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "채택 후 미적용(expired): " + (f0.get("summary") or ""),
@@ -466,7 +468,7 @@ def cmd_finalize(a) -> int:
         "rejected": [{"id": it["id"], "evidence": it["_rejected"]} for it in rejected_items],
         "defers": [it["id"] for it in final if it["disposition"] == "defer"],
         "bucket_conflicts": bucket_conflicts, "lineage_mismatch": lineage_mismatch, "revived": revived,
-        "degrade": degrade, "advisory": adv, "blocks": L.blocks(),
+        "degrade": degrade, "advisory": adv, "blocks": L.blocks(), "reraise_unconsumed": reraise_unconsumed,
     }
     for k, v in report["counts"].items():
         out["adjudication_" + k] = v
@@ -476,6 +478,7 @@ def cmd_finalize(a) -> int:
     st["rounds"][str(n)]["route_report"] = {
         "degrade": degrade, "advisory": adv, "rejected": len(rejected_items),
         "bucket_conflicts": bucket_conflicts, "revived": len(revived), "lineage_mismatch": lineage_mismatch,
+        "reraise_unconsumed": reraise_unconsumed,
     }
     st["pending_recritic"] = None
     save_state(a.state_dir, st, "finalize (%d findings, %d rejected)" % (len(final), len(rejected_items)))

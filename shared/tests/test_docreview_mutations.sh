@@ -171,4 +171,13 @@ mut_expect unmeasurable canary_crash case_T05_T06_reject sed_route 's/if v.get("
 # (`superseded` 집합은 그대로 계산되고 쓰이지만 않는다 — 미사용 지역변수라 traceback 없음).
 mut expired_blocks_forever case_T22b_expired_superseded_unblocks sed_state \
   's/if d\["state"\] == "adopted" or (d\["state"\] == "expired" and i not in superseded)/if d["state"] in ("adopted", "expired")/'
+# ⑬ 예약 누적 → 대입 복원. 조기 반환 라운드의 예약이 다음 observe-diff 에 사라진다.
+mut reraise_overwrite case_AC21_reraise_accumulates sed_state \
+  's/^    st\["reraise"\] = pending$/    st["reraise"] = reraise/'
+# ⑭ dedup 제거 — 같은 계보의 예약이 라운드마다 쌓인다.
+mut reraise_no_dedup case_AC21_reraise_dedup sed_state \
+  's/^        if r0\["finding_id"\] in seen:$/        if False:/'
+# ⑮ 미소비 예약을 다시 조용히 버린다 — 계수가 0 으로 굳는다.
+mut reraise_loss_uncounted case_AC21_unconsumed_counted sed_route \
+  's/^            reraise_unconsumed += 1.*$/            pass/'
 finish

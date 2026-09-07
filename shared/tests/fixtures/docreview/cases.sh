@@ -747,3 +747,46 @@ case_AC6_reject_reasons_extra() {
   assert_eq "$rc $(printf '%s' "$out" | jgets 'd["reason"]')" "1 permit_consumed" "AC6: 이미 소모된 permit → permit_consumed"
   rm -rf "$d"
 }
+
+# ── 재상승 예약 누적·dedup·미소비 계수 (Task 2, AC21) ─────────────────────
+case_AC21_reraise_accumulates() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약
+  assert_eq "$(st_yaml "$d" '[r["finding_id"] for r in st["reraise"]]')" "['aaaa0001#r1.1']" "AC21: 라운드 2 의 만료가 예약을 남긴다"
+  # finalize 가 재상승 루프 «전에» 빠져나간다 — prepare-recritic 이 없으므로 no_pending_recritic.
+  py docreview_route.py finalize --state-dir "$d" --doc "$FX/design-sample.md" --recritic-skipped >/dev/null 2>&1
+  assert_eq "$(st_yaml "$d" '[r["finding_id"] for r in st["reraise"]]')" "['aaaa0001#r1.1']" "AC21: 조기 반환한 finalize 는 예약을 소비하지 않는다"
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — observe-diff 가 다시 돈다
+  assert_eq "$(st_yaml "$d" '[r["finding_id"] for r in st["reraise"]]')" "['aaaa0001#r1.1']" "AC21: 다음 라운드 observe-diff 가 그 예약을 지우지 않는다(누적)"
+  rm -rf "$d"
+}
+# [Task 2 실행 노트] 브리프 원안(next_round 를 세 번 반복)은 dedup 을 실제로 재지 않는다
+# (`no_teeth` 실측) — permit 은 decision_id 로 유일하고 한 번 소비되면(`consumed=True`)
+# 다시는 처리되지 않으므로, 같은 finding_id 가 «자연 경로»로 reraise 에 두 번 들어올 방법이
+# 없다(라운드를 더 돌려도 매번 로컬 reraise 는 비어 있어 dedup 분기 자체가 안 밟힌다).
+# dedup 이 실제로 막아야 하는 상황을 만들려면 같은 finding_id 에 대한 permit 이 «두 번»
+# 생겨야 한다 — `seed_findings` 로 같은 id 를 disposition=decide 로 다시 심으면
+# `record_findings` 가 `st["decides"][fid]["state"]` 를 무조건 "open" 으로 되돌리는 것을
+# 이용해(라우터 밖 픽스처 재심기), 같은 id 를 두 번째로 채택 → 두 번째 permit(라운드 3
+# 만료) → 같은 finding_id 가 로컬 reraise 에 다시 나타나게 만든다. 이 상태에서 dedup 이
+# 없으면 목록 길이가 2 로 벌어진다(실측: (2, 1)) — 있으면 1 로 유지된다.
+case_AC21_reraise_dedup() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약 1건
+  seed_findings "$d" "[$F_DEC]"                            # 같은 id 를 다시 decide=open 으로 되돌린다(픽스처)
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '다시 채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 같은 finding_id 가 다시 만료
+  assert_eq "$(st_yaml "$d" 'len(st["reraise"]), len({r["finding_id"] for r in st["reraise"]})')" "(1, 1)" "AC21: 같은 finding_id 의 예약이 두 번째 만료에도 하나로 유지된다(dedup)"
+  rm -rf "$d"
+}
+case_AC21_unconsumed_counted() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  python3 "$FX/st_set_reraise.py" "$d/docreview-state.md" 'zzzz9999#r1.1'
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'd["reraise_unconsumed"]')" "1" "AC21: 대상 finding 이 없는 예약은 버려지지 않고 계수된다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["counts"]["reraise_unconsumed"]')" "1" "AC21: 그 계수가 게이트에 실린다"
+  rm -rf "$d"
+}

@@ -549,10 +549,21 @@ def cmd_observe_diff(a) -> int:
             fx["state"] = "applied"
             r["progress"] += 1
             applied.append(fid)
-    st["reraise"] = reraise
+    # 재상승 예약은 누적한다(설계 §6.4) — `finalize` 가 재상승 루프 전에 빠져나간 라운드의
+    # 예약이 살아남아야 그것을 «소비하는» finalize 가 후속을 만든다. 대입으로 덮어쓰면
+    # 다음 라운드 observe-diff 가 그 예약을 지워 후속이 영영 안 생긴다.
+    # dedup 은 `finding_id` 로 한다 — 같은 계보에 라운드당 후속 하나(AC21).
+    pending = list(st.get("reraise") or [])
+    seen = {p0["finding_id"] for p0 in pending}
+    for r0 in reraise:
+        if r0["finding_id"] in seen:
+            continue
+        pending.append(r0)
+        seen.add(r0["finding_id"])
+    st["reraise"] = pending
     _refresh_open_lineages(st, n)
     save_state(a.state_dir, st, "observe-diff applied=%d expired=%d" % (len(applied), len(expired)))
-    _emit({"ok": True, "applied": applied, "expired": expired, "reraise": reraise, "progress": r["progress"]})
+    _emit({"ok": True, "applied": applied, "expired": expired, "reraise": pending, "progress": r["progress"]})
     return 0
 
 
@@ -593,7 +604,8 @@ def gate_summary(st) -> dict:
     rep = cur.get("route_report") or {}
     g["degrade"] = rep.get("degrade") or {}
     g["advisory"] = rep.get("advisory") or []
-    g["counts"] = {k: rep.get(k, 0) for k in ("rejected", "bucket_conflicts", "lineage_mismatch", "revived")}
+    g["counts"] = {k: rep.get(k, 0) for k in ("rejected", "bucket_conflicts", "lineage_mismatch",
+                                              "revived", "reraise_unconsumed")}
     g["counts"]["user_rejected"] = sum(1 for v in st["rejected_lineages"].values() if v.get("by") == "user")
     return g
 
@@ -627,9 +639,9 @@ def render_gate(st, g) -> str:
     if g["approval_gate_open"] and g["unapplied_fix"]:
         out.append("미적용 fix(적용 예정 / drop): " + ", ".join(g["unapplied_fix"]))
     c = g["counts"]
-    out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d"
+    out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d · 미소비 재상승 예약 %d"
                % (c["rejected"], c["user_rejected"], len(g["dropped"]), c["bucket_conflicts"],
-                  c["lineage_mismatch"], c["revived"]))
+                  c["lineage_mismatch"], c["revived"], c["reraise_unconsumed"]))
     if g["approval_ready"]:
         out.append("다음: 승인 게이트 — 진행 옵션 활성")
     elif g["two_stage"]:
