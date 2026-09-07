@@ -7,6 +7,17 @@
 # 방법: 스크립트 셋을 임시 디렉토리에 사본으로 두고(형제 adjudication.py 링크 포함), 그 사본을
 # sed 로 변이한 뒤 cases.sh 의 한 케이스를 그 디렉토리로 돌린다. 케이스가 fail 하면(1건 이상 ✗)
 # 그 변이는 «잡혔다». **양성 대조**: 변이 전 사본에서 같은 케이스가 GREEN 이어야 한다(계측기 검증).
+#
+# **케이스 작성 시 함정(Task 5·Task 8a 가 각각 실측) — 엄격 `d["key"]` 인덱싱은 이빨을 숨긴다.**
+# 셀이 겨눈 규칙이 정확히 위반됐을 때, 그 위반이 어떤 키를 통째로 없애는 경우(예: 승격이
+# 안 먹어 `promotion` 키 자체가 안 생김) 단언이 `d["key"]` 로 엄격 인덱싱하면 `KeyError` 로
+# 죽는다 — `run_case` 의 traceback 검출기는 그 죽음을 규칙 위반(caught)이 아니라 **측정
+# 불가**(unmeasurable, `classify_result` 참조)로 판정한다. 규칙이 실제로 깨졌는데도 판정은
+# 「못 쟀다」로 나와 위반이 안 보이게 된다. 케이스 작성자는 그 값이 아예 사라질 수 있는
+# 변이를 겨눌 때 `d["key"]` 대신 `d.get("key")` 를 써라 — 기대값이 구체적 리터럴(`"protected"`
+# 같은)인 한 이 완화는 단언을 약화하지 않는다: 키가 없으면 `.get()` 은 `None` 을 내고,
+# `None != "protected"` 는 여전히 RED 다. 약해지는 것은 크래시로부터의 «보호» 뿐, 판정의
+# 엄격함이 아니다.
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
   git ls-files -- 'shared/docreview/scripts/*.py'
@@ -202,8 +213,16 @@ mut fwd_pointer_never_written case_AC20_reexpiry_blocks_again sed_route \
 # succ 는 애초에 포인터를 받은 적이 없다. sed 패턴 자체는 정확히 매치한다(수동 확인) —
 # 대상을 case_AC20_stale_pointer_cleared_on_reobserve(픽스처로 그 조합을 강제하는 케이스)
 # 로 바꾼다.
+# [Task 8a 재앵커] 이 셀과 ㉒(decide_pointer_not_cleared)은 같은 리터럴
+# `d.pop("superseded_by", None)` 을 겨누고 오직 **들여쓰기**(8-space `cmd_observe_diff`
+# vs 4-space `cmd_decide`)로만 갈렸다 — 오늘은 각자 정확히 한 줄만 맞지만, 훗날 누가
+# `cmd_decide` 의 pop 을 `if` 안으로 옮기면(들여쓰기가 8-space 로 바뀌면) 이 셀이 «두
+# 줄 다» 맞고도 여전히 caught 를 내 다른 것을 재는 줄 모른다(헤더-satisfiable 류 함정,
+# CLAUDE.md 「grep 락의 헤더-satisfiable 함정」). 이 줄에만 있는 꼬리 주석으로 재앵커해
+# 들여쓰기가 바뀌어도 자기 줄만 계속 맞게 한다 — 실측: 재앵커 후에도 정확히 한 줄만
+# 맞고(다른 pop 은 안 건드림) 판정은 여전히 caught.
 mut fwd_pointer_not_cleared case_AC20_stale_pointer_cleared_on_reobserve sed_state \
-  's/^        d\.pop("superseded_by", None).*$/        pass/'
+  's/d\.pop("superseded_by", None)   # 이 만료 인스턴스는 끝났다.*/pass/'
 # ⑱ 술어를 역방향 supersedes 스캔으로 복원 — 이 셀이 「전방이냐 역방이냐」의 유일한 변별기다.
 #    앞의 둘은 «막느냐 마느냐» 만 흔들고 방향을 구별하지 않는다.
 mut predicate_backward_scan case_AC20_nonobligation_successors_still_block sed_state \
