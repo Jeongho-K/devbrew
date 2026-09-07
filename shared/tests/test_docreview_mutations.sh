@@ -248,4 +248,9 @@ mut post_tail_removed case_AC22_post_expiry_render_tail sed_state \
 # 겨눈다(cell ② 와 같은 기법).
 mut general_anchor_unresolved_off case_AC23_general_fix_anchor_unresolved sed_anchor \
   '/return escalate("anchor_immutable")/{n;s/if not cls\["found"\] and target != PREAMBLE:/if False:/;}'
+
+# ── `_permit_covers` 의 라운드 경계 (Task 6, AC24) ──────────────────────────
+# ㉕ permit 의 라운드 경계 삭제 — 낡은 permit 이 영원히 보호 승격을 막는다.
+mut permit_round_unbounded case_AC24_stale_permit_does_not_cover sed_route \
+  's/if int(p\["round"\]) == n and anchor in p\["apply_anchors"\]/if anchor in p["apply_anchors"]/'
 finish

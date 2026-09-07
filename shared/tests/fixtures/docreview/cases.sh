@@ -631,6 +631,33 @@ case_T11_permit_keeps_disposition() {
   assert_eq "$(jget "$d/fin.json" 'all(x["id"].split("#")[1].startswith("r2.") for x in d["findings"])')" "True" "T11: 라운드 2 에서 생성된 id 는 전부 r2. 로 시작 — 라운드 «번호» 가 실제로 박힌다(r 존재가 아니라 값)"
   rm -rf "$d" "$t"
 }
+# `_permit_covers` 는 permit 의 「이번 라운드」것인지를 본다(`int(p["round"]) == n`). permit 은
+# 소모(`consumed`)돼도 삭제되지 않으므로, 그 permit 의 라운드가 지나면(다음 라운드가 또
+# 지나도록 재결정이 없으면) 낡은 permit 이 남는다 — 그 라운드 검사가 없으면 낡은 permit 이
+# 영원히 보호 승격을 막는 구멍이 된다(Task 6, AC24). 코드는 그대로다 — 이미 라운드를
+# 본다; 이 케이스는 그 사실에 이빨을 준다.
+case_AC24_stale_permit_does_not_cover() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
+  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '채택' >/dev/null
+  local anc; anc="$(st_yaml "$d" 'list(st["permits"].values())[0]["apply_anchors"][0]')"
+  next_round "$d" "$FX/design-sample-r2.md" >/dev/null     # 라운드 2 — permit 소모
+  next_round "$d" "$FX/design-sample-r2.md" >/dev/null     # 라운드 3 — permit 은 라운드 2 의 것, 이제 낡았다
+  assert_eq "$(st_yaml "$d" 'st["round"], [p["round"] for p in st["permits"].values()]')" "(3, [2])" "AC24: 라운드 3 인데 permit 은 라운드 2 의 것(permits 는 삭제되지 않는다)"
+  local t; t="$(mktemp -t cr-XXXXXX.txt)"
+  printf '```docreview-layer1\n[]\n```\n```docreview-layer2\n- ref: c1\n  category: ambiguity\n  anchor: "%s"\n  disposition: fix\n  summary: "낡은 permit 앵커의 새 fix"\n```\n' "$anc" > "$t"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$t" --codex "$FX/codex-failed.yaml" > "$d/prep3.json"
+  # fsum 은 "$1/fin.json" 을 고정으로 읽는다(다른 접미사를 안 받는다) — round1 산출물을
+  # 그대로 덮어써야 이 assert 가 실제 round3 결과를 본다(브리프 원안의 fin3.json 은 fsum
+  # 이 절대 안 읽는 죽은 파일이라 아래 두 assert 가 IndexError 로 죽는다, 실측 확인).
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff3.json" --doc "$FX/design-sample-r2.md" > "$d/fin.json"
+  assert_eq "$(fsum "$d" '낡은 permit' '["disposition"]')" "decide" "AC24: 라운드가 지난 permit 은 보호 승격을 막지 못한다"
+  # .get(...) — 라운드 경계가 없으면 승격 자체가 안 먹어 "promotion" 키가 통째로 없다.
+  # ["promotion"] 이면 그 변이 사본에서 KeyError → traceback → run_case 가 caught 대신
+  # unmeasurable 로 오판정한다(Task 5 의 같은 함정, cases.sh AC23 참조).
+  assert_eq "$(fsum "$d" '낡은 permit' '.get("promotion")')" "protected" "AC24: 승격 사유는 protected"
+  rm -rf "$d" "$t"
+}
 case_T12_immutable_fix_to_decide() {
   local d t; t="$(mktemp -t cr-XXXXXX.txt)"
   printf '```docreview-layer1\n[]\n```\n```docreview-layer2\n- ref: c1\n  category: omission\n  anchor: "#6-사용자-원문"\n  disposition: fix\n  summary: "원문 문장을 고치자"\n```\n' > "$t"
