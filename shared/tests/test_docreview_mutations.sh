@@ -166,11 +166,14 @@ mut same_as_min case_T02_same_as_max sed_route 's/keep = max(live, key=lambda m:
 # 낸다. 미래에 엔진이 바뀌어 이 sed 가 더는 안 죽어도 같은 방식으로 소리 낸다(판정이
 # caught 가 되어 기대 unmeasurable 과 불일치) — 조용히 멎지 않는다.
 mut_expect unmeasurable canary_crash case_T05_T06_reject sed_route 's/if v.get("evidence"):/if True:/'
-# ⑫ 만료 항목의 「후속이 지는 의무」를 없애기 — 후속이 있든 없든 expired 가 영구히 막는다.
-# 하향 방향: 승인 게이트가 이행된 계보에도 안 열린다. 값만 어긋나고 크래시는 없다
-# (`superseded` 집합은 그대로 계산되고 쓰이지만 않는다 — 미사용 지역변수라 traceback 없음).
-mut expired_blocks_forever case_T22b_expired_superseded_unblocks sed_state \
-  's/if d\["state"\] == "adopted" or (d\["state"\] == "expired" and i not in superseded)/if d["state"] in ("adopted", "expired")/'
+# [Task 3 실행 노트] ⑫(expired_blocks_forever) 는 여기 있었다 — 만료의 차단 해제를
+# «후속 존재» 의 역방향 스캔으로 재던 시절의 셀이다. 그 술어 자체가 전방 포인터로
+# 바뀌면서 대상 문장이 사라져 sed 가 매치 0 건으로 무동작(no_teeth 실측)이 됐고, 그
+# 셀이 재던 케이스(T22b 의 「채택·적용하면 승인이 다시 열린다」 꼬리)도 함께 지워졌다
+# (위 실행 노트). 같은 개념 — 의무 이행이 실제로 승인을 여는가 — 은 이제
+# case_AC20_reexpiry_blocks_again 이 실제 finalize 경로로 행동으로 재고, 그 경로의
+# 각 걸음(포인터를 쓰는가·비우는가)은 아래 ⑯⑰ 이 하향으로 흔든다. 번호는 당겨 채우지
+# 않는다(과거 커밋 인용의 자릿수 정합).
 # ⑬ 예약 누적 → 대입 복원. 조기 반환 라운드의 예약이 다음 observe-diff 에 사라진다.
 mut reraise_overwrite case_AC21_reraise_accumulates sed_state \
   's/^    st\["reraise"\] = pending$/    st["reraise"] = reraise/'
@@ -183,4 +186,21 @@ mut reraise_no_dedup case_AC21_reraise_dedup sed_state \
 # ⑮ 미소비 예약을 다시 조용히 버린다 — 계수가 0 으로 굳는다.
 mut reraise_loss_uncounted case_AC21_unconsumed_counted sed_route \
   's/^            reraise_unconsumed += 1.*$/            pass/'
+# ⑯ 전방 포인터 대입 삭제 → 후속이 생겨도 영구히 막는다.
+mut fwd_pointer_never_written case_AC20_reexpiry_blocks_again sed_route \
+  's/^            d0\["superseded_by"\] = it\["id"\]$/            pass/'
+# ⑰ 포인터 초기화 삭제 → 재만료를 낡은 포인터가 푼다(조용한 승인).
+# [Task 3 실행 노트] 브리프 원안은 이 셀을 case_AC20_reexpiry_blocks_again 에 겨눴으나
+# 실측 no_teeth(clean=0, mutated=0) — 그 케이스가 만드는 두 decides 레코드(gid·succ) 중
+# 어느 쪽도 pop() 이 지우는 대상 상태(포인터가 이미 찍힌 레코드가 같은 id 로 새 permit
+# 을 다시 받는 것)에 놓이지 않는다: gid 의 permit 은 포인터가 찍히기 «전»에 이미 소모되고,
+# succ 는 애초에 포인터를 받은 적이 없다. sed 패턴 자체는 정확히 매치한다(수동 확인) —
+# 대상을 case_AC20_stale_pointer_cleared_on_reobserve(픽스처로 그 조합을 강제하는 케이스)
+# 로 바꾼다.
+mut fwd_pointer_not_cleared case_AC20_stale_pointer_cleared_on_reobserve sed_state \
+  's/^        d\.pop("superseded_by", None).*$/        pass/'
+# ⑱ 술어를 역방향 supersedes 스캔으로 복원 — 이 셀이 「전방이냐 역방이냐」의 유일한 변별기다.
+#    앞의 둘은 «막느냐 마느냐» 만 흔들고 방향을 구별하지 않는다.
+mut predicate_backward_scan case_AC20_nonobligation_successors_still_block sed_state \
+  's/if d\["state"\] == "expired" and not d\.get("superseded_by")/if d["state"] == "expired" and i not in {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")}/'
 finish

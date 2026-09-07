@@ -353,6 +353,9 @@ def cmd_finalize(a) -> int:
         if not f0:
             reraise_unconsumed += 1   # 대상 finding 부재 — 버리지 않고 센다(공시는 게이트가)
             continue
+        d0 = st["decides"].get(r["finding_id"])
+        if not d0 or d0.get("state") != "expired":
+            continue          # 사용자가 이미 재결정했다 — 의무는 그 결정이 진다
         final.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "채택 후 미적용(expired): " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
@@ -379,6 +382,14 @@ def cmd_finalize(a) -> int:
         counters[b] = k
         it["bucket"] = b
         it["id"] = "%s#r%d.%d" % (b, n, k)
+    # 전방 포인터(설계 §6.4) — 후속의 최종 id 가 확정된 뒤에만 쓸 수 있다. 쓰는 곳은
+    # 여기 하나뿐이고, 대상이 지금 expired 인 경우로 이미 좁혀져 있다(위 가드).
+    for it in everything:
+        if it.get("_source") != "reraise":
+            continue
+        d0 = st["decides"].get(it.get("supersedes"))
+        if d0 is not None and d0.get("state") == "expired":
+            d0["superseded_by"] = it["id"]
     bucket_conflicts = sum(1 for v in counters.values() if v > 1)
 
     lineage_mismatch = 0

@@ -534,6 +534,7 @@ def cmd_observe_diff(a) -> int:
         else:
             hit = cur.get(p["apply_anchors"][0]) == p.get("expect_hash")
         p["consumed"] = True
+        d.pop("superseded_by", None)   # 이 만료 인스턴스는 끝났다 — 낡은 포인터가 다음 만료를 풀면 안 된다
         if hit:
             d["state"] = "applied"
             r["progress"] += 1
@@ -584,17 +585,17 @@ def gate_summary(st) -> dict:
     dec = st["decides"]
     fx = st["fixes"]
     asks = st["asks"]
-    # 승인을 막는 것은 `open` 과 `adopted` 다(§6.4). `expired` 는 「같은 계보의 새 decide 로
-    # 다시 올라온다」가 전제이므로, 그 후속이 실제로 생긴 뒤에는 의무를 후속이 진다 — 후속이
-    # 열려 있으면 그것이 막고, 사용자가 후속을 기각·보류했으면 그 결정이 산다. 후속이 아직
-    # 없는 동안(재상승 예약이 route 를 통과하기 전, 또는 그 변환이 실패한 경우)에는 의무를
-    # 아무도 지지 않으므로 만료 항목 자신이 계속 막는다 — fail-closed.
-    superseded = {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")}
+    # 만료가 승인을 막는지는 «전방» 포인터 하나가 정한다(설계 §6.4). 역방향으로 세면
+    # (「나를 가리키는 finding 이 있다」) 의무를 안 지는 후속 — 비차단 ask · drop ·
+    # defer · 재비판 reject — 이 하나만 와도 차단이 풀린다. 라우터의 자동 계보 연결이
+    # 지목 없는 finding 에도 supersedes 를 붙이기 때문이다. superseded_by 를 쓰는 곳은
+    # 재상승 루프 하나뿐이라 그 기록은 의무의 증거다. 기록이 없으면 막는다 — fail-closed.
     g = {
         "round": n, "rereview_count": rr, "cap_reached": rr >= REREVIEW_CAP,
         "open_decide": sorted(i for i, d in dec.items() if d["state"] == "open"),
-        "adopted": sorted(i for i, d in dec.items()
-                          if d["state"] == "adopted" or (d["state"] == "expired" and i not in superseded)),
+        "adopted": sorted(i for i, d in dec.items() if d["state"] == "adopted"),
+        "blocked_expired": sorted(i for i, d in dec.items()
+                                  if d["state"] == "expired" and not d.get("superseded_by")),
         "unapplied_fix": sorted(i for i, f in fx.items() if f["state"] in ("pending", "intent_passed")),
         "held_fix": sorted(i for i, f in fx.items() if f["state"] == "held"),
         "asks_open": sorted(i for i, x in asks.items() if not x.get("answered")),
@@ -607,7 +608,8 @@ def gate_summary(st) -> dict:
     prev = st["rounds"].get(str(n - 1), {})
     g["stagnation"] = bool(n >= 2 and cur.get("open_lineages") and
                            cur.get("open_lineages") == prev.get("open_lineages") and int(cur.get("progress", 0)) == 0)
-    g["approval_ready"] = not g["open_decide"] and not g["adopted"] and not g["unapplied_fix"]
+    g["approval_ready"] = (not g["open_decide"] and not g["adopted"]
+                           and not g["blocked_expired"] and not g["unapplied_fix"])
     g["round_gate_needed"] = bool(g["open_decide"] or g["blocking_ask_open"])
     g["approval_gate_open"] = g["approval_ready"] or g["cap_reached"] or g["stagnation"]
     g["two_stage"] = g["approval_gate_open"] and not g["approval_ready"]

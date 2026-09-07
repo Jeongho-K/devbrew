@@ -118,6 +118,11 @@ F_FIX='{"id":"bbbb0001#r1.1","lineage":"bbbb0001#r1.1","bucket":"bbbb0001","orig
 F_ASK='{"id":"cccc0001#r1.1","lineage":"cccc0001#r1.1","bucket":"cccc0001","origin":"reviewer","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"ask","summary":"b.py 를 유지하나?","evidence":null,"blocks":["bbbb0001#r1.1"]}'
 # 라운드 2 의 재상승 항목 — F_DEC 의 계보를 이어받아 만료 항목을 supersedes 한다(라우터가 붙이는 최종 모양).
 F_DEC_R2='{"id":"aaaa0001#r2.1","lineage":"aaaa0001#r1.1","bucket":"aaaa0001","supersedes":"aaaa0001#r1.1","origin":"auto","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"decide","summary":"채택 후 미적용(expired): 파일 목록이 두 가지로 읽힌다","evidence":"라운드 2 에 채택 변경 관측 없음","blocks":[],"kind":"pre"}'
+# AC20 ① — 만료를 가리키지만 «의무를 지지 않는» 후속 넷. 처분만 다르다.
+F_SUCC_ASK='{"id":"aaaa0001#r2.1","lineage":"aaaa0001#r1.1","bucket":"aaaa0001","supersedes":"aaaa0001#r1.1","origin":"auto","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"ask","summary":"후속: 물어보기","evidence":null,"blocks":[]}'
+F_SUCC_DEFER='{"id":"aaaa0001#r2.1","lineage":"aaaa0001#r1.1","bucket":"aaaa0001","supersedes":"aaaa0001#r1.1","origin":"auto","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"defer","summary":"후속: plan 으로","evidence":null,"blocks":[]}'
+F_SUCC_DROP='{"id":"aaaa0001#r2.1","lineage":"aaaa0001#r1.1","bucket":"aaaa0001","supersedes":"aaaa0001#r1.1","origin":"auto","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"drop","summary":"후속: 버림","evidence":null,"blocks":[]}'
+F_SUCC_REJ='{"id":"aaaa0001#r2.1","lineage":"aaaa0001#r1.1","bucket":"aaaa0001","supersedes":"aaaa0001#r1.1","origin":"auto","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"decide","state":"rejected","summary":"후속: 재비판이 기각","evidence":"오탐","blocks":[],"kind":"pre"}'
 F_POST='{"id":"dddd0001#r2.1","lineage":"dddd0001#r2.1","bucket":"dddd0001","origin":"auto","layer":2,"category":"frozen_change","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"decide","summary":"finding 없이 바뀜","evidence":"hash a→b","blocks":[],"kind":"post","prev_hash":"PREV"}'
 st_yaml() {   # st_yaml <state-dir> <python-expr over st>   — heredoc-in-$() 파싱 함정을 피해 파일로 둔다
   python3 "$FX/st_get.py" "$1/docreview-state.md" "$2"
@@ -174,17 +179,73 @@ case_T22_permit_expired_reraise() {
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "False" "T22: expired 는 승인을 막는다(열린 계보)"
   rm -rf "$d"
 }
+# [Task 3 실행 노트 — AC20] 전방 포인터 계약 아래서는 `record-findings` 경로(라우터를
+# 거치지 않고 손으로 후속을 심는 것)로 `superseded_by` 를 쓸 수 없다 — 그 필드를 쓰는 곳은
+# `docreview_route.py` 의 재상승 루프 하나뿐이다(§`PUBLIC_FIELDS` 는 finding 의 공개 필드이지
+# decides 레코드가 아니다). 그래서 이 케이스의 둘째 단언은 브리프 원안(「후속이 생기면
+# 만료 항목은 안 막는다」)을 그대로 두면 새 계약에서 거짓이 된다 — 뒤집어 그 사실 자체를
+# 락으로 만든다. 「후속을 채택·적용하면 승인이 다시 열린다」 쪽은 `finalize` 의 실제
+# 재상승 경로로만 잴 수 있으므로 `case_AC20_reexpiry_blocks_again` 으로 옮겼다(커버리지
+# 손실 아님).
 case_T22b_expired_superseded_unblocks() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
   next_round "$d" "$FX/design-sample.md" >/dev/null       # 라운드 2 — 변경 없음 → expired
-  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["adopted"], d["approval_ready"]')" "(['aaaa0001#r1.1'], False)" "T22b: 후속이 아직 없는 expired 는 계속 막는다(의무를 아무도 안 짐)"
-  seed_findings "$d" "[$F_DEC_R2]"                        # 재상승이 라운드 2 의 decide 로 들어옴
-  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["adopted"], d["open_decide"], d["approval_ready"]')" "([], ['aaaa0001#r2.1'], False)" "T22b: 후속이 생기면 만료 항목은 안 막고 후속(open)이 막는다"
-  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r2.1' --choice adopt --quote '이번엔 적용한다' >/dev/null
-  next_round "$d" "$FX/design-sample-r2.md" >/dev/null    # 라운드 3 — permit 앵커 변경 관측
-  assert_eq "$(st_yaml "$d" 'st["decides"]["aaaa0001#r1.1"]["state"], st["decides"]["aaaa0001#r2.1"]["state"]')" "('expired', 'applied')" "T22b: 계보 상태 — 만료 그대로 + 후속 applied"
-  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "True" "T22b·C1: 후속을 채택·적용하면 승인 게이트가 다시 열린다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["blocked_expired"], d["approval_ready"]')" "(['aaaa0001#r1.1'], False)" "T22b: 후속이 아직 없는 expired 는 계속 막는다(의무를 아무도 안 짐)"
+  seed_findings "$d" "[$F_DEC_R2]"                        # record-findings 경로 — 포인터를 쓰지 않는다
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["blocked_expired"], d["approval_ready"]')" "(['aaaa0001#r1.1'], False)" "T22b: 후속 finding 이 «있어도» 포인터가 없으면 계속 막는다(역방향 스캔 금지)"
+  rm -rf "$d"
+}
+# AC20 ① — 만료를 가리키지만 «의무를 지지 않는» 후속 넷(비차단 ask · defer · drop · 재비판
+# reject) 이 각각 와도 차단은 유지돼야 한다. 넷 다 record-findings 경로라 supersedes 는
+# 라우터가 아니라 픽스처가 직접 붙인다 — superseded_by 는 어차피 아무도 안 쓴다.
+case_AC20_nonobligation_successors_still_block() {
+  local succ
+  for succ in "$F_SUCC_ASK" "$F_SUCC_DEFER" "$F_SUCC_DROP" "$F_SUCC_REJ"; do
+    local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+    py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+    next_round "$d" "$FX/design-sample.md" >/dev/null      # 변경 없음 → expired
+    seed_findings "$d" "[$succ]"
+    local disp; disp="$(printf '%s' "$succ" | jgets 'd["disposition"] + ("/" + d["state"] if d.get("state") else "")')"
+    assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["blocked_expired"], d["approval_ready"]')" \
+      "(['aaaa0001#r1.1'], False)" "AC20①: 의무를 안 지는 후속($disp)은 차단을 풀지 않는다"
+    rm -rf "$d"
+  done
+}
+# AC20 ②③ — 실제 finalize 경로의 재상승이 전방 포인터를 쓰고(②), 후속이 다시 만료하면
+# 낡은 포인터가 아니라 빈 포인터로 다시 막는다(③, 한 만료 인스턴스당 한 번만 유효).
+case_AC20_reexpiry_blocks_again() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
+  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
+  local succ; succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if "expired" in x["summary"]][0]')"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$gid"'"].get("superseded_by")')" "$succ" "AC20②: 재상승 루프가 후속 id 를 전방 포인터로 남긴다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["blocked_expired"]')" "[]" "AC20②: 포인터가 찍힌 만료는 더 막지 않는다"
+  # 후속을 채택했는데 또 미적중 → 재만료. 낡은 포인터가 아니라 빈 포인터로 다시 막아야 한다.
+  py docreview_state.py decide --state-dir "$d" --id "$succ" --choice adopt --quote '이번엔 적용' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 또 변경 없음
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["state"], st["decides"]["'"$succ"'"].get("superseded_by")')" "('expired', None)" "AC20③: 재만료한 항목의 포인터는 비어 있다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"'"$succ"'" in d["blocked_expired"]')" "True" "AC20③: 재만료는 다시 막는다(낡은 포인터가 안 푼다)"
+  rm -rf "$d"
+}
+# [Task 3 실행 노트] `cmd_observe_diff` 의 `d.pop("superseded_by", None)` 가 실제로 막아야
+# 하는 상태 — 「포인터가 찍힌 decides 레코드가 같은 id 로 새 permit 을 다시 받는다」 —
+# 는 지금 CLI 경로로는 도달 불가다: `cmd_decide` 는 `state == "open"` 인 것만 받고,
+# `record-findings` 로 같은 id 를 다시 심으면 decides 레코드를 통째로 덮어써 기존
+# `superseded_by` 가 먼저 지워진다(case_AC21_reraise_dedup 과 같은 종류의 도달 불가).
+# 그 조합을 픽스처(`st_set_stale_pointer.py`)로 강제해 pop 가드가 «실제로 작동함»을
+# 잰다 — 이 상태가 살아있는 위협이라는 뜻이 아니다.
+case_AC20_stale_pointer_cleared_on_reobserve() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired
+  python3 "$FX/st_set_stale_pointer.py" "$d/docreview-state.md" 'aaaa0001#r1.1' 'STALE#r9.9' '#12-files-to-modify'
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 픽스처가 연 permit 을 observe-diff 가 처리
+  assert_eq "$(st_yaml "$d" 'st["decides"]["aaaa0001#r1.1"].get("superseded_by")')" "None" "AC20: 재평가된 만료는 낡은 포인터를 지운다(다음 만료가 그걸로 안 풀림)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"aaaa0001#r1.1" in d["blocked_expired"]')" "True" "AC20: 낡은 포인터를 지운 뒤엔 다시 막는다"
   rm -rf "$d"
 }
 case_T23_post_adopt_applied() {
