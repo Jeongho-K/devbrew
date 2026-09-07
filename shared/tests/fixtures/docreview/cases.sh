@@ -527,6 +527,19 @@ case_T05_T06_reject() {
   assert_eq "$(fsum "$d" 'AC 가 하나뿐' '["disposition"]')" "fix" "T06: evidence 없는 reject 는 무효 — confirm 취급"
   rm -rf "$d"
 }
+# 재비판 verdict 는 reject·raise·confirm 셋뿐이다. `vd = str(v.get("verdict") or "confirm")`
+# 뒤의 분기는 이 셋 아닌 값을 전부 else 로 흘려 조용히 confirm 취급하고 원장에 아무것도
+# 안 남긴다 — 형제 처분 정규화(normalize())는 같은 상황(disp not in RANK)에 ledger.coerced 를
+# 남긴다. 대칭이 깨진 자리(Task 7, AC27).
+case_AC27_unknown_verdict_coerced() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md" "$FX/critic-r1.txt" "$FX/codex-failed.yaml" "--skip")"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-r1.txt" --codex "$FX/codex-failed.yaml" > "$d/prep.json"
+  local rt; rt="$(mktemp -t rt-XXXXXX.txt)"
+  printf '```docreview-recritic\nverdicts:\n  - f: "f1"\n    verdict: maybe\nadded: []\n```\n' > "$rt"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$rt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'd["adjudication_coerced"] >= 1')" "True" "AC27(1b): 어휘 밖 verdict 는 조용히 confirm 이 되지 않고 coerced 로 계수된다"
+  rm -rf "$d" "$rt"
+}
 case_T07_codex_no_disposition() {
   local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
   assert_eq "$(fsum "$d" 'Deferred to plan 표' '["disposition"]')" "fix" "T07: recritic 이 to 로 붙인 값을 쓴다"

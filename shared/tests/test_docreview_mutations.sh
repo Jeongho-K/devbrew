@@ -253,4 +253,9 @@ mut general_anchor_unresolved_off case_AC23_general_fix_anchor_unresolved sed_an
 # ㉕ permit 의 라운드 경계 삭제 — 낡은 permit 이 영원히 보호 승격을 막는다.
 mut permit_round_unbounded case_AC24_stale_permit_does_not_cover sed_route \
   's/if int(p\["round"\]) == n and anchor in p\["apply_anchors"\]/if anchor in p["apply_anchors"]/'
+
+# ── 재비판 verdict 어휘 밖 값의 강제 계수 (Task 7, AC27) ────────────────────
+# ㉖ 어휘 밖 verdict 의 강제 계수 제거 — 다시 조용히 confirm 이 된다.
+mut unknown_verdict_silent case_AC27_unknown_verdict_coerced sed_route \
+  's/^                L\.coerced("verdict", vd, "confirm")$/                pass/'
 finish

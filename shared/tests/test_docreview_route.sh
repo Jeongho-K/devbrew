@@ -15,6 +15,7 @@ case_T01_prepare_anonymizes
 case_T02_same_as_max
 case_T03_T04_raise
 case_T05_T06_reject
+case_AC27_unknown_verdict_coerced
 case_T07_codex_no_disposition
 case_T08_defer_disallowed
 case_T09_disallowed_up

@@ -239,6 +239,11 @@ def cmd_finalize(a) -> int:
             if v.get("layer") == 1 and it["layer"] == 2:
                 it["layer"] = 1
         else:
+            if vd != "confirm":
+                # 어휘 밖 값을 조용히 confirm 으로 흘리지 않는다 — 형제 normalize() 가
+                # 처분(disp not in RANK)에 대해 하는 것과 같은 계약(CLAUDE.md
+                # 「판정기가 항목을 버리면 센다」).
+                L.coerced("verdict", vd, "confirm")
             if it["disposition"] is None and to in RANK:
                 it["disposition"] = to
     for f, it in items.items():
