@@ -277,4 +277,51 @@ mut permit_round_unbounded case_AC24_stale_permit_does_not_cover sed_route \
 # ㉖ 어휘 밖 verdict 의 강제 계수 제거 — 다시 조용히 confirm 이 된다.
 mut unknown_verdict_silent case_AC27_unknown_verdict_coerced sed_route \
   's/^                L\.coerced("verdict", vd, "confirm")$/                pass/'
+
+# ── Task 8a — `cmd_finalize` 분해 «전» 커버리지 공백 넷 + 불변식 하나 (AC26 절반) ──
+# 이 매트릭스 열둘(스물여섯 셀)은 계보 해소의 2패스 순서 · `blocks` 재매핑(keep_of) ·
+# `escalated` 이월 · bucket 충돌 계수 중 어느 것도 겨누지 않았다 — Task 8b 의 분해가
+# 이 넷을 깨도 지금까지는 소리가 안 났다. 다섯째는 이 PR 의 fail-closed 설계가 서 있는
+# 불변식(재상승 후속은 `items` 를 안 지난다)이다.
+#
+# ㉗ 계보 해소 2패스 순서 붕괴 — 명시 지목(supersedes)을 먼저 큐에서 비우는 패스를
+#    지우면, 단일 패스가 f-순서(익명화 정렬)대로 돈다. 이 케이스의 두 회귀-round-2
+#    finding("AC 가 여전히 하나뿐이다"·"명시 지목")은 sha1(summary) 정렬상 무지목 쪽이
+#    f1(먼저), 명시 지목 쪽이 f2(나중) — 실측 확인. 단일 패스에서 f1 이 먼저 돌면
+#    무지목 항목이 자동 연결로 큐(원본 finding 하나)를 선점해 명시 지목과 같은 계보를
+#    받아버린다(T15 위반: "지목된 조상은 자동 연결에서 빠지고 남는 것은 새 계보").
+mut lineage_two_pass_collapsed case_T14_T15_lineage sed_route \
+  's/if it\.get("supersedes"):/if False:  # MUT: two-pass collapsed/'
+# ㉘ `blocks` 재매핑에서 `keep_of` 리다이렉트 제거 — same_as 로 흡수된 원본을 가리키던
+#    blocks 가 생존자의 최종 id 로 안 따라가고 그냥 사라진다(하향: 소실이 계수도 없이
+#    조용히 일어난다). case_T02_same_as_max 는 b.py 의 ask 가 c.py 항목(same_as 로
+#    흡수됨)을 blocks 로 가리키는 실제 흡수-재매핑 경로다.
+mut blocks_keep_of_bypassed case_T02_same_as_max sed_route \
+  's/r2 = keep_of\.get(r, r)/r2 = r/'
+# ㉙ escalated 이월 제거 — round 불일치(아직 자기 차례가 아닌 예약)를 버려서
+#    keep_esc 에 안 남긴다(하향: 「소비되지 않으면 다음으로 넘어간다」가 「소비되지
+#    않으면 사라진다」가 된다). 자연 경로로 이 분기를 밟으려면 finalize 를 건너뛴
+#    라운드가 있어야 한다(AC21 의 reraise 조기-반환과 같은 종류) — 기존 케이스 중
+#    이걸 겨눈 것이 없어 case_escalated_round_mismatch_carries_over 를 새로 썼다.
+mut escalated_mismatch_dropped case_escalated_round_mismatch_carries_over sed_route \
+  's/keep_esc\.append(e)/pass/'
+# ㉚ bucket 충돌 계수 문턱을 1→2 로 올린다 — 정확히 둘이 충돌하는 실측 사례(T13)의
+#    공시가 0 으로 죽는다(하향: 진짜 충돌인데 안 보인다). `v > 1` 은 파일에 유일.
+mut bucket_conflict_threshold_raised case_T13_ids_distinct sed_route \
+  's/if v > 1/if v > 2/'
+# ㉛ 재상승 후속을 `items` 파이프라인으로 새게 한다 — `final.append(...)` 대신
+#    `items[...] =` 로 저장하면, 그 시점엔 same_as·재비판 verdict 처리·분류 루프가
+#    이미 다 끝난 뒤라(파일에서 그 셋은 전부 이 줄보다 앞선다) `items` 는 죽은
+#    변수다: 아무도 다시 안 읽는다. 그래서 이 항목은 `final`(따라서 출력·
+#    `record_findings`)에서 통째로 사라진다 — same_as/reject 가 «먹혀서» 깨지는 게
+#    아니라 애초에 안 만들어진 것처럼 사라지는 하향 변이다. escalated 블록(같은
+#    리터럴 `final.append({"f": None, "layer": f0["layer"], ...`)과 문자 그대로
+#    같아 순수 텍스트 sed 는 헤더-satisfiable 함정에 걸린다 — 바로 앞의 재상승
+#    전용 가드(`if not d0 or d0.get("state") != "expired":`)부터 이 줄까지만
+#    range 로 좁혀 재상승 쪽 occurrence 하나만 잡는다(수동 확인: escalated 의
+#    동일 리터럴은 range 밖이라 안 건드림).
+mut reraise_leaks_into_items case_reraise_successor_immune_to_recritic sed_route \
+  '/if not d0 or d0\.get("state") != "expired":/,/"_source": "reraise"}/{
+s/final\.append({"f": None,/items["_reraise_leaked"] = ({"f": None,/
+}'
 finish

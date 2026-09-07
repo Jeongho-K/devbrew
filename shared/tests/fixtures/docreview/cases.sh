@@ -1005,3 +1005,56 @@ case_AC21_unconsumed_counted() {
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["counts"]["reraise_unconsumed"]')" "1" "AC21: 그 계수가 게이트에 실린다"
   rm -rf "$d"
 }
+
+# ── Task 8a — 분해 전 커버리지 공백을 메운다 ────────────────────────────────
+# 매트릭스 열둘 중 어느 것도 escalated 이월(round != n-1 인 예약은 이번 라운드에
+# 소비되지 않고 다음으로 넘어간다, cmd_finalize 의 `keep_esc` 절)을 겨누지 않았다.
+# 자연 경로로 그 분기를 실제로 밟으려면 finalize 를 «건너뛴» 라운드가 있어야 한다
+# (reraise 의 AC21_reraise_accumulates 와 같은 종류의 조기-반환 상황) — cases.sh 에
+# 그런 케이스가 없어 여기서 만든다. 같은 finalize 호출 안에서 이월(불일치, round=1)과
+# 소비(일치, round=2)를 동시에 겨눠 둘을 한 번에 가른다.
+case_escalated_round_mismatch_carries_over() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local fid1 fid2
+  fid1="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"        # #1-context, category ambiguity, disposition fix
+  fid2="$(fsum "$d" '부품 경계' '["id"]')"            # #handoff-context, category isolation, disposition fix
+  py docreview_state.py fix --state-dir "$d" --id "$fid1" --event escalate --reason 'check-intent 거부(라운드 1)' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — finalize 를 부르지 않고 건너뛴다
+  py docreview_state.py fix --state-dir "$d" --id "$fid2" --event escalate --reason 'check-intent 거부(라운드 2)' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 3
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep3.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff3.json" --doc "$FX/design-sample.md" > "$d/fin.json"
+  # n=3, n-1=2 — fid1(round=1) 은 불일치라 이월(소비되지 않음), fid2(round=2) 는 일치해
+  # 이번 라운드에 decide 로 올라온다. `supersedes in (fid1,fid2)` 로 걸러 다른 자동
+  # 항목(같은 라운드 critic 이 우연히 만드는 Non-goals 자동 연결 등)과 섞이지 않게 한다.
+  assert_eq "$(jget "$d/fin.json" 'sorted(x["supersedes"] for x in d["findings"] if x.get("supersedes") in ("'"$fid1"'", "'"$fid2"'"))')" \
+    "['$fid2']" "escalated 이월: round 불일치(라운드 1 예약)는 이번 라운드(n-1=2)에 소비되지 않고, 일치하는 것(라운드 2 예약)만 decide 로 올라온다"
+  assert_eq "$(st_yaml "$d" 'sorted(e["finding_id"] for e in st["escalated"])')" "['$fid1']" "escalated 이월: 소비되지 않은 라운드 1 예약은 버려지지 않고 다음으로 이월된다(round 필드 그대로)"
+  rm -rf "$d"
+}
+
+# 다섯째 불변식 — 재상승 후속은 `items` 에 안 들어가 same_as 흡수 · 재비판 reject ·
+# 처분 강제를 지나지 않는다(설계 §6.4, cmd_finalize 의 「사후·이월 auto decide」 절이
+# `items` 를 다 처리한 «뒤»에 `final` 에 직접 append 한다). 재비판이 그 계보(원본 id)를
+# 직접 same_as/reject 로 겨눠도 — `items` 의 키는 항상 "f숫자"/"a숫자" 뿐이라 원본 id 는
+# 애초에 존재하지 않는 키다 — 안전하게 무시되고(unknown f → hold), 후속은 여전히
+# open decide 로 남아야 한다.
+case_reraise_successor_immune_to_recritic() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
+  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 변경 없음 → expired + 재상승 예약
+  local t; t="$(mktemp -t cr-XXXXXX.txt)"
+  printf '```docreview-layer1\n[]\n```\n```docreview-layer2\n- ref: c1\n  category: ambiguity\n  anchor: "#2-goals"\n  disposition: fix\n  summary: "재상승과 무관한 동행 finding"\n```\n' > "$t"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$t" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  local rt; rt="$(mktemp -t rt-XXXXXX.txt)"
+  printf '```docreview-recritic\nverdicts:\n  - f: "%s"\n    verdict: reject\n    evidence: "적대적: 재상승 계보(원본 id)를 직접 기각 시도"\n    same_as: ["%s"]\n  - f: "f1"\n    verdict: confirm\n    same_as: ["%s"]\nadded: []\n```\n' "$gid" "$gid" "$gid" > "$rt"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$rt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'sorted(x["disposition"] for x in d["findings"] if x.get("supersedes")=="'"$gid"'")')" \
+    "['decide']" "재상승 불변식: 원본 계보를 직접 겨눈 reject/same_as 뒤에도 후속은 decide 로 남는다(items 를 안 지나 안 닿는다)"
+  local succid; succid="$(jget "$d/fin.json" 'next((x["id"] for x in d["findings"] if x.get("supersedes")=="'"$gid"'"), "")')"
+  local succ_state; if [ -n "$succid" ]; then succ_state="$(st_yaml "$d" 'st["decides"].get("'"$succid"'", {}).get("state")')"; else succ_state="MISSING"; fi
+  assert_eq "$succ_state" "open" "재상승 불변식: 후속의 decides 상태는 open 그대로 — 처분 강제·재비판 reject 어느 것도 안 지났다"
+  assert_eq "$(jget "$d/fin.json" 'd["adjudication_held"] >= 1')" "True" "재상승 불변식: 원본 id 를 겨눈 verdict 는 unknown f 로 안전하게 hold 된다(무시되지, 크래시하지 않는다)"
+  rm -rf "$d" "$t" "$rt"
+}
