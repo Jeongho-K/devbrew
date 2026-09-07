@@ -184,7 +184,7 @@ COMP_BASELINE=39   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_re
                    # 커서 계산·선택(:270-271, select_keys 의 라운드로빈). 넷 다
                    # 설정 파싱·목록 회전이지 처분 대상을 버리는 자리가 아니다
                    # (코드 확인 완료).
-                   # v0.56.0 Task 8 이 5 늘림(33→38) — `Ledger` import 로 ㉮ 에
+                   # v0.57.0 Task 8 이 5 늘림(33→38) — `Ledger` import 로 ㉮ 에
                    # 새로 들어온 depth_record.py 의 컴프리헨션 다섯. 하나씩 «항목을
                    # 버리는 자리»가 아니라 «세거나 목록을 만드는 자리»임을 코드를
                    # 열어 확인했다:
@@ -199,7 +199,7 @@ COMP_BASELINE=39   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_re
                    #       이미 `hold()` 로 빼내므로 `labels` 의 모든 값이 LABELS
                    #       셋 중 정확히 하나에 든다(어느 항목도 세 칸 밖으로
                    #       빠지지 않는다).
-                   # v0.56.0 최종 fix wave 가 1 늘림(38→39) — depth_record.py
+                   # v0.57.0 최종 fix wave 가 1 늘림(38→39) — depth_record.py
                    # `parse_auditor` 의 `bad = [x for x in labs if x not in
                    # LABELS]` 하나. `ast` 로 실측해 이 하나뿐임을 확인했다
                    # (depth_pairs.py 도 컴프리헨션이 늘었지만 adjudication 을

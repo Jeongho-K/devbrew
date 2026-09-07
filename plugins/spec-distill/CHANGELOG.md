@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.56.0] — 2026-09-07
+## [0.57.0] — 2026-09-07
 
 ### Added
 
@@ -11,7 +11,7 @@
   (`## R<n>` 헤딩은 `depth_pairs.py` 가 읽는 계약).
 - **닫힘 = 사용자 발화 앵커** — `check_brief.py` 에 `coverage_anchor_failures`(닫힌 행 evidence 의
   `S<N>` 실재, floor·derived·박제 전부)와 `budget_mapper_failures`(§2 `coverage-mapper <k>` k≥1,
-  `0 (unavailable: …)` 은 advisory). **0.56.0 이전 brief 는 새 게이트를 통과하지 않는다** — 아카이브는
+  `0 (unavailable: …)` 은 advisory). **0.57.0 이전 brief 는 새 게이트를 통과하지 않는다** — 아카이브는
   재게이트 대상이 아니다. 기존 fixture 93개는 `tests/fixtures/sweep_anchor_fixtures.py` 로 정합했다
   (`*.audit.md` 95개 중 seed audit 2개는 원장이 없어 대상 밖. 실행 전후 `test_check_brief.sh`
   ok/no 집합 동일).
@@ -56,7 +56,7 @@
   첫 전이 dispatch 4/9 미이행. `agents/coverage-mapper.md` 의 description·Input·동작 규칙 4번도 같은
   계약으로 옮겼다(입력이 «최근 probe 의 no_progress 신호»에서 «seed 전문 + 원장 상태 + 재개방이면 그
   차원의 `reopen_log` 마지막 항목»으로).
-- state 스키마: floor/derived 에 `reopened`·`reopen_log`. migration advisory v0.56.0.
+- state 스키마: floor/derived 에 `reopened`·`reopen_log`. migration advisory v0.57.0.
 - proceed 게이트(Step B) question 에 깊이 측정 요약과 `check_brief` advisories 슬롯.
 - **`conducting-interview/SKILL.md` 조건부 로드 분리** — `## seed 를 입력으로 받았을 때` →
   `references/seed-input.md`(23줄), `## In-flight state migration` → `references/state-migration.md`(27줄).
@@ -178,6 +178,18 @@
   실제보다 높게 보이게 한다 — spec §3.4 의 판정자 조건 임계치(A 30%/B 70%)가 바로 그 비율을
   읽는다. 고치는 방법은 설계 결정이다(`S1` 을 state 에 실제로 넣을지, 스크립트가 §6 예약을
   알게 할지) — 이번 사이클에서는 하지 않는다.
+
+## [0.56.0] — 2026-09-06
+
+### Added
+
+- **문서 리뷰 엔진 `shared/docreview/`(호출자 0, PR 1/5).** 네 문서 리뷰 자리(design doc·brief·seed·generic)를 하나로 통일하는 엔진의 기반을 심는다 — 탐지 agent `doc-critic`(층별 sentinel 블록 둘)·프레이밍을 못 보는 재비판 agent `doc-recritic`(입력 슬롯 셋)·스크립트 넷(`docreview_state`·`docreview_anchor`·`docreview_route`·codex 러너)·절차 reference. 산출물은 verdict 가 아니라 처분(decide·ask·fix·defer·drop)이 붙은 finding 목록이다. 회귀는 편집 범위 선언·헤딩 단위 얼림·보호 부류·패치 의도로 막고, 결정론은 헤딩 diff 와 보호 목록 둘뿐이다. 이 릴리스는 `scripts/` 링크 넷만 심고 **아직 어느 진입 skill 도 부르지 않는다** — 자리별 전환은 PR 2(design doc, major)·3(brief)·5(seed).
+- 프로필 셋 `references/docreview-profiles/{design-doc,brief,seed}.md` — 자리별 정답 출처·허용 처분·층 rubric·결정 기록 목적지를 데이터로 선언(열 필드 스키마, `docreview_state.py profile-check` 가 검증).
+- `codex_findings_to_yaml.py --emit-keys docreview`(`shared/codex/` 정본에 keyset 추가, 기존 `default`·`design` 출력 바이트 불변).
+
+### Changed
+
+- `shared/tests/test_skill_reference_pointers.sh` 의 플러그인-레벨 `references/` 코퍼스를 「한 단계」로 좁힘 — git pathspec 의 `*` 가 `/` 를 넘어 이 패턴이 재귀적이었고, 그래서 스크립트가 먹는 호스트 데이터(`references/docreview-profiles/*.md`)까지 절차서 고아 검사에 들어왔다. 코퍼스 건수 불변 + 진짜 고아는 여전히 RED(양성 대조).
 
 ## [0.55.0] — 2026-09-06
 

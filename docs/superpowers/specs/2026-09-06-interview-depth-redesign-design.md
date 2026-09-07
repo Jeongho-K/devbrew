@@ -78,7 +78,7 @@ handoff 직전 커밋. 독립 판정자(닫힘 거부권)는 들이지 않고, �
 - 이 브랜치(`feature/interview-depth-redesign`, 워크트리 `.claude/worktrees/interview-depth-redesign`)의
   base 는 main `5a56e4c`(spec-distill 0.53.1)이고, main 은 그 뒤 `319ed43` 에서 0.54.0 이 됐다(agent
   frontmatter 의 `model: inherit` 줄 제거). 구현 착수 전에 main 을 **merge**(rebase 아님)하고 이 PR 의
-  bump 는 그 merge 시점 main 보다 한 minor 위다(C12 — 이 브랜치에서 그 값은 `0.56.0`). 새 agent 파일에는
+  bump 는 그 merge 시점 main 보다 한 minor 위다(C12 — 이 브랜치에서 그 값은 `0.57.0`). 새 agent 파일에는
   `model:` 줄을 넣지 않는다.
 - 세션 state(`state.local.md`)는 워크트리에서도 main repo 의 `.claude/spec-distill/<session-id>/` 로
   라우팅된다(`scripts/state_path.py`, `git rev-parse --git-common-dir`). 워크트리 세션에서 그 경로는
@@ -213,9 +213,9 @@ teach-beat·blind-spot-prober 를 넣었다. 그때 steelman 은 «더 무겁게
   않는다.
 - **C12 (버전·CHANGELOG)**: 착수 전 `origin/main` 을 **merge**(rebase 아님)하고, `plugin.json` 을 **가장 최근
   merge 시점**의 main 보다 **한 minor 위**로 올린다(minor 인 이유: 새 surface — 스크립트 둘·에이전트 하나·
-  측정 단계). 「가장 최근」이 필수다 — 이 브랜치는 merge 커밋이 둘이고 착수 전 그것으로 재면 틀린 수가 나온다.
+  측정 단계). 「가장 최근」이 필수다 — 이 브랜치는 merge 커밋이 여럿이고 착수 전 그것으로 재면 틀린 수가 나온다.
   CHANGELOG 최상단 헤딩이 `plugin.json` 과 **같은 값**이어야 한다. README «Principles Instantiated» 갱신.
-  **이 브랜치에서 그 값은 `0.56.0` 이다.** 착수 시 계획했던 minor 번호는 작업 도중 upstream 이 다른
+  **이 브랜치에서 그 값은 `0.57.0` 이다.** 착수 시 계획했던 minor 번호는 작업 도중 upstream 이 다른
   릴리스로 선점했다(원장 R22·R23) — 그래서 이 제약은 그때의 리터럴이 아니라 «한 minor 위 + 최상단 일치»
   라는 불변식을 잰다. 하류 AC·V 항목이 «CHANGELOG 최상단 절» 이라고만 쓰는 것도 같은 이유다.
 - **C13 (락은 블록 스코프 + mutation)**: 산문 락은 헤더가 아니라 본문 고유 문구를 블록 스코프로 잡고,
@@ -651,10 +651,10 @@ brief §5 의 premortem(HA6·FM6 계열)이 든 함정과 확인 결과:
   `teach-lite`·`teach-heavy`·`teach-beat` 가 production 표면(SKILL·references·agents·templates)에 없다
   (`test_stale_terms.sh` 등재). CHANGELOG 에 Removed 항목.
 - **AC15 (버전)**: `origin/main` merge 커밋이 브랜치에 있고, `plugin.json` 이 **가장 최근 merge 시점**의
-  main 보다 한 minor 위이며(C12 — 이 브랜치는 merge 커밋이 둘이라 「가장 최근」이 판정을 가른다),
+  main 보다 한 minor 위이며(C12 — 이 브랜치는 merge 커밋이 여럿이라 「가장 최근」이 판정을 가른다),
   CHANGELOG 최상단 헤딩이 `plugin.json` 과 같은 값이고 그 절이 이 릴리스 전체(Added·
   Changed·Removed·Verification)를 담는다. README «Principles Instantiated» 에 Law 3(측정 원장)·
-  P17(사용자가 시계) 한 줄씩. **이 브랜치의 그 값은 `0.56.0`**(C12 — 리터럴이 아니라 불변식으로 재는 이유).
+  P17(사용자가 시계) 한 줄씩. **이 브랜치의 그 값은 `0.57.0`**(C12 — 리터럴이 아니라 불변식으로 재는 이유).
 - **AC16 (사람 e2e)**: 새 SKILL 로 실제 인터뷰 1회 — 매 라운드 «직전 답에서» 블록이 출력·state 에 남고,
   Q2 본문이 무엇을 정하는지·용어·기술 사실·선택의 결과를 풀었는지(G5)를 사용자가 보며, 종료 시 라벨 질문
   `min(4, 적격)` 개가 뜨고, `depth/<basename>.json` 이 생긴다. 사용자가 확인하고 결과를 CHANGELOG 에 한

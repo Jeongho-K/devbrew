@@ -508,7 +508,7 @@ out="$(python3 "$SCRIPT" gate "$TMPD/tpl.md" 2>/dev/null)"; rc=$?
   || { no "T-TPL: shipping 템플릿 쌍이 자기 게이트에 걸린다"; printf '    %s\n' "$out"; }
 # rc 만 보면 «어떤 통과인지»를 못 잰다. 출하 템플릿이 `coverage-mapper 0 (unavailable: …)`
 # advisory 로 지나가고 있어도 rc 는 0 이라 이 락이 조용했다 — 실제로 그랬고, 그 green 을
-# §2 머리 설명 산문의 예시 하나가 전부 지고 있었다(v0.56.0 수정 라운드 1 F4). 통과의
+# §2 머리 설명 산문의 예시 하나가 전부 지고 있었다(v0.57.0 수정 라운드 1 F4). 통과의
 # **종류**까지 본다: 템플릿은 mapper advisory 없이 지나가야 한다.
 tpl_adv="$(PYTHONDONTWRITEBYTECODE=1 python3 -c 'import json,sys; print("\n".join(json.loads(sys.argv[1]).get("advisories", [])))' "$out" 2>/dev/null)"
 tpl_adv_rc=$?
@@ -1406,7 +1406,7 @@ while IFS="$(printf '\t')" read -r kind got form; do
   esac
 done <<< "$sr_report"
 
-# --- v0.56.0 AC3: 닫힌 행의 닫힘 근거는 실재 S 앵커 (spec §2.1) ---------------------
+# --- v0.57.0 AC3: 닫힌 행의 닫힘 근거는 실재 S 앵커 (spec §2.1) ---------------------
 # fixture 를 파일로 복제하지 않는다(중복 락) — 정상 쌍에서 실행 시 생성한다(T1/T2 관례).
 ac3_pair() {  # $1 = stem. $TMPD/$1.md + $1.audit.md 를 정상 쌍에서 만든다.
   cp "$FX/interview-brief-valid.md" "$TMPD/$1.md"
@@ -1465,7 +1465,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$mut" gate "$TMPD/a_none.md" >/dev/null 2>&1 
   && ok "AC3(mutation): 검사 함수를 비우면 (a) 가 통과 — 락이 그 함수에 걸려 있다" \
   || no "AC3(mutation): 함수를 비웠는데도 red — 판정이 다른 곳에서 나온다(락 무의미)"
 
-# --- v0.56.0 AC4: §2 Budget 의 coverage-mapper <k> (k>=1 게이트, 0+unavailable advisory) ---
+# --- v0.57.0 AC4: §2 Budget 의 coverage-mapper <k> (k>=1 게이트, 0+unavailable advisory) ---
 ac3_pair m_ok
 ac3_gate m_ok >/dev/null && ok "AC4: coverage-mapper 1 → 통과" || no "AC4: coverage-mapper 1 이 red"
 ac3_pair m_missing
@@ -1485,7 +1485,7 @@ out="$(ac3_gate m_unavail)"; rc=$?
   && ok "AC4: coverage-mapper 0 (unavailable: …) → advisory 통과, advisories 채널에 실림" \
   || no "AC4: unavailable sentinel 이 red 이거나 advisory 가 비었다"
 
-# --- v0.56.0 수정 라운드 2: «*» 불릿 데이터 줄도 게이트가 읽는다 (좁히기 회귀 고정) ---
+# --- v0.57.0 수정 라운드 2: «*» 불릿 데이터 줄도 게이트가 읽는다 (좁히기 회귀 고정) ---
 # `MAPPER_RE` 를 불릿 줄에 앵커하면서(라운드 1 F4) 불릿 문자를 `-` 단독으로 좁혔더니, 이 파일이
 # 이미 한 번 겪은 결함이 **방향만 바꿔** 되돌아왔다 — `ENTRY_BULLET_RE` 주석의 실증은 「같은 줄을
 # `-` 로 쓰면 red, `*` 로 쓰면 green」(우회)이고, 여기서는 `*` 로 쓴 정당한 데이터 줄이 «없는
@@ -1506,12 +1506,12 @@ out="$(ac3_gate m_star)"; rc=$?
   && ok "AC4: «*» 불릿으로 쓴 §2 데이터 줄도 통과 (형제 regex 와 같은 [-*] 어휘)" \
   || { no "AC4: «*» 불릿 데이터 줄이 오탐-red — MAPPER_RE 가 [-*] 아닌 - 로 좁혀졌다"; printf '    %s\n' "$out"; }
 
-# --- v0.56.0 AC5: 재개방 접미 «(재개방 n회 — 사유)» 가 원장 regex 를 깨지 않는다 ---
+# --- v0.57.0 AC5: 재개방 접미 «(재개방 n회 — 사유)» 가 원장 regex 를 깨지 않는다 ---
 ac3_pair r_reopen
 sed -i.bak 's|^- floor:landscape — closed — \(.*\)$|- floor:landscape — closed — \1 (재개방 1회 — S1 과 충돌)|' "$TMPD/r_reopen.audit.md"; rm -f "$TMPD/r_reopen.audit.md.bak"
 ac3_gate r_reopen >/dev/null && ok "AC5: 재개방 접미가 붙은 닫힌 행 통과" || no "AC5: 재개방 접미가 원장 검사를 깬다"
 
-# --- v0.56.0 AC3 fail-open: 읽을 수 없는 원장 행은 «해당 없음» 이 아니라 실패다 ---
+# --- v0.57.0 AC3 fail-open: 읽을 수 없는 원장 행은 «해당 없음» 이 아니라 실패다 ---
 # 형태 검사(`coverage_ledger_failures`)가 derived 를 `startswith("derived:")` 로만 세고,
 # 앵커 검사(`coverage_anchor_failures`)는 세 부분을 요구해 매치 실패를 `continue` 로 흘리던
 # 동안, **두 검사 사이**로 근거 없는 닫힘이 빠져나갔다. 실측: derived 닫힘 행에서 근거

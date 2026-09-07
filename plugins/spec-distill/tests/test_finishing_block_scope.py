@@ -1,4 +1,4 @@
-"""finishing.md 의 bash 펜스는 앞 펜스의 변수를 물려받지 못한다 (v0.56.0).
+"""finishing.md 의 bash 펜스는 앞 펜스의 변수를 물려받지 못한다 (v0.57.0).
 
 Bash 도구는 호출마다 새 셸이고 유지되는 것은 cwd 뿐이다. Step A.7 은 `Agent` dispatch 와
 `AskUserQuestion` 을 사이에 끼고 여러 셸에 걸쳐 도는데, 두 번째 블록이 첫 블록에서만

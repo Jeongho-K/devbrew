@@ -67,16 +67,16 @@ else
   ok "V7a: no breadth-keeper in production artifacts"
 fi
 
-# V12 (v0.56.0): 깊이 재설계가 제거한 어휘 — production 잔존 0 (SKILL·references·agents·templates·README).
+# V12 (v0.57.0): 깊이 재설계가 제거한 어휘 — production 잔존 0 (SKILL·references·agents·templates·README).
 # 번호는 V10 이 아니다 — 이 파일의 V10 은 이미 「삭제 대상 파일 부재」(v0.25.0/T5) 가 쓰고 있어
 # 재사용하면 사람이 읽을 때 두 무관한 락이 같은 이름으로 헷갈린다. 다음 빈 번호(V12)를 쓴다.
 scan -InE 'no_progress_streak|stall_episode|coverage_mapper_dispatched_episode|teach-lite|teach-heavy|teach-beat' "${prod_files[@]}"
 if [[ $SCAN_RC -ge 2 ]]; then
   no "V12: grep 자체 실패(exit=$SCAN_RC):"; printf '%s\n' "$SCAN_OUT"
 elif [[ $SCAN_RC -eq 0 ]]; then
-  no "V12: v0.56.0 제거 어휘가 production 에 잔존:"; printf '%s\n' "$SCAN_OUT"
+  no "V12: v0.57.0 제거 어휘가 production 에 잔존:"; printf '%s\n' "$SCAN_OUT"
 else
-  ok "V12: v0.56.0 제거 어휘 production 잔존 0"
+  ok "V12: v0.57.0 제거 어휘 production 잔존 0"
 fi
 
 # V7b-1: interview_round는 migration 섹션에만 (Task 11b: 그 섹션 전문이 SKILL.md 밖

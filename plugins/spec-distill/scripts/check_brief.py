@@ -795,7 +795,7 @@ def tried_discarded_ok(text: str) -> bool:
 
 # 원장 행의 **정본** 형태 — `키 — 상태 — 근거` 세 부분. 아래 두 소비자가 같은 규칙을 쓴다:
 # `coverage_ledger_failures`(형태)와 `coverage_anchor_failures`(앵커). 둘이 서로 다른
-# 엄격도로 행을 읽으면 근거 없는 닫힘이 그 틈으로 빠져나간다 — v0.56.0 실측: 형태 검사가
+# 엄격도로 행을 읽으면 근거 없는 닫힘이 그 틈으로 빠져나간다 — v0.57.0 실측: 형태 검사가
 # derived 를 `startswith("derived:")` 로만 세고 앵커 검사는 세 부분을 요구해 매치 실패를
 # 조용히 건너뛰던 동안, derived 닫힘 행에서 **근거 필드 자체**를 지우면 게이트가
 # `{"pass": true}` rc=0 을 냈다. 같은 변이를 floor 행에 주면 잡혔다 — 비대칭이 곧 구멍이었다.
@@ -808,7 +808,7 @@ def tried_discarded_ok(text: str) -> bool:
 # 구분자는 **앞에 공백을 요구한다**(`\s+—`). `\s*` 로 두면 이름에 em-dash 가 붙은 행이
 # 「매치 실패」가 아니라 **오파싱**된다: `derived:rendering—strategy — closed — 근거` 가
 # key=`derived:rendering` · status=`strategy` · evidence=`closed — 근거` 로 읽혀,
-# **닫힌 행이 열린 행으로 재분류돼** 앵커 요구를 통째로 벗어난다(v0.56.0 실측 — 그 행만
+# **닫힌 행이 열린 행으로 재분류돼** 앵커 요구를 통째로 벗어난다(v0.57.0 실측 — 그 행만
 # 근거 없이 pass rc=0). 뒤쪽 공백은 요구하지 않는다(`—\s*`): `- floor:skepticism — closed —`
 # 처럼 근거가 빈 행은 「evidence empty」로 잡혀야지 「읽을 수 없음」이 되면 안 된다
 # (fixture `interview-brief-floor-evidence-empty.audit.md`). 리포의 원장 행은 전부 ` — ` 다.
@@ -867,7 +867,7 @@ def coverage_ledger_failures(text: str) -> list[str]:
     return fails
 
 
-# 닫힘 근거 앵커 (v0.56.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
+# 닫힘 근거 앵커 (v0.57.0, spec §2.1). 단어 경계 없이 `S\d+` 를 쓰면 `OQS3`·`STS1` 같은
 # 우연 토큰이 앵커로 잡힌다 — 앞이 영문자가 아니어야 한다.
 ANCHOR_RE = re.compile(r"(?<![A-Za-z])S\d+\b")
 
@@ -905,7 +905,7 @@ def coverage_anchor_failures(audit_text: str, anchors: set) -> list[str]:
 # **불릿(데이터) 줄에 앵커한다.** 앵커가 없으면 §2 머리 «설명 산문»의 예시
 # (`coverage-mapper 0 (unavailable: <사유>)`)가 데이터 줄보다 먼저 매치돼 판정을 대신
 # 진다 — 실측: 출하 템플릿의 T-TPL green 을 그 설명 문장 하나가 전부 지고 있었고,
-# 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.56.0 수정 라운드 1 F4).
+# 산문의 숫자만 지우면 게이트가 red 로 떨어졌다(v0.57.0 수정 라운드 1 F4).
 # 산문은 그대로 둔다: 판정에 참여하지 않은 채 퇴화 모양을 계속 가르친다.
 #
 # 불릿 문자는 `[-*]` — 이 파일의 형제 둘(`ENTRY_BULLET_RE`·`BODY_ITEM_RE`)과 **같은 어휘**여야
@@ -919,7 +919,7 @@ MAPPER_RE = re.compile(
 
 
 def budget_mapper_failures(audit_text: str) -> tuple[list[str], list[str]]:
-    """audit §2 Budget 의 `coverage-mapper <k>` (v0.56.0, spec §2.3·C4).
+    """audit §2 Budget 의 `coverage-mapper <k>` (v0.57.0, spec §2.3·C4).
 
     k>=1 통과. `coverage-mapper 0 (unavailable: <이유>)` 는 advisory 통과 — 침묵과 0 을
     가른다. 대상은 §2 의 **불릿 줄**이다(`MAPPER_RE` 주석) — 머리 설명 산문의 예시는

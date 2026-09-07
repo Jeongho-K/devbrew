@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""depth_record.py — 세 층(형식·auditor·사람)을 병합해 기록한다 (spec §3.2~§3.4, v0.56.0).
+"""depth_record.py — 세 층(형식·auditor·사람)을 병합해 기록한다 (spec §3.2~§3.4, v0.57.0).
 
 항상 exit 0. 측정이지 게이트가 아니다(C5) — 실패는 «기록 불가: <이유>» 로 표면화한다.
 처분 회계는 adjudication.Ledger(항목 파손 → held, 센티널 부재 → source_failed).

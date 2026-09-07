@@ -158,7 +158,7 @@ class DepthPairs(unittest.TestCase):
 
 
 class ParsingDoesNotMisassign(unittest.TestCase):
-    """v0.56.0 B2/B3 — 조용한 오배정·오계수 회귀 고정.
+    """v0.57.0 B2/B3 — 조용한 오배정·오계수 회귀 고정.
 
     셋 다 «오류 없이 틀린 값을 낸다» 는 부류다. 예외도 rc≠0 도 없어서 스위트를
     green 으로 두고 지나간다 — 그래서 값 자체를 단언한다.

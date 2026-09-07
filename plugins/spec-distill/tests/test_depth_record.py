@@ -171,7 +171,7 @@ class DepthRecord(unittest.TestCase):
 
 
 class UncountableIsNotZero(unittest.TestCase):
-    """v0.56.0 B1/B2/B4 — 「셀 수 없음」이 「0」으로 둔갑하지 않는다.
+    """v0.57.0 B1/B2/B4 — 「셀 수 없음」이 「0」으로 둔갑하지 않는다.
 
     넷 다 스위트를 red 로 만들지 않는 부류였다: 셋은 그럴듯한 숫자를 내고, 넷째는
     이미 부분 출력을 낸 뒤 죽어 실패 기록조차 남기지 않았다.

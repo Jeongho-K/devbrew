@@ -180,7 +180,7 @@ grep -q 'drafting-spec' "${CI_ALL[@]}" && no "AC10: drafting-spec still referenc
 # --- v0.22.0: 커버리지 상태 스키마 + 마이그레이션 (AC1/AC5) ---
 has 'coverage:' "AC1: coverage ledger in state schema"
 has 'blind_spot_dispatched' "AC1: orchestration.blind_spot_dispatched in schema"
-# v0.56.0: 정체 트리거(streak·에피소드) 전량 제거 — coverage-mapper dispatch 는 R1 필수 1회 +
+# v0.57.0: 정체 트리거(streak·에피소드) 전량 제거 — coverage-mapper dispatch 는 R1 필수 1회 +
 # 재개방 시 최대 1회로 바뀌어 «두 디스크 값 비교» 바운드 자체가 불필요해졌다. 부재로 반전한다.
 for tok in no_progress_streak stall_episode coverage_mapper_dispatched_episode; do
   grep -q "$tok" "${CI_ALL[@]}" && no "AC5/C4: $tok 잔존 (정체 트리거 제거)" || ok "AC5/C4: $tok 제거됨"
@@ -200,14 +200,14 @@ has 'coverage.*부재|coverage 부재|interview_round.*존재' "AC5: legacy dete
 has 'state schema migration.*coverage' "AC5: migration advisory wording"
 # Task 11b: 절 전문이 SKILL에서 $MIG_REF 로 옮겨졌다(조건부 로드) — 윈도우도 거기서 뜬다.
 mig_block="$(awk '/^## In-flight state migration/{f=1;print;next} /^## /{f=0} f' "$MIG_REF")"
-# v0.56.0: migration 절도 orchestration 열거를 담고 있다 — 필드 교체를 소유한 태스크가 그
+# v0.57.0: migration 절도 orchestration 열거를 담고 있다 — 필드 교체를 소유한 태스크가 그
 # 필드의 모든 자리를 책임진다. 음의 grep 대신 **정확히 일치**하는 전체 열거 리터럴을 요구한다 —
 # `coverage_mapper_dispatches` 하나로 정확히 끝나는 열거만 통과하므로 정체 트리거 필드가
 # 끼어들거나 대체돼도 이 리터럴과 달라져 RED다. 부분 토큰 공존이 아니라 **열거 전체의 동일성**이 이빨이다.
 { grep -qF '`orchestration`: `{focused_dimension: null, blind_spot_dispatched: false, coverage_mapper_dispatches: 0}`' <<<"$mig_block"; } \
-  && ok "AC5(v0.56.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)" \
-  || no "AC5(v0.56.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)"
-# v0.56.0 C2: 발동 조건이 «구조 통째 부재» 면 **실제 업그레이드 경로가 통째로 빠진다** —
+  && ok "AC5(v0.57.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)" \
+  || no "AC5(v0.57.0): migration 절의 orchestration 열거가 정확히 coverage_mapper_dispatches 로 끝난다 (정체 트리거 필드 없음)"
+# v0.57.0 C2: 발동 조건이 «구조 통째 부재» 면 **실제 업그레이드 경로가 통째로 빠진다** —
 # 직전 릴리스 세션은 `coverage`·`orchestration` 을 이미 갖고 이 릴리스가 더한 세 키
 # (`reopened`·`reopen_log`·`coverage_mapper_dispatches`)만 없어서 어느 조건에도 안 걸린 채
 # 그 키를 읽는 코드로 들어간다. spec §2.4 는 «부재 키는 기본값으로 추가» 다. 조건의 «단위»를
@@ -319,7 +319,7 @@ grep -q 'interview_round' <<<"$term_block" \
 
 # --- v0.22.0: teach-beat + blind-spot/coverage-mapper dispatch (AC6/AC7/AC8/AC9/C11/C12) ---
 
-# --- v0.56.0 §1 라운드 규약 (블록 스코프 — 4-block·teach-beat 대체) ---------------------
+# --- v0.57.0 §1 라운드 규약 (블록 스코프 — 4-block·teach-beat 대체) ---------------------
 # 스코프 안의 예시 fenced block 이 `## R<n>`(depth_pairs 계약이 요구하는 실제 헤딩 리터럴)을
 # 담고 있어 — 단순 "다음 `## ` 헤딩에서 닫는다" idiom 이 예시 자체를 다음 섹션 시작으로
 # 오판한다(fence 미인식). 그래서 이 스코프만 ``` 토글로 fence 안쪽을 닫힘-판정에서 뺀다.
@@ -381,7 +381,7 @@ covmap_block="$(awk '/^## coverage-mapper dispatch/{f=1;print;next} /^## /{f=0} 
 { [[ -n "$covmap_block" ]] && grep -q 'coverage-mapper' <<<"$covmap_block"; } \
   && ok "AC7: coverage-mapper dispatch section present" \
   || no "AC7: coverage-mapper dispatch section present"
-# v0.56.0: 정체 트리거(연속 3 probe · 에피소드 비교)를 R1 필수 1회 + 재개방 시 최대 1회로
+# v0.57.0: 정체 트리거(연속 3 probe · 에피소드 비교)를 R1 필수 1회 + 재개방 시 최대 1회로
 # 교체했다. 관계는 절 본문(줄바꿈 관용을 위해 flatten)에서 잡는다 — 헤더-satisfiable 회피는
 # 위 presence 체크가 이미 담당하므로 여기서는 각 규칙의 body-unique 문구를 요구한다.
 covmap_flat="$(tr '\n' ' ' <<<"$covmap_block" | tr -s ' ')"
@@ -531,7 +531,7 @@ grep -qE '§[68] OQ' <<<"$r3_block" \
 # steelman-builder.md 페르소나에서 지운 것과 같은 억제가 R3 dispatch 지시문에도 있었다
 # (C5/AP9 인용 둘 다 근거 없음 — fix round 1). 스코프가 전-파일이 아닌 이유는 코퍼스가
 # 바뀌어도 그대로다: 이 skill 표면에는 legitimate 한 횟수 제한 문구가 남아 있어 전-파일
-# grep 은 그것에 걸린다 — v0.56.0 이 teach-beat 절을 지웠지만 `재개방 시 최대 1회`(SKILL.md)·
+# grep 은 그것에 걸린다 — v0.57.0 이 teach-beat 절을 지웠지만 `재개방 시 최대 1회`(SKILL.md)·
 # `2회까지`(finishing.md)가 그 자리를 잇는다(문구만 바뀌고 근거는 그대로다). 지금
 # "$r3_block" 은 SKILL.md 의 섹션 윈도우가 아니라 **references/steelman.md 전문**이다 —
 # 재는 대상은 같고(그 절차의 dispatch 지시), 사는 파일만 옮겨갔다.
@@ -925,7 +925,7 @@ grep -qE '발화 전부를 payload §6|전부를 payload §6 에' "$FIN" \
   && no "U2-T6: 「전부를 payload §6 에」 옛 지시 잔존" \
   || ok "U2-T6: 옛 거처 지시 제거됨"
 
-# --- v0.56.0 Step A.7 깊이 측정 (finishing.md, 블록 스코프) --------------------
+# --- v0.57.0 Step A.7 깊이 측정 (finishing.md, 블록 스코프) --------------------
 a7_block="$(awk '/^### Step A\.7/{f=1;print;next} /^### /{f=0} f' "$FIN")"
 a7_flat="$(tr '\n' ' ' <<<"$a7_block" | tr -s ' ')"
 # 「산문이 파일명을 언급하는 것」과 「실제로 호출하는 것」은 다른 사실이다. 아래 둘을
@@ -988,7 +988,7 @@ grep -qE '^- .*coverage-mapper <k>' "$TPL" \
   || no "AC10: 템플릿 §2 mapper 계수가 «<k>» 가 아니다 — 통과값을 미리 채웠거나 줄이 사라졌다"
 grep -qE 'path \(a\|b\|c\|d\)' "$TPL" && no "AC10: 템플릿 §5 에 경로 (c) 잔존" || ok "AC10: 템플릿 §5 경로 (c) 제거"
 
-# --- v0.56.0 C43: 선언한 경로 수 == 실제 표 행 수 (블록 스코프) ------------------------
+# --- v0.57.0 C43: 선언한 경로 수 == 실제 표 행 수 (블록 스코프) ------------------------
 # 왜 이 락이 생겼나: Task 10 이 경로 (c) 를 지우면서 표 행과 꼬리 문장은 고쳤지만 헤딩
 # `## C43 4-path routing` 과 산문 «다음 4 경로 중» 의 숫자를 남겼다. 표에는 셋뿐인데 모델이
 # 읽는 지시는 넷을 분류하라고 시키는 상태가 릴리스까지 살아남았다 — README(«3-path Socratic
@@ -1033,7 +1033,7 @@ path_claims="$(grep -ohE '[0-9]+-path' "$SKILL" "$README" | sort -u)"
 # C51 5-type 라벨 강제는 이 릴리스가 없앴다(SKILL 본문·README 정의 불릿 모두 제거). 그런데
 # 5 의례 요약표의 R1 행이 «(d) ontological 5-type» 으로 그 죽은 규칙을 계속 인용했다 —
 # 독자가 본문보다 먼저 믿는 자리다. 코퍼스 전수로 막되, **«제거됐다»고 적은 줄은 위반이
-# 아니다** — 그것은 죽은 규칙의 인용이 아니라 죽었다는 기록이다(README 의 v0.56.0 변경 설명).
+# 아니다** — 그것은 죽은 규칙의 인용이 아니라 죽었다는 기록이다(README 의 v0.57.0 변경 설명).
 # 그래서 단순 부재 검사가 아니라 «5-type 을 적은 모든 줄은 제거 표시를 함께 갖는다» 로 쓴다:
 # 살아 있는 요구로 읽히는 인용만 RED 다. 부재 검사로 두면 정정 노트가 자기 락에 걸린다.
 c51_live="$(grep -rn '5-type' "$SKILL" "$README" "$FIN" 2>/dev/null \
