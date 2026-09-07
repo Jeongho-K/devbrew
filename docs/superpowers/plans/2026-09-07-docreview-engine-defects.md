@@ -962,6 +962,10 @@ for f in $(find shared/tests plugins/*/tests -name 'test_*.sh' | grep -v '/spike
   bash "$f" >/dev/null 2>&1 || red="$red $f"
 done
 echo "셸 RED:${red:- none}"
+# python 은 **플러그인 tests/ 최상위만** 돈다 — 하위 디렉토리(fixtures/·oracle/)에는
+# 다른 테스트의 «입력»인 파일들이 산다(의도적으로 실패하는 픽스처 · 숨김 오라클).
+# 재귀로 돌리면 유령 RED 6건이 매번 뜨고, 유령 RED 는 곧 풍경이 되어 진짜를 가린다.
+# 셸 쪽과 규칙이 «다른» 이유가 이것이다: 셸의 tests/harness/ 에는 진짜 락이 있었다.
 for P in spec-distill quality-gates; do
   for f in plugins/$P/tests/test_*.py; do
     ( cd "plugins/$P/tests" && python3 -m unittest "$(basename "${f%.py}")" ) >/dev/null 2>&1 || echo "python RED: $f"
