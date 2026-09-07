@@ -183,34 +183,34 @@ def _rk(fid):  # id → (round, k) 정렬 키
     return (int(r), int(k))
 
 
-def cmd_finalize(a) -> int:
-    st = load_state(a.state_dir)
-    prof = load_profile(st["profile"])
-    n = int(st["round"])
-    pend = st.get("pending_recritic")
-    if not pend:
-        return fail("no_pending_recritic")
-    L = Ledger(items="open")
-    for e in pend.get("events", []):
-        getattr(L, e[0])(*e[1:])
-    degrade = dict(pend["degrade"])
-    degrade.setdefault("recritic_dead", None)
-    items = {p["f"]: dict(p["finding"], _source=p["source"]) for p in pend["items"]}
+def _read_recritic(a, degrade, L):
+    """재비판 산출물에서 (verdicts, added) 를 꺼낸다.
 
-    verdicts, added = [], []
+    죽었으면(kill switch · 블록 부재/파손) 사유를 `degrade["recritic_dead"]` 에 남기고
+    빈 쌍을 낸다 — 호출부는 그 뒤로도 같은 경로를 그대로 걷는다(기각 0건이 될 뿐이고,
+    그 사실 자체는 `_build_report` 의 advisory 가 공시한다).
+    """
     if a.recritic_skipped:
         degrade["recritic_dead"] = "skipped"
         L.source_failed("doc-recritic", "kill switch", primary=False)
-    else:
-        text = Path(a.recritic).read_text(encoding="utf-8") if a.recritic and Path(a.recritic).is_file() else ""
-        blk, err = extract_block(text, "docreview-recritic")
-        if err or not isinstance(blk, dict):
-            degrade["recritic_dead"] = err or "not a mapping"
-            L.source_failed("doc-recritic", degrade["recritic_dead"], primary=False)
-        else:
-            verdicts = blk.get("verdicts") or []
-            added = blk.get("added") or []
+        return [], []
+    text = Path(a.recritic).read_text(encoding="utf-8") if a.recritic and Path(a.recritic).is_file() else ""
+    blk, err = extract_block(text, "docreview-recritic")
+    if err or not isinstance(blk, dict):
+        degrade["recritic_dead"] = err or "not a mapping"
+        L.source_failed("doc-recritic", degrade["recritic_dead"], primary=False)
+        return [], []
+    return blk.get("verdicts") or [], blk.get("added") or []
 
+
+def _apply_recritic(items, verdicts, added, L):
+    """재비판 verdict 를 `items` 에 제자리 반영하고 same_as 병합 지시 목록을 낸다.
+
+    세 단계의 순서가 계약이다 — verdict 반영 → 미판정 처분 강제(ask) → `added` 편입.
+    강제를 verdict 뒤에 두는 것은 verdict 가 처분을 채울 기회를 다 준 뒤여야 하기
+    때문이고, `added` 를 마지막에 두는 것은 재비판이 자기 추가분을 판정 대상으로
+    삼지 않기 때문이다(그래서 새 항목은 verdict 루프를 지나지 않는다).
+    """
     same_as = []
     for v in verdicts:
         if not isinstance(v, dict):
@@ -260,8 +260,15 @@ def cmd_finalize(a) -> int:
                 na["disposition"] = "ask"
                 L.coerced("disposition", None, "ask")
             items[na["f"]] = na
+    return same_as
 
-    # same_as — union-find, 높은 처분이 남는다(전순서 max)
+
+def _absorb_same_as(items, same_as, L):
+    """same_as — union-find, 높은 처분이 남는다(전순서 max).
+
+    그룹마다 생존자 하나만 남기고 나머지는 `_absorbed_into` 로 표시한다. 낸 값
+    `keep_of` 는 흡수된 f 를 생존 f 로 보내는 맵이고, `blocks` 재매핑이 그것을 쓴다.
+    """
     parent = {f: f for f in items}
 
     def find(x):
@@ -308,9 +315,14 @@ def cmd_finalize(a) -> int:
             if m != keep:
                 items[m]["_absorbed_into"] = keep
                 L.absorbed(m, into=keep)
+    return keep_of
 
-    # 프로필 · 보호 · 불변
-    sections = st["snapshots"][str(n)]["sections"]
+
+def _classify_items(items, st, prof, sections, n, L):
+    """프로필 허용 처분 강제 · 앵커 분류(보호·불변) · 승격.
+
+    흡수된 항목은 버리고 기각된 항목은 따로 모은다 — (final, rejected_items).
+    """
     allowed = prof["allowed_dispositions"]
     final, rejected_items = [], []
     for f, it in items.items():
@@ -346,13 +358,25 @@ def cmd_finalize(a) -> int:
             it["disposition"] = "decide"
             it["origin"] = "auto"
         final.append(it)
+    return final, rejected_items
 
-    # 사후·이월 auto decide — 얼림 diff(post) · check-intent 거부(pre) · expired 재상승(pre)
+
+def _auto_decides(a, st, prof, sections, n):
+    """사후·이월 auto decide — 얼림 diff(post) · check-intent 거부(pre) · expired 재상승(pre).
+
+    `st["escalated"]` 은 아직 자기 차례가 아닌 예약만 남기고, `st["reraise"]` 는 비운다.
+    낸 값은 (새 항목들, 미소비 예약 수).
+
+    이 함수에 `items` 가 없다는 것이 설계다 — 재상승 후속이 same_as 흡수 · 재비판
+    reject · 처분 강제를 지나지 않는다는 불변식이 여기서는 스코프로 보장된다(분해
+    전에는 「이 줄이 그 셋보다 아래에 있다」는 위치로만 보장됐다).
+    """
+    extra = []
     if a.diff and Path(a.diff).is_file():
         diff = json.loads(Path(a.diff).read_text(encoding="utf-8"))
         for c in diff.get("changed", []):
             cls = classify_anchor(c["anchor"], sections, prof)
-            final.append({"f": None, "layer": 1 if cls["protected"] else 2, "category": "frozen_change",
+            extra.append({"f": None, "layer": 1 if cls["protected"] else 2, "category": "frozen_change",
                           "anchor": c["anchor"], "disposition": "decide",
                           "summary": "finding 없이 바뀜: %s (%s)" % (c.get("title") or c["anchor"], c["kind"]),
                           "edit_scope": c["anchor"], "blocks": [], "supersedes": None,
@@ -367,7 +391,7 @@ def cmd_finalize(a) -> int:
         f0 = prev.get(e["finding_id"])
         if not f0:
             continue
-        final.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
+        extra.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "check-intent 거부 후 상향: " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
                       "supersedes": e["finding_id"], "evidence": e.get("reason"), "origin": "auto",
@@ -390,18 +414,27 @@ def cmd_finalize(a) -> int:
         # 없다」와 「대상은 있는데 이미 재결정됐다」를 같은 숫자로 뭉개면 안 된다.
         if not d0 or d0.get("state") != "expired":
             continue          # 사용자가 이미 재결정했다 — 의무는 그 결정이 진다
-        final.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
+        extra.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "채택 후 미적용(expired): " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
                       "supersedes": r["finding_id"], "evidence": r.get("reason"), "origin": "auto",
                       "kind": "pre", "immutable": bool(f0.get("immutable")), "_source": "reraise"})
     st["reraise"] = []
+    return extra, reraise_unconsumed
 
-    # id · 계보 — 리뷰어 항목은 f 순, 사후 항목은 그 뒤
-    def order(it):
-        f = it.get("f") or ""
-        return (0 if f else 1, int(f[1:]) if f[1:].isdigit() else 0, f[:1])
-    everything = sorted(final + rejected_items, key=order)
+
+def _order_key(it):   # 리뷰어 항목은 f 순, 사후 항목은 그 뒤
+    f = it.get("f") or ""
+    return (0 if f else 1, int(f[1:]) if f[1:].isdigit() else 0, f[:1])
+
+
+def _resolve_ids_and_lineage(st, final, rejected_items, n):
+    """id·bucket 부여 → 전방 포인터 → 계보 2패스 해소 → 기각 계보 기록.
+
+    낸 값은 (bucket_conflicts, lineage_mismatch, revived) — 셋 다 보고서가 공시한다.
+    """
+    prev = st["findings"]
+    everything = sorted(final + rejected_items, key=_order_key)
     counters = {}
     open_prev = {}
     from docreview_state import is_open  # noqa: E402  (순환 없음 — state 는 leaf)
@@ -478,7 +511,11 @@ def cmd_finalize(a) -> int:
             resolve_lineage(it)
     for it in rejected_items:
         st["rejected_lineages"][it["lineage"]] = {"by": "recritic", "why": it["_rejected"], "round": n}
+    return bucket_conflicts, lineage_mismatch, revived
 
+
+def _remap_blocks(final, keep_of, doc):
+    """`blocks` 의 f-참조를 흡수 생존자(keep_of)를 거쳐 최종 id 로 바꾸고, decide 에 결정 뷰를 단다."""
     f2id = {it["f"]: it["id"] for it in final if it.get("f")}
     for it in final:
         out = []
@@ -488,12 +525,20 @@ def cmd_finalize(a) -> int:
                 out.append(f2id[r2])
         it["blocks"] = out
         if it["disposition"] == "decide":
-            it["decision_view"] = _decision_view(it, a.doc)
+            it["decision_view"] = _decision_view(it, doc)
 
-    for it in final:
-        L.accept(it["id"])
-    record_findings(st, final + rejected_items, n)
 
+def _pub(it):
+    return {k: v for k, v in it.items() if not k.startswith("_")}
+
+
+def _build_report(L, st, n, final, rejected_items, degrade, stats):
+    """출력 JSON 을 조립하고 같은 요약을 `st["rounds"][n]["route_report"]` 에 남긴다.
+
+    `stats` 는 앞 단계가 낸 계수 넷(bucket_conflicts · lineage_mismatch · revived ·
+    reraise_unconsumed). 키 순서는 골든(`shared/tests/fixtures/docreview/golden/`)이
+    바이트로 고정하므로 재배열하지 않는다.
+    """
     report = L.report()
     adv = list(report["reasons"])
     if degrade.get("codex_absent"):
@@ -504,16 +549,14 @@ def cmd_finalize(a) -> int:
         adv.append("상세 미검증 — 층 2 블록 없음")
     if st["snapshots"][str(n)].get("headingless"):
         adv.append("앵커 불가 — 얼림·보호 부류 비활성, 모든 fix 가 문서 전체 범위")
-
-    def pub(it):
-        return {k: v for k, v in it.items() if not k.startswith("_")}
     out = {
-        "ok": True, "round": n, "findings": [pub(it) for it in final],
+        "ok": True, "round": n, "findings": [_pub(it) for it in final],
         "by_disposition": {d: [it["id"] for it in final if it["disposition"] == d] for d in DISPOSITIONS},
         "rejected": [{"id": it["id"], "evidence": it["_rejected"]} for it in rejected_items],
         "defers": [it["id"] for it in final if it["disposition"] == "defer"],
-        "bucket_conflicts": bucket_conflicts, "lineage_mismatch": lineage_mismatch, "revived": revived,
-        "degrade": degrade, "advisory": adv, "blocks": L.blocks(), "reraise_unconsumed": reraise_unconsumed,
+        "bucket_conflicts": stats["bucket_conflicts"], "lineage_mismatch": stats["lineage_mismatch"],
+        "revived": stats["revived"], "degrade": degrade, "advisory": adv, "blocks": L.blocks(),
+        "reraise_unconsumed": stats["reraise_unconsumed"],
     }
     for k, v in report["counts"].items():
         out["adjudication_" + k] = v
@@ -522,9 +565,48 @@ def cmd_finalize(a) -> int:
     out["adjudication_held_by_class"] = L.held_by_class()
     st["rounds"][str(n)]["route_report"] = {
         "degrade": degrade, "advisory": adv, "rejected": len(rejected_items),
-        "bucket_conflicts": bucket_conflicts, "revived": len(revived), "lineage_mismatch": lineage_mismatch,
-        "reraise_unconsumed": reraise_unconsumed,
+        "bucket_conflicts": stats["bucket_conflicts"], "revived": len(stats["revived"]),
+        "lineage_mismatch": stats["lineage_mismatch"],
+        "reraise_unconsumed": stats["reraise_unconsumed"],
     }
+    return out
+
+
+def cmd_finalize(a) -> int:
+    """재비판 반영 → 흡수 → 분류 → 사후/이월 → id·계보 → blocks → 보고서.
+
+    각 걸음은 위 모듈 함수 하나이고, 걸음 사이의 값은 인자와 반환값으로만 오간다
+    (`nonlocal` 은 `_resolve_ids_and_lineage` 안의 계보 해소 하나뿐 — 분해 전과 같다).
+    """
+    st = load_state(a.state_dir)
+    prof = load_profile(st["profile"])
+    n = int(st["round"])
+    pend = st.get("pending_recritic")
+    if not pend:
+        return fail("no_pending_recritic")
+    L = Ledger(items="open")
+    for e in pend.get("events", []):
+        getattr(L, e[0])(*e[1:])
+    degrade = dict(pend["degrade"])
+    degrade.setdefault("recritic_dead", None)
+    items = {p["f"]: dict(p["finding"], _source=p["source"]) for p in pend["items"]}
+    sections = st["snapshots"][str(n)]["sections"]
+
+    verdicts, added = _read_recritic(a, degrade, L)
+    same_as = _apply_recritic(items, verdicts, added, L)
+    keep_of = _absorb_same_as(items, same_as, L)
+    final, rejected_items = _classify_items(items, st, prof, sections, n, L)
+    extra, reraise_unconsumed = _auto_decides(a, st, prof, sections, n)
+    final.extend(extra)
+    bucket_conflicts, lineage_mismatch, revived = _resolve_ids_and_lineage(st, final, rejected_items, n)
+    _remap_blocks(final, keep_of, a.doc)
+
+    for it in final:
+        L.accept(it["id"])
+    record_findings(st, final + rejected_items, n)
+    out = _build_report(L, st, n, final, rejected_items, degrade,
+                        {"bucket_conflicts": bucket_conflicts, "lineage_mismatch": lineage_mismatch,
+                         "revived": revived, "reraise_unconsumed": reraise_unconsumed})
     st["pending_recritic"] = None
     save_state(a.state_dir, st, "finalize (%d findings, %d rejected)" % (len(final), len(rejected_items)))
     print(json.dumps(out, ensure_ascii=False, indent=1))

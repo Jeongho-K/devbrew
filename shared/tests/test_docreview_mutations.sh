@@ -18,6 +18,17 @@
 # 같은)인 한 이 완화는 단언을 약화하지 않는다: 키가 없으면 `.get()` 은 `None` 을 내고,
 # `None != "protected"` 는 여전히 RED 다. 약해지는 것은 크래시로부터의 «보호» 뿐, 판정의
 # 엄격함이 아니다.
+#
+# **픽스처 헬퍼의 사각지대(Task 8b 이월 노트) — 시딩은 사본이 아니라 리포를 쓴다.**
+# `st_set_reraise.py`·`st_set_stale_pointer.py`·`st_open_permit.py` 는 `load_state`/
+# `save_state` 를 **리포의 `shared/docreview/scripts/`** 에서 import 한다(각 파일의
+# `SCRIPTS_DIR = …parents[3] / "docreview" / "scripts"`). 매트릭스가 변이시키는 것은
+# 임시 사본이므로, 이 헬퍼들이 픽스처를 «심는» 단계는 어떤 변이도 지나지 않는다.
+# 지금은 무해하다 — 이 헬퍼를 쓰는 세 셀(`reraise_no_dedup`·`reraise_loss_uncounted`·
+# `fwd_pointer_not_cleared`)은 전부 **엔진 술어**를 흔들고 그 술어는 사본에서 돈다.
+# 그러나 훗날 상태 **직렬화기 자체**(`load_state`/`save_state`)를 겨눈 셀이 생기면,
+# 이 헬퍼를 쓰는 케이스는 그 변이에 구조적으로 눈이 먼다 — 시딩이 pristine 직렬화기로
+# 되기 때문이다. 그런 셀을 세우려면 먼저 헬퍼가 `$SCRIPTS`(사본)를 보게 바꿔야 한다.
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
   git ls-files -- 'shared/docreview/scripts/*.py'
@@ -125,12 +136,21 @@ sed_state()  { sed -i.bak "$1" "$2/docreview_state.py"  && rm -f "$2/docreview_s
 # decision_view 를 그 자리에서 직접 채운다(같은 `_decision_view` 함수 재사용, `auto` 값도
 # origin="auto" 그대로라 정확) — 그래서 evidence·decision_view 를 재는 단언 2~4 는 안
 # 흔들리고, 규칙의 핵심(사후 항목이 실제로 decide 가 되는가)을 재는 단언 1 만 깨끗이 깨진다.
+# [Task 8b 재앵커] `cmd_finalize` 분해로 사후·이월 생성이 `_auto_decides()` 로 나가면서
+# 그 함수의 누산기 이름이 `final` → `extra` 로 바뀌었다(호출부가 `final.extend(extra)`).
+# 옛 치환 1·3 은 `final.append(` 를 겨눴다 — 치환 1 은 **매치 0 건으로 조용히 무동작**이
+# 됐는데 치환 2·3 은 여전히 맞아서, 셀은 no_teeth 가 아니라 **정의되지 않은 `_fc` 참조로
+# 크래시**해 unmeasurable 로 떨어졌다(실측). 「매치 0 건도 성공」의 변종 — 여러 치환 중
+# 일부만 죽으면 판정이 「안 잡힘」이 아니라 「못 잼」으로 나와 원인이 더 가려진다.
+# BEFORE: s/final\.append({"f": None, "layer": 1 if …/  ·  주입부 `final.append(_fc)`
+# AFTER : s/extra\.append({"f": None, "layer": 1 if …/  ·  주입부 `extra.append(_fc)`
+# 겨누는 규칙(사후 얼림 diff 항목이 실제로 decide 가 되는가)은 바뀌지 않았다.
 mut freeze_off case_T35_frozen_change_auto_decide sed_route \
-  's/final\.append({"f": None, "layer": 1 if cls\["protected"\] else 2, "category": "frozen_change",/_fc = {"f": None, "layer": 1 if cls["protected"] else 2, "category": "frozen_change",/
+  's/extra\.append({"f": None, "layer": 1 if cls\["protected"\] else 2, "category": "frozen_change",/_fc = {"f": None, "layer": 1 if cls["protected"] else 2, "category": "frozen_change",/
 s/"anchor": c\["anchor"\], "disposition": "decide",/"anchor": c["anchor"], "disposition": "fix",/
 s/"prev_hash": c\.get("old_hash"), "immutable": cls\["immutable"\], "_source": "diff"})/"prev_hash": c.get("old_hash"), "immutable": cls["immutable"], "_source": "diff"}\
             _fc["decision_view"] = _decision_view(_fc, a.doc)\
-            final.append(_fc)/'
+            extra.append(_fc)/'
 # ② 보호 부류 승격 제거 — fix 가 decide 로 안 올라간다.
 # R19 이전엔 승격 분기 전체를 꺼(`elif False and ...`) `promotion`·`promoted_from` 키 자체가
 # 생기지 않아 case_T10 의 첫 단언이 그 키를 직접 인덱싱하다 KeyError 로 죽었다(traceback 2,
@@ -320,9 +340,19 @@ mut bucket_conflict_threshold_raised case_T13_ids_distinct sed_route \
 #    전용 가드(`if not d0 or d0.get("state") != "expired":`)부터 이 줄까지만
 #    range 로 좁혀 재상승 쪽 occurrence 하나만 잡는다(수동 확인: escalated 의
 #    동일 리터럴은 range 밖이라 안 건드림).
+# [Task 8b 재앵커] 분해로 이 블록이 `_auto_decides()` 안으로 갔다 — 그 함수에는 `items`
+# 가 **아예 없다**(불변식이 위치가 아니라 스코프로 보장되게 된 것 자체가 분해의 성과다).
+# 그래서 옛 RHS `items["_reraise_leaked"] = (…)` 는 NameError 를 내고, 옛 LHS
+# `final.append(` 는 누산기 개명(`extra`)으로 매치 0 건이 되어 셀이 no_teeth 로 떨어졌다(실측).
+# BEFORE: s/final\.append({"f": None,/items["_reraise_leaked"] = ({"f": None,/
+# AFTER : s/extra\.append({"f": None,/_leaked = ({"f": None,/
+# 겨누는 규칙과 하향의 «관측 결과»는 그대로다 — 후속 항목이 만들어지되 누산기에 안 들어가
+# `final`·출력·`record_findings` 에서 통째로 사라진다. 바뀐 것은 그 죽은 싱크의 이름뿐이다
+# (옛 이름 `items` 는 「지나면 안 되는 파이프라인」을 가리켰고, 지금은 그 파이프라인이
+# 이 스코프에 존재하지 않아 이름으로 가리킬 대상이 없다).
 mut reraise_leaks_into_items case_reraise_successor_immune_to_recritic sed_route \
   '/if not d0 or d0\.get("state") != "expired":/,/"_source": "reraise"}/{
-s/final\.append({"f": None,/items["_reraise_leaked"] = ({"f": None,/
+s/extra\.append({"f": None,/_leaked = ({"f": None,/
 }'
 
 # ── same_as 가 가리키는 대상이 union-find 의 `parent` 에 없을 때의 강제 계수 (Task 7b, AC7b) ──
