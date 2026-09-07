@@ -175,6 +175,9 @@ mut expired_blocks_forever case_T22b_expired_superseded_unblocks sed_state \
 mut reraise_overwrite case_AC21_reraise_accumulates sed_state \
   's/^    st\["reraise"\] = pending$/    st["reraise"] = reraise/'
 # ⑭ dedup 제거 — 같은 계보의 예약이 라운드마다 쌓인다.
+# 리뷰 R1(fix round 1) — 이 셀이 흔드는 상태(같은 finding_id 의 예약 두 번)는 지금 CLI
+# 경로로는 도달 불가(dedup 코멘트·case_AC21_reraise_dedup 참조) — 이 셀은 그 defense-in-depth
+# 가 실제로 작동함을 재는 것이지, 그 상태가 살아있는 위협임을 재는 것이 아니다.
 mut reraise_no_dedup case_AC21_reraise_dedup sed_state \
   's/^        if r0\["finding_id"\] in seen:$/        if False:/'
 # ⑮ 미소비 예약을 다시 조용히 버린다 — 계수가 0 으로 굳는다.

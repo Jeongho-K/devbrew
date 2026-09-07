@@ -771,6 +771,11 @@ case_AC21_reraise_accumulates() {
 # 이용해(라우터 밖 픽스처 재심기), 같은 id 를 두 번째로 채택 → 두 번째 permit(라운드 3
 # 만료) → 같은 finding_id 가 로컬 reraise 에 다시 나타나게 만든다. 이 상태에서 dedup 이
 # 없으면 목록 길이가 2 로 벌어진다(실측: (2, 1)) — 있으면 1 로 유지된다.
+# 리뷰 R1(fix round 1) — 이 픽스처 재심기는 Task 3·4 를 다 지나도 CLI 만으로는 재현되지
+# 않는 상태다(재만료는 항상 새 id, 만료 재결정은 같은 id 의 예약을 새 permit 을 열기 전에
+# 폐기한다). 이 케이스가 증명하는 것은 「엔진이 이 상태에 이를 수 있다」가 아니라
+# 「이르렀을 때 가드가 실제로 작동한다」다 — 이 픽스처 재심기가 없어져야 할 임시 우회가
+# 아니라, 지금 CLI 로는 못 만드는 상태를 강제로 만들어 가드를 재는 유일한 방법이다.
 case_AC21_reraise_dedup() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null

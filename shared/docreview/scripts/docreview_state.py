@@ -553,6 +553,17 @@ def cmd_observe_diff(a) -> int:
     # 예약이 살아남아야 그것을 «소비하는» finalize 가 후속을 만든다. 대입으로 덮어쓰면
     # 다음 라운드 observe-diff 가 그 예약을 지워 후속이 영영 안 생긴다.
     # dedup 은 `finding_id` 로 한다 — 같은 계보에 라운드당 후속 하나(AC21).
+    # 리뷰 R1(fix round 1) — 지금 CLI 경로로는 이 dedup 이 실제로 걸릴 상태를 만들 수
+    # 없다: permit 은 `decision_id` 로 유일하고 한 번만(`consumed=True`) 처리되며, 같은
+    # finding 이 다시 만료해도 그 후속은 `cmd_finalize` 의 id 배정 루프(`it["id"] = "%s#r%d.%d"`)가
+    # 매번 새로 발급하는 id 를 쓰므로 `finding_id` 가 절대 겹치지 않는다(Task 3 의 재만료가
+    # 실측 — 원 라운드 id 와 후속 라운드 id 는 항상 다르다). Task 4 의 만료 재결정 탈출구도
+    # 같은 id 로 새 permit 을 열기 전에 그 id 의 미소비 예약을 먼저 폐기하므로(그 사이 어떤
+    # observe-diff 도 새 예약을 못 만든다) 충돌이 생기지 않는다. 그래서 이 가드는 **지금
+    # 도달 가능한 상태를 막는 살아있는 불변식이 아니라 defense-in-depth** 다 — 유일한
+    # 도달 경로는 `record-findings` 로 같은 id 를 다시 심는 것인데, 엔진의 유일한 실제
+    # 호출자(`cmd_finalize`)는 항상 새 id 를 배정하므로 그 경로를 쓰지 않는다
+    # (case_AC21_reraise_dedup 이 픽스처로만 그 상태를 만든다).
     pending = list(st.get("reraise") or [])
     seen = {p0["finding_id"] for p0 in pending}
     for r0 in reraise:
