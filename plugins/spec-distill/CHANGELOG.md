@@ -19,9 +19,10 @@
 
 ### Added
 
-- **AC26 오라클 — 골든 캡처.** `shared/tests/fixtures/docreview/capture_finalize_golden.sh` 와 대표 케이스 셋의 실제 `fin.json`·`docreview-state.md`. 어떤 단언도 읽지 않는 출력 필드(`by_disposition`·`defers`·`advisory`·`blocks`·`adjudication_*`)의 회귀는 케이스 스위트가 **원리적으로** 못 본다 — 양성 대조로 실증했다(`finalize` 출력에서 `defers` 키를 빼면 골든 diff 만 깨지고 같은 세 케이스의 단언은 전부 GREEN). 골든은 캡처 스크립트가 케이스 몸통을 안 건드리고 `rm` 을 함수 스코프에서만 shadow 해 가로챈다.
-- **변이 셀 스무 개** (매트릭스 12 → 31 셀). 계보 해소 2패스 순서 · `blocks` 의 `keep_of` 재매핑 · `escalated` 이월 · bucket 충돌 계수 · 재상승 불변식을 겨눈 다섯은 **분해 «전에»** 세웠다 — 분해가 그것을 깨면 소리가 나게. 분해가 앵커를 녹인 셀 둘(`freeze_off`·`reraise_leaks_into_items`)은 재앵커하고 before/after 를 셀 주석에 남겼다(`sed` 는 매치 0 건에도 성공을 내므로 재앵커 없이는 조용히 무동작이 된다).
-- **행동 케이스 아홉** (`cases.sh`) + 상태 강제 픽스처 셋(`st_set_reraise.py`·`st_set_stale_pointer.py`·`st_open_permit.py`). 픽스처는 `load_state`/`save_state` 를 **사본이 아니라 리포에서** import 한다 — 지금은 무해하지만 상태 직렬화기 자체를 겨눈 미래 셀에는 눈이 멀므로 매트릭스 헤더에 사각지대로 기록했다.
+- **AC26 오라클 — 골든 락 `shared/tests/test_docreview_golden.sh`.** 대표 케이스 셋의 실제 `fin.json`·`docreview-state.md` 를 `capture_finalize_golden.sh` 로 다시 떠서 바이트 비교한다. 어떤 단언도 읽지 않는 출력 필드(`by_disposition`·`defers`·`advisory`·`blocks`·`adjudication_*`)의 회귀는 케이스 스위트가 **원리적으로** 못 본다 — 양성 대조로 실증했다(`finalize` 출력에서 `defers` 키를 빼면 골든 락이 3 RED 인데 그 세 케이스의 단언은 0 fail). 골든은 캡처 스크립트가 케이스 몸통을 안 건드리고 `rm` 을 함수 스코프에서만 shadow 해 가로채고, `state.md` 의 `doc:`·`profile:` 절대경로는 `<REPO_ROOT>` 로 정규화해 다른 클론·CI 에서도 성립한다. 락은 코퍼스 하한(6파일)과 절대경로 부재 + 그 짝인 placeholder 실재까지 함께 잰다 — 하한이 없으면 골든을 지운 상태에서 공허하게 통과한다.
+- **변이 셀 스무 개** (매트릭스 12 → 31 셀). 계보 해소 2패스 순서 · `blocks` 의 `keep_of` 재매핑 · `escalated` 이월 · bucket 충돌 계수 · 재상승 불변식을 겨눈 다섯은 **분해 «전에»** 세웠다 — 분해가 그것을 깨면 소리가 나게. 분해가 앵커를 녹인 셀 둘(`freeze_off`·`reraise_leaks_into_items`)은 재앵커하고 before/after 를 셀 주석에 남겼다.
+- **치환 앵커 소실 가드** — 각 변이 셀이 자기 diff 규모를 `<삭제줄>/<추가줄>` 로 선언하고 계측기가 판정 «전에» 대조한다. `sed` 는 매치 0 건에도 성공을 내므로, 리팩터가 대상 줄의 모양을 바꾸면 셀이 아무것도 안 바꾸면서 판정을 계속 낸다 — 그 결말이 셋이고 뒤로 갈수록 나쁘다: 전량 소실은 `no_teeth`, 다중 치환의 일부 소실은 `unmeasurable`, 그리고 **독립적인 일부 소실은 `caught`** 다(규칙의 절반만 재면서 이빨이 있다고 보고하며, 총합에도 grep 에도 안 보인다). 불일치는 규칙 판정이 아니라 계측기 고장으로 낸다.
+- **행동 케이스 열여섯** (`cases.sh` 62 → 78, 삭제 0) + 상태 강제 픽스처 셋(`st_set_reraise.py`·`st_set_stale_pointer.py`·`st_open_permit.py`). 픽스처는 `load_state`/`save_state` 를 **사본이 아니라 리포에서** import 한다 — 지금은 무해하지만 상태 직렬화기 자체를 겨눈 미래 셀에는 눈이 멀므로 매트릭스 헤더에 사각지대로 기록했다.
 
 ## [0.57.0] — 2026-09-07
 
