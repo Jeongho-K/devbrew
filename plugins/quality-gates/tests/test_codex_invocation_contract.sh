@@ -82,11 +82,19 @@ EOF_KNOWN
 fi
 
 # ── 후보마다 실행 관측 ───────────────────────────────────────────────────────
+# capture 디렉토리는 **경로** 기반 슬러그로 키를 잡는다 — basename만 쓰면 서로
+# 다른 경로의 두 후보(예: plugins/{quality-gates,spec-distill}/scripts/
+# run_docreview_codex_reviewer.sh — 둘 다 shared/docreview/scripts/ 정본을
+# 가리키는 심볼릭 링크)가 같은 디렉토리로 떨어져 둘째의 실제 호출이 `call-1`에
+# 밀려나고, 아래 `call-0`은 계속 첫째 것만 판정한다 — 락이 잰 범위를 과장한다
+# (2026-09-07 실측 재현: rc=0으로 이 갈라짐을 놓쳤다). capture 디렉토리가
+# 후보별로 갈리므로 각 디렉토리의 첫 호출(`call-0`)이 곧 그 후보 자신의 호출이다.
 observed_total=0
 while IFS= read -r cand; do
   [ -n "$cand" ] || continue
   name="$(basename "$cand")"
-  cap="$SCRATCH/cap-$name"
+  slug="$(printf '%s' "${cand#$OBS_REPO/}" | tr '/.' '__')"
+  cap="$SCRATCH/cap-$slug"
   mkdir -p "$cap"
   if ! obs_invoke "$cand" "$cap"; then
     # 찾고도 안 돌린 것 = 조용한 드롭 금지. 인자 표에 없는 새 러너가 여기서 잡힌다.

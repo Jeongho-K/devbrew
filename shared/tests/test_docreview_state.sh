@@ -5,7 +5,7 @@
 # 케이스 본문은 fixtures/docreview/cases.sh 에 있다(mutation 락과 공유).
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
-  echo "shared/docreview/scripts/docreview_state.py"; git ls-files -- 'shared/tests/fixtures/docreview/*'; exit 0
+  echo "shared/docreview/scripts/docreview_state.py"; bash "$(dirname "$0")/docreview_fixture_corpus.sh"; exit 0
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/assert.sh"
@@ -34,4 +34,13 @@ case_T38_stagnation
 case_T39_gate_derivation
 case_T45_decision_log_append_only
 case_T12_immutable_permit_targets_summary
+case_AC21_reraise_accumulates
+case_AC21_reraise_dedup
+case_AC20_nonobligation_successors_still_block
+case_AC20_reexpiry_blocks_again
+case_AC20_stale_pointer_cleared_on_reobserve
+case_AC22_expired_escape_hatch
+case_AC22_nonexpired_states_still_refused
+case_AC22_post_expiry_render_tail
+case_AC22_stale_pointer_cleared_via_redecide
 finish

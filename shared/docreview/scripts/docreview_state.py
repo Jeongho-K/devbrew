@@ -387,8 +387,18 @@ def cmd_decide(a) -> int:
     d = st["decides"].get(a.id)
     if not d:
         return fail("unknown_decide", id=a.id)
-    if d["state"] != "open":
+    # 만료(expired)만 재결정을 받는다(설계 §6.4 탈출구) — 후속이 끝내 안 생기는 입력에
+    # 사용자의 길이 없으면 영구 차단이다. rejected · held · applied 는 이미 누군가 의무를
+    # 졌거나 소멸한 것이라 다시 열지 않는다. adopted 도 거부한다 — 그 라운드에 이미 연
+    # permit 이 아직 관측을 기다리는 중이라, 다음 라운드가 스스로 applied 나 expired 로
+    # 답한다(재결정할 대상이 아니라 결과를 기다리는 중인 것뿐이다).
+    if d["state"] not in ("open", "expired"):
         return fail("decide_not_open", id=a.id, state=d["state"])
+    # 만료의 선택지는 「채택」과 「기각」 둘뿐이다. 「보류」는 항목을 held 로 내려
+    # 열린 decide 에도 차단 만료에도 안 들게 만들어 «한 번의 보류로 승인이 열린다» —
+    # 탈출구가 아니라 구멍이다.
+    if d["state"] == "expired" and a.choice == "hold":
+        return fail("decide_hold_not_allowed_for_expired", id=a.id)
     n = int(st["round"])
     f = st["findings"][a.id]
     entry = {"decision_id": "D%d.%d" % (n, len(st["decision_log"]) + 1), "round": n,
@@ -425,6 +435,14 @@ def cmd_decide(a) -> int:
         st["permits"][entry["decision_id"]] = permit
     d["decision_id"] = entry["decision_id"]
     st["decision_log"].append(entry)
+    # 예약과 사용자 결정 중 «먼저 온 하나만» 후속을 만든다(설계 §6.4). 재결정이 왔으므로
+    # 이 finding 의 미소비 예약은 폐기한다 — 안 그러면 뒤늦게 소비된 예약이 이미 처리된
+    # 계보에 후속을 또 만들어 한 계보에 병렬 의무가 선다.
+    st["reraise"] = [r for r in (st.get("reraise") or []) if r["finding_id"] != a.id]
+    # 항목이 expired 를 벗어났다 — 낡은 포인터를 지운다(설계 §6.4 규칙②: 사용자
+    # 재결정, 그 계보에 새 permit 이 열릴 때 포인터를 비운다). 안 그러면 이 재결정이
+    # 다시 만료했을 때 옛 포인터가 그 새 만료를 조용히 풀어버린다.
+    d.pop("superseded_by", None)
     if a.log_file:
         heading = prof["decision_log"].get("heading")
         if not heading:
@@ -534,6 +552,7 @@ def cmd_observe_diff(a) -> int:
         else:
             hit = cur.get(p["apply_anchors"][0]) == p.get("expect_hash")
         p["consumed"] = True
+        d.pop("superseded_by", None)   # 이 만료 인스턴스는 끝났다 — 낡은 포인터가 다음 만료를 풀면 안 된다
         if hit:
             d["state"] = "applied"
             r["progress"] += 1
@@ -549,10 +568,35 @@ def cmd_observe_diff(a) -> int:
             fx["state"] = "applied"
             r["progress"] += 1
             applied.append(fid)
-    st["reraise"] = reraise
+    # 재상승 예약은 누적한다(설계 §6.4) — `finalize` 가 재상승 루프 전에 빠져나간 라운드의
+    # 예약이 살아남아야 그것을 «소비하는» finalize 가 후속을 만든다. 대입으로 덮어쓰면
+    # 다음 라운드 observe-diff 가 그 예약을 지워 후속이 영영 안 생긴다.
+    # dedup 은 `finding_id` 로 한다 — 같은 계보에 라운드당 후속 하나(AC21).
+    # 리뷰 R1(fix round 1) — 지금 CLI 경로로는 이 dedup 이 실제로 걸릴 상태를 만들 수
+    # 없다: permit 은 `decision_id` 로 유일하고 한 번만(`consumed=True`) 처리되며, 같은
+    # finding 이 다시 만료해도 그 후속은 `cmd_finalize` 의 id 배정 루프(`it["id"] = "%s#r%d.%d"`)가
+    # 매번 새로 발급하는 id 를 쓰므로 `finding_id` 가 절대 겹치지 않는다(Task 3 의 재만료가
+    # 실측 — 원 라운드 id 와 후속 라운드 id 는 항상 다르다). Task 4 의 만료 재결정 탈출구도
+    # 같은 id 에 새 permit 을 여는 것과 그 id 의 미소비 예약을 폐기하는 것을 **같은 호출
+    # 안에서 함께** 하므로(§`docreview_state.cmd_decide`, 그 사이 어떤 observe-diff 도
+    # 끼어들 수 없다) 충돌이 생기지 않는다. 그래서 이 가드는 **지금 도달 가능한 상태를
+    # 막는 살아있는 불변식이 아니라 defense-in-depth** 다 — [Task 4 fix round 1 정정]
+    # 유일한 도달 경로는 픽스처(`st_open_permit.py`)로 `cmd_decide` 를 완전히 우회해
+    # 같은 id 에 두 번째 permit 을 직접 여는 것이다. `record-findings` 재심기 뒤 실제
+    # `cmd_decide` 로 재채택하는 경로(Task 2/3 원안)는 그 재채택 자체가 첫 예약을 먼저
+    # 지워버려 이 상태에 이르지 못한다(`case_AC21_reraise_dedup` 이 이제 그 픽스처로 이
+    # 상태를 만든다).
+    pending = list(st.get("reraise") or [])
+    seen = {p0["finding_id"] for p0 in pending}
+    for r0 in reraise:
+        if r0["finding_id"] in seen:
+            continue
+        pending.append(r0)
+        seen.add(r0["finding_id"])
+    st["reraise"] = pending
     _refresh_open_lineages(st, n)
     save_state(a.state_dir, st, "observe-diff applied=%d expired=%d" % (len(applied), len(expired)))
-    _emit({"ok": True, "applied": applied, "expired": expired, "reraise": reraise, "progress": r["progress"]})
+    _emit({"ok": True, "applied": applied, "expired": expired, "reraise": pending, "progress": r["progress"]})
     return 0
 
 
@@ -562,17 +606,17 @@ def gate_summary(st) -> dict:
     dec = st["decides"]
     fx = st["fixes"]
     asks = st["asks"]
-    # 승인을 막는 것은 `open` 과 `adopted` 다(§6.4). `expired` 는 「같은 계보의 새 decide 로
-    # 다시 올라온다」가 전제이므로, 그 후속이 실제로 생긴 뒤에는 의무를 후속이 진다 — 후속이
-    # 열려 있으면 그것이 막고, 사용자가 후속을 기각·보류했으면 그 결정이 산다. 후속이 아직
-    # 없는 동안(재상승 예약이 route 를 통과하기 전, 또는 그 변환이 실패한 경우)에는 의무를
-    # 아무도 지지 않으므로 만료 항목 자신이 계속 막는다 — fail-closed.
-    superseded = {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")}
+    # 만료가 승인을 막는지는 «전방» 포인터 하나가 정한다(설계 §6.4). 역방향으로 세면
+    # (「나를 가리키는 finding 이 있다」) 의무를 안 지는 후속 — 비차단 ask · drop ·
+    # defer · 재비판 reject — 이 하나만 와도 차단이 풀린다. 라우터의 자동 계보 연결이
+    # 지목 없는 finding 에도 supersedes 를 붙이기 때문이다. superseded_by 를 쓰는 곳은
+    # 재상승 루프 하나뿐이라 그 기록은 의무의 증거다. 기록이 없으면 막는다 — fail-closed.
     g = {
         "round": n, "rereview_count": rr, "cap_reached": rr >= REREVIEW_CAP,
         "open_decide": sorted(i for i, d in dec.items() if d["state"] == "open"),
-        "adopted": sorted(i for i, d in dec.items()
-                          if d["state"] == "adopted" or (d["state"] == "expired" and i not in superseded)),
+        "adopted": sorted(i for i, d in dec.items() if d["state"] == "adopted"),
+        "blocked_expired": sorted(i for i, d in dec.items()
+                                  if d["state"] == "expired" and not d.get("superseded_by")),
         "unapplied_fix": sorted(i for i, f in fx.items() if f["state"] in ("pending", "intent_passed")),
         "held_fix": sorted(i for i, f in fx.items() if f["state"] == "held"),
         "asks_open": sorted(i for i, x in asks.items() if not x.get("answered")),
@@ -585,7 +629,8 @@ def gate_summary(st) -> dict:
     prev = st["rounds"].get(str(n - 1), {})
     g["stagnation"] = bool(n >= 2 and cur.get("open_lineages") and
                            cur.get("open_lineages") == prev.get("open_lineages") and int(cur.get("progress", 0)) == 0)
-    g["approval_ready"] = not g["open_decide"] and not g["adopted"] and not g["unapplied_fix"]
+    g["approval_ready"] = (not g["open_decide"] and not g["adopted"]
+                           and not g["blocked_expired"] and not g["unapplied_fix"])
     g["round_gate_needed"] = bool(g["open_decide"] or g["blocking_ask_open"])
     g["approval_gate_open"] = g["approval_ready"] or g["cap_reached"] or g["stagnation"]
     g["two_stage"] = g["approval_gate_open"] and not g["approval_ready"]
@@ -593,7 +638,8 @@ def gate_summary(st) -> dict:
     rep = cur.get("route_report") or {}
     g["degrade"] = rep.get("degrade") or {}
     g["advisory"] = rep.get("advisory") or []
-    g["counts"] = {k: rep.get(k, 0) for k in ("rejected", "bucket_conflicts", "lineage_mismatch", "revived")}
+    g["counts"] = {k: rep.get(k, 0) for k in ("rejected", "bucket_conflicts", "lineage_mismatch",
+                                              "revived", "reraise_unconsumed")}
     g["counts"]["user_rejected"] = sum(1 for v in st["rejected_lineages"].values() if v.get("by") == "user")
     return g
 
@@ -619,6 +665,11 @@ def render_gate(st, g) -> str:
         out.append("  근거: %s" % dv.get("basis", f.get("evidence") or "—"))
         out.append("  대안: %s" % " / ".join(dv.get("alternatives") or ["채택", "기각", "보류"]))
         out.append("  영향: %s" % dv.get("impact", f.get("anchor")))
+    for fid in g["blocked_expired"]:
+        f = F[fid]
+        d = st["decides"].get(fid) or {}
+        tail = " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
+        out.append("[만료·차단] %s — %s (채택 / 기각%s)" % (fid, f.get("summary"), tail))
     for fid in g["blocking_ask_open"]:
         f = F[fid]
         out.append("[ask 비차단] %s — %s → 전제인 fix: %s" % (fid, f.get("summary"), ", ".join(f.get("blocks") or [])))
@@ -627,9 +678,9 @@ def render_gate(st, g) -> str:
     if g["approval_gate_open"] and g["unapplied_fix"]:
         out.append("미적용 fix(적용 예정 / drop): " + ", ".join(g["unapplied_fix"]))
     c = g["counts"]
-    out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d"
+    out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d · 미소비 재상승 예약 %d"
                % (c["rejected"], c["user_rejected"], len(g["dropped"]), c["bucket_conflicts"],
-                  c["lineage_mismatch"], c["revived"]))
+                  c["lineage_mismatch"], c["revived"], c["reraise_unconsumed"]))
     if g["approval_ready"]:
         out.append("다음: 승인 게이트 — 진행 옵션 활성")
     elif g["two_stage"]:

@@ -3,6 +3,17 @@
 `quality-gates` 플러그인의 주요 변경 사항을 기록합니다.
 포맷은 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), 버전 규칙은 [SemVer](https://semver.org/spec/v2.0.0.html)를 따릅니다.
 
+## [7.5.0] — 2026-09-08
+
+### Fixed
+
+- **`[7.4.0]` 의 「검증 공백」 항목은 **더 이상 유효하지 않다** — 이 PR 의 첫 커밋이 닫았다 (AC25).** 그 항목은 심볼릭 링크로 배포되는 `run_docreview_codex_reviewer.sh` 가 `extract_codex_invocations.py`(`is_symlink()` skip)와 `codex_observation.sh` 양쪽의 모집단에서 빠져 `test_sandbox_enforced.sh`·`shared/tests/test_runner_disposition.sh` 가 이 러너를 못 본다고 적었고, **「첫 호출자가 생기는 PR 2 에서 도출기의 skip 을 다시 판단한다」** 고 미뤘다. **그 미룸은 실행되지 않았다** — 판단은 PR 1b(이 릴리스)가 했고 결론은 「모집단에 넣는다」다. 두 수집기가 이제 링크 배포 러너를 보고, 두 락이 이 러너를 실제로 검사한다. `[7.4.0]` 만 읽고 「공백이 아직 열려 있다」로 결론짓지 말 것.
+- **codex 관측 캡처를 basename 이 아니라 «경로»로 키잉한다.** 같은 basename 을 가진 후보 둘(링크 배포본과 정본)이 서로를 덮어써 한쪽의 관측이 조용히 사라졌다 — 심볼릭 링크를 모집단에 넣자마자 드러난 결함이다.
+
+### Changed
+
+- **문서 리뷰 엔진 `shared/docreview/` 의 엔진 결함 일곱 + `cmd_finalize` 분해.** 이 플러그인은 `scripts/docreview_{state,anchor,route}.py`·`run_docreview_codex_reviewer.sh` 심볼릭 링크로 엔진을 배포하므로 같이 bump 한다(cache key). 내용 전문은 `plugins/spec-distill/CHANGELOG.md` `[0.58.0]` — AC20(승인 차단을 전방 포인터로) · AC21(재상승 예약 누적·dedup·미소비 계수) · AC22(만료 재결정 탈출구) · AC23(check-intent 일반 경로 앵커 실재) · AC24(permit 라운드 경계에 이빨) · AC27과 그 쌍둥이(어휘 밖 verdict · `same_as` 허상 타겟을 `coerced` 로 계수) · AC26(분해 + 골든/스위트/변이 삼중 오라클). **호출자는 여전히 0** — `/qg critique` 전환은 후속 major PR 그대로다.
+
 ## [7.4.0] — 2026-09-06
 
 ### Added

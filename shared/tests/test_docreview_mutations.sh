@@ -7,10 +7,37 @@
 # 방법: 스크립트 셋을 임시 디렉토리에 사본으로 두고(형제 adjudication.py 링크 포함), 그 사본을
 # sed 로 변이한 뒤 cases.sh 의 한 케이스를 그 디렉토리로 돌린다. 케이스가 fail 하면(1건 이상 ✗)
 # 그 변이는 «잡혔다». **양성 대조**: 변이 전 사본에서 같은 케이스가 GREEN 이어야 한다(계측기 검증).
+#
+# **케이스 작성 시 함정(Task 5·Task 8a 가 각각 실측) — 엄격 `d["key"]` 인덱싱은 이빨을 숨긴다.**
+# 셀이 겨눈 규칙이 정확히 위반됐을 때, 그 위반이 어떤 키를 통째로 없애는 경우(예: 승격이
+# 안 먹어 `promotion` 키 자체가 안 생김) 단언이 `d["key"]` 로 엄격 인덱싱하면 `KeyError` 로
+# 죽는다 — `run_case` 의 traceback 검출기는 그 죽음을 규칙 위반(caught)이 아니라 **측정
+# 불가**(unmeasurable, `classify_result` 참조)로 판정한다. 규칙이 실제로 깨졌는데도 판정은
+# 「못 쟀다」로 나와 위반이 안 보이게 된다. 케이스 작성자는 그 값이 아예 사라질 수 있는
+# 변이를 겨눌 때 `d["key"]` 대신 `d.get("key")` 를 써라 — 기대값이 구체적 리터럴(`"protected"`
+# 같은)인 한 이 완화는 단언을 약화하지 않는다: 키가 없으면 `.get()` 은 `None` 을 내고,
+# `None != "protected"` 는 여전히 RED 다. 약해지는 것은 크래시로부터의 «보호» 뿐, 판정의
+# 엄격함이 아니다.
+#
+# **픽스처 헬퍼의 사각지대(Task 8b 이월 노트) — 시딩은 사본이 아니라 리포를 쓴다.**
+# `st_set_reraise.py`·`st_set_stale_pointer.py`·`st_open_permit.py` 는 `load_state`/
+# `save_state` 를 **리포의 `shared/docreview/scripts/`** 에서 import 한다(각 파일의
+# `SCRIPTS_DIR = …parents[3] / "docreview" / "scripts"`). 매트릭스가 변이시키는 것은
+# 임시 사본이므로, 이 헬퍼들이 픽스처를 «심는» 단계는 어떤 변이도 지나지 않는다.
+# 지금은 무해하다 — 이 헬퍼를 쓰는 세 셀(`reraise_no_dedup`·`reraise_loss_uncounted`·
+# `fwd_pointer_not_cleared`)은 전부 **엔진 술어**를 흔들고 그 술어는 사본에서 돈다.
+# 그러나 훗날 상태 **직렬화기 자체**(`load_state`/`save_state`)를 겨눈 셀이 생기면,
+# 이 헬퍼를 쓰는 케이스는 그 변이에 구조적으로 눈이 먼다 — 시딩이 pristine 직렬화기로
+# 되기 때문이다. 그런 셀을 세우려면 먼저 헬퍼가 `$SCRIPTS`(사본)를 보게 바꿔야 한다.
 set -u
 if [ "${1:-}" = "--emit-scanned" ]; then
+  # `--emit-scanned` 의 계약은 **실제로 읽은** 경로다 — 선언에서 목록을 도출하면
+  # 「락이 읽었다」의 증거가 아니라 선언의 자기 반복이다
+  # (`test_guards_coverage_bidirectional.sh` 헤더). 이 매트릭스는 `golden/**` 과
+  # `capture_finalize_golden.sh` 를 한 번도 안 읽으므로 그 일곱은 코퍼스 도출기가
+  # 뺀다 — 근거와 형제 락들의 사정은 `docreview_fixture_corpus.sh` 헤더에.
   git ls-files -- 'shared/docreview/scripts/*.py'
-  git ls-files -- 'shared/tests/fixtures/docreview/*'
+  bash "$(dirname "$0")/docreview_fixture_corpus.sh"
   exit 0
 fi
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -74,16 +101,65 @@ classify_result() {
   if [ "$3" != "0" ]; then echo "caught"; return; fi
   echo "no_teeth"
 }
-# mut_expect <기대판정> <이름> <케이스> <sed 프로그램…> — 사본을 변이하고 classify_result
+# _churn <clean-dir> <mut-dir> → 변이가 실제로 만든 diff 규모를 `<삭제줄>/<추가줄>` 로.
+#
+# **왜 삭제줄만 세지 않는가** 〔실측〕 — 셀 ⑨(protected_self_only)의 치환은 원본 줄을
+# 그대로 남기고 그 뒤에 한 줄을 «끼운다». 삭제줄만 세면 그 셀은 0 이 되어 **완전
+# 무동작(매치 0건)과 구별되지 않는다.** 삭제·추가를 쌍으로 선언하면 순수 삽입은
+# `0/1`, 무동작은 `0/0` 으로 갈린다.
+#
+# **왜 총합이 아니라 쌍인가** — 쌍이 엄격히 더 변별적이고 비용이 같다. 한 치환이
+# 죽었을 때 삭제와 추가가 우연히 같은 폭으로 줄어 총합이 겹칠 여지를 없앤다.
+#
+# 사본의 모든 `*.py` 를 훑는다 — 셀이 실수로 다른 파일까지 건드리면 그것도 잡힌다
+# (형제 `adjudication.py` 는 사본에서도 리포로의 심볼릭 링크라 항상 0/0 이다).
+_churn() {
+  local del=0 add=0 f b nd na
+  for f in "$1"/*.py; do
+    b="$(basename "$f")"
+    nd="$(diff "$1/$b" "$2/$b" 2>/dev/null | grep -c '^<')"
+    na="$(diff "$1/$b" "$2/$b" 2>/dev/null | grep -c '^>')"
+    del=$((del + nd)); add=$((add + na))
+  done
+  echo "$del/$add"
+}
+# ── 치환 앵커 소실 가드 (Task 8b fix round 1) ─────────────────────────────
+# **`sed` 는 매치 0 건에도 0 을 낸다.** 그래서 분해·리팩터가 대상 줄의 «모양»을 바꾸면
+# 셀이 아무것도 안 바꾸면서 판정만 계속 낸다. 실측된 세 결말이 전부 다르고, 뒤로 갈수록
+# 나쁘다 〔Task 8b 실측 + 리뷰 실측〕:
+#   · 전량 소실           → `no_teeth`      (매트릭스가 소리를 낸다 — 그나마 낫다)
+#   · 다중 치환의 일부 소실 → `unmeasurable` (「크래시라 못 쟀다」로 원인이 한 겹 가려진다)
+#   · 다중 치환의 «독립» 일부 소실 → **`caught`** (규칙의 절반만 재면서 이빨이 있다고
+#     보고한다. `안 잡힘` grep 에도, unmeasurable 휴리스틱에도, 스위트 총합에도 안 보인다)
+# 마지막 것을 리뷰가 `same_as_unknown_target_silent` 에서 실측했다: x 쪽 치환만 죽여도
+# fail=1 pass=1 로 **판정이 `caught` 그대로**다.
+#
+# 그래서 **각 셀이 자기 변이의 diff 규모를 선언하고 계측기가 실제와 대조한다.** 불일치는
+# 규칙 판정이 아니라 «계측기 고장»으로 낸다 — 고장 난 것이 계측기이기 때문이다.
+# 「파일이 바뀌긴 했는가」만 보는 가드로는 부족하다: 그것은 전량 소실만 잡고 위의 둘째·
+# 셋째를 놓친다. 규모는 바로 위 `_churn` 이 잰다.
+#
+# **선언값은 측정으로 «채우지» 않았다** — 31 셀 전부를 각자의 sed 프로그램에서 손으로
+# 도출한 뒤(치환 개수 · 한 줄이 몇 줄로 늘어나는가) 측정과 대조했고 31/31 일치했다.
+# 측정값을 그대로 베끼면 이미 반쯤 죽어 있는 셀의 고장 난 값을 정답으로 굳힌다.
+# mut_expect <기대판정> <churn> <이름> <케이스> <sed 프로그램…> — 사본을 변이하고 classify_result
 # 의 판정이 <기대판정> 과 일치하는지 본다. 생존 단언 수(apass)는 항상 메시지에 출력해
 # 미래 독자가 변별력을 볼 수 있게 하되, 「생존 0」을 판정 기준으로 쓰지는 않는다(단언이
 # 하나뿐인 케이스가 미래에 어떤 셀을 지목하면 오분류하기 때문 — 판정은 오직 classify_result
 # 가 낸 문자열과의 일치 여부).
 mut_expect() {
   local expected="$1"; shift
+  local churn_want="$1"; shift
   local name="$1" case="$2"; shift 2
   local d="$BASE_MUT/$name"; mkclone "$d"
   "$@" "$d" || { no "변이 '$name': sed 적용 실패"; return; }
+  # 앵커 소실 가드는 «판정보다 앞»이다 — 계측기가 고장 났으면 그 뒤의 판정은
+  # 무엇이 나오든 규칙에 귀속할 수 없다(caught 조차도).
+  local churn_got; churn_got="$(_churn "$CLEAN" "$d")"
+  if [ "$churn_got" != "$churn_want" ]; then
+    no "변이 '$name': 치환 앵커 소실 — 실제 churn $churn_got, 선언 $churn_want (규칙 판정이 아니라 «계측기 고장»: 이 셀의 sed 중 일부 또는 전부가 대상 코드를 못 찾았다. 코드가 움직였으면 셀을 재앵커하고 선언값을 갱신하라)"
+    return
+  fi
   local bfail bpass btb afail apass atb verdict desc
   _split3 "$(run_case "$CLEAN" "$case")"; bfail="$_f"; bpass="$_p"; btb="$_tb"
   _split3 "$(run_case "$d" "$case")";     afail="$_f"; apass="$_p"; atb="$_tb"
@@ -97,7 +173,7 @@ mut_expect() {
     no_teeth)     desc="안 잡힘(clean=$bfail, mutated=$afail) — 락이 이 규칙을 안 잰다" ;;
   esac
   if [ "$verdict" = "$expected" ]; then
-    ok "변이 '$name' → $case $desc"
+    ok "변이 '$name' → $case $desc [churn $churn_got]"
   else
     no "변이 '$name' → $case 판정=$verdict 기대=$expected 불일치 — $desc"
   fi
@@ -114,12 +190,21 @@ sed_state()  { sed -i.bak "$1" "$2/docreview_state.py"  && rm -f "$2/docreview_s
 # decision_view 를 그 자리에서 직접 채운다(같은 `_decision_view` 함수 재사용, `auto` 값도
 # origin="auto" 그대로라 정확) — 그래서 evidence·decision_view 를 재는 단언 2~4 는 안
 # 흔들리고, 규칙의 핵심(사후 항목이 실제로 decide 가 되는가)을 재는 단언 1 만 깨끗이 깨진다.
-mut freeze_off case_T35_frozen_change_auto_decide sed_route \
-  's/final\.append({"f": None, "layer": 1 if cls\["protected"\] else 2, "category": "frozen_change",/_fc = {"f": None, "layer": 1 if cls["protected"] else 2, "category": "frozen_change",/
+# [Task 8b 재앵커] `cmd_finalize` 분해로 사후·이월 생성이 `_auto_decides()` 로 나가면서
+# 그 함수의 누산기 이름이 `final` → `extra` 로 바뀌었다(호출부가 `final.extend(extra)`).
+# 옛 치환 1·3 은 `final.append(` 를 겨눴다 — 치환 1 은 **매치 0 건으로 조용히 무동작**이
+# 됐는데 치환 2·3 은 여전히 맞아서, 셀은 no_teeth 가 아니라 **정의되지 않은 `_fc` 참조로
+# 크래시**해 unmeasurable 로 떨어졌다(실측). 「매치 0 건도 성공」의 변종 — 여러 치환 중
+# 일부만 죽으면 판정이 「안 잡힘」이 아니라 「못 잼」으로 나와 원인이 더 가려진다.
+# BEFORE: s/final\.append({"f": None, "layer": 1 if …/  ·  주입부 `final.append(_fc)`
+# AFTER : s/extra\.append({"f": None, "layer": 1 if …/  ·  주입부 `extra.append(_fc)`
+# 겨누는 규칙(사후 얼림 diff 항목이 실제로 decide 가 되는가)은 바뀌지 않았다.
+mut 3/5 freeze_off case_T35_frozen_change_auto_decide sed_route \
+  's/extra\.append({"f": None, "layer": 1 if cls\["protected"\] else 2, "category": "frozen_change",/_fc = {"f": None, "layer": 1 if cls["protected"] else 2, "category": "frozen_change",/
 s/"anchor": c\["anchor"\], "disposition": "decide",/"anchor": c["anchor"], "disposition": "fix",/
 s/"prev_hash": c\.get("old_hash"), "immutable": cls\["immutable"\], "_source": "diff"})/"prev_hash": c.get("old_hash"), "immutable": cls["immutable"], "_source": "diff"}\
             _fc["decision_view"] = _decision_view(_fc, a.doc)\
-            final.append(_fc)/'
+            extra.append(_fc)/'
 # ② 보호 부류 승격 제거 — fix 가 decide 로 안 올라간다.
 # R19 이전엔 승격 분기 전체를 꺼(`elif False and ...`) `promotion`·`promoted_from` 키 자체가
 # 생기지 않아 case_T10 의 첫 단언이 그 키를 직접 인덱싱하다 KeyError 로 죽었다(traceback 2,
@@ -128,7 +213,7 @@ s/"prev_hash": c\.get("old_hash"), "immutable": cls\["immutable"\], "_source": "
 # 깨끗이 깨진다. `decision_view` 는 disposition=="decide" 일 때만 채워지는 필드라 그대로
 # 두면 둘째 단언이 또 KeyError 로 죽으므로, 승격이 안 먹었다는 사실 그대로(`auto: False`)
 # 직접 채워 둘째 단언도 크래시 없이 깨끗이 깬다.
-mut protected_off case_T10_protected_decide sed_route \
+mut 1/1 protected_off case_T10_protected_decide sed_route \
   '/it\["promotion"\] = "protected"/{n;s/it\["disposition"\] = "decide"/it["decision_view"] = {"auto": False}  # MUT: promotion recorded but not applied/;}'
 # ③ reject 의 evidence 요구 제거 — evidence 없는 reject 도 유효.
 # R19 이전엔 가드를 `if True:` 로 눌러도 그 안의 `v["evidence"]` 접근은 그대로 남아, evidence
@@ -140,22 +225,22 @@ mut protected_off case_T10_protected_decide sed_route \
 # case_T05_T06_reject 의 두 번째 단언이 쓰는 `fsum`(무조건 `[0]` 인덱싱)이 그 항목을 못
 # 찾아 IndexError 로 다시 죽는다 — evidence 없는 reject 를 "진짜로" 유효화하는 어떤 sed 도
 # 이 케이스에서는 이 크래시를 피할 수 없다는 것을 실측으로 확인했다, 아래 보고서 참조).
-mut reject_no_evidence case_T05_T06_reject sed_route \
+mut 1/1 reject_no_evidence case_T05_T06_reject sed_route \
   's/L\.coerced("verdict", "reject", "confirm")/it["disposition"] = "drop"/'
 # ④ 상향을 하향 허용으로 뒤집기 — raise to=drop 이 먹힌다
-mut raise_down case_T03_T04_raise sed_route 's/RANK\[to\] > RANK\[it\["disposition"\]\]/RANK[to] != RANK[it["disposition"]]/'
+mut 1/1 raise_down case_T03_T04_raise sed_route 's/RANK\[to\] > RANK\[it\["disposition"\]\]/RANK[to] != RANK[it["disposition"]]/'
 # ⑤ id 에서 라운드 제거 — 같은 bucket 이 라운드 넘어 충돌
-mut id_no_round case_T11_permit_keeps_disposition sed_route 's/"%s#r%d.%d" % (b, n, k)/"%s#r1.%d" % (b, k)/'
+mut 1/1 id_no_round case_T11_permit_keeps_disposition sed_route 's/"%s#r%d.%d" % (b, n, k)/"%s#r1.%d" % (b, k)/'
 # ⑥ defer 예외 제거(불허 defer 를 fix 로) — AC10 위반
-mut defer_to_fix case_T08_defer_disallowed sed_route 's/if d == "defer":/if d == "defer" and False:/'
+mut 1/1 defer_to_fix case_T08_defer_disallowed sed_route 's/if d == "defer":/if d == "defer" and False:/'
 # ⑦ 상한 3 으로 — 라운드 4 가 승인 없이 돈다
-mut cap_three case_T37_cap_and_extra sed_state 's/^REREVIEW_CAP = 2$/REREVIEW_CAP = 3/'
+mut 1/1 cap_three case_T37_cap_and_extra sed_state 's/^REREVIEW_CAP = 2$/REREVIEW_CAP = 3/'
 # ⑧ check-intent 의 edit_scope 검사 제거 — 범위 밖도 통과
-mut intent_no_scope case_AC6_fix_contract sed_anchor 's/if intent != scope:/if False and intent != scope:/'
+mut 1/1 intent_no_scope case_AC6_fix_contract sed_anchor 's/if intent != scope:/if False and intent != scope:/'
 # ⑨ 보호 부류 캐스케이드 제거(자기 제목만) — 하위 절이 자유 편집
-mut protected_self_only case_anchor_protected_cascade sed_state 's/def _titles_of(sec, by_anchor):/def _titles_of(sec, by_anchor):\n    return [sec.get("title") or ""]  # MUT/'
+mut 0/1 protected_self_only case_anchor_protected_cascade sed_state 's/def _titles_of(sec, by_anchor):/def _titles_of(sec, by_anchor):\n    return [sec.get("title") or ""]  # MUT/'
 # ⑩ same_as max 를 min 으로 — 낮은 처분이 남는다
-mut same_as_min case_T02_same_as_max sed_route 's/keep = max(live, key=lambda m: (RANK\[items\[m\]\["disposition"\]\], m))/keep = min(live, key=lambda m: (RANK[items[m]["disposition"]], m))/'
+mut 1/1 same_as_min case_T02_same_as_max sed_route 's/keep = max(live, key=lambda m: (RANK\[items\[m\]\["disposition"\]\], m))/keep = min(live, key=lambda m: (RANK[items[m]["disposition"]], m))/'
 # ⑪ 카나리아 — 일부러 크래시하는 변이(R19 이전의 옛 셀 ③ sed 그대로). evidence 가드를
 # 무조건 참으로 눌러도 그 안의 `v["evidence"]` 접근은 그대로 남아, evidence 키가 없는
 # verdict 에서 KeyError 로 죽는다(R19 리뷰어 원 발견 그대로 재현). **기대 판정은
@@ -165,10 +250,170 @@ mut same_as_min case_T02_same_as_max sed_route 's/keep = max(live, key=lambda m:
 # 판정이 caught 로 바뀌어 기대(unmeasurable)와 어긋나 이 셀 자체가 RED 로 소리를
 # 낸다. 미래에 엔진이 바뀌어 이 sed 가 더는 안 죽어도 같은 방식으로 소리 낸다(판정이
 # caught 가 되어 기대 unmeasurable 과 불일치) — 조용히 멎지 않는다.
-mut_expect unmeasurable canary_crash case_T05_T06_reject sed_route 's/if v.get("evidence"):/if True:/'
-# ⑫ 만료 항목의 「후속이 지는 의무」를 없애기 — 후속이 있든 없든 expired 가 영구히 막는다.
-# 하향 방향: 승인 게이트가 이행된 계보에도 안 열린다. 값만 어긋나고 크래시는 없다
-# (`superseded` 집합은 그대로 계산되고 쓰이지만 않는다 — 미사용 지역변수라 traceback 없음).
-mut expired_blocks_forever case_T22b_expired_superseded_unblocks sed_state \
-  's/if d\["state"\] == "adopted" or (d\["state"\] == "expired" and i not in superseded)/if d["state"] in ("adopted", "expired")/'
+mut_expect unmeasurable 1/1 canary_crash case_T05_T06_reject sed_route 's/if v.get("evidence"):/if True:/'
+# [Task 3 실행 노트, fix round 1 에서 정정] ⑫(expired_blocks_forever) 는 여기 있었다 —
+# 만료의 차단 해제를 «후속 존재» 의 역방향 스캔으로 재던 시절의 셀이다. 그 술어 자체가
+# 전방 포인터로 바뀌면서 대상 문장이 사라져 sed 가 매치 0 건으로 무동작(no_teeth
+# 실측)이 됐고, 그 셀이 재던 케이스(T22b 의 「채택·적용하면 승인이 다시 열린다」 꼬리)도
+# 함께 지워졌다(위 실행 노트). [정정] 그 꼬리가 재던 개념 — 의무 이행이 «승인 게이트를
+# 여는가» — 은 case_AC20_reexpiry_blocks_again 이 재지 않는다(그 케이스는 approval_ready
+# 를 한 번도 안 읽고, 결말도 여전히 열린 계보로 끝난다) — case_T21_permit_applied 끝에
+# 단언 하나(adopted·blocked_expired 둘 다 빈 채 승인 게이트가 열림)를 더해 되살렸다.
+# case_AC20_reexpiry_blocks_again 이 실제로 재는 것은 다른 개념 — 의무 이행이 «차단
+# 술어에서 항목을 빼는가»(`blocked_expired` 에서 사라지는가) — 이고, 술어에서
+# `and not d.get("superseded_by")` 만 지워보면(수동 확인) 그 케이스가 그대로 RED 로
+# 죽는다. 그 경로의 각 걸음(포인터를 쓰는가·비우는가)은 아래 ⑯⑰ 이 하향으로 흔든다.
+# 번호는 당겨 채우지 않는다(과거 커밋 인용의 자릿수 정합).
+# ⑬ 예약 누적 → 대입 복원. 조기 반환 라운드의 예약이 다음 observe-diff 에 사라진다.
+mut 1/1 reraise_overwrite case_AC21_reraise_accumulates sed_state \
+  's/^    st\["reraise"\] = pending$/    st["reraise"] = reraise/'
+# ⑭ dedup 제거 — 같은 계보의 예약이 라운드마다 쌓인다.
+# 리뷰 R1(fix round 1) — 이 셀이 흔드는 상태(같은 finding_id 의 예약 두 번)는 지금 CLI
+# 경로로는 도달 불가(dedup 코멘트·case_AC21_reraise_dedup 참조) — 이 셀은 그 defense-in-depth
+# 가 실제로 작동함을 재는 것이지, 그 상태가 살아있는 위협임을 재는 것이 아니다.
+mut 1/1 reraise_no_dedup case_AC21_reraise_dedup sed_state \
+  's/^        if r0\["finding_id"\] in seen:$/        if False:/'
+# ⑮ 미소비 예약을 다시 조용히 버린다 — 계수가 0 으로 굳는다.
+mut 1/1 reraise_loss_uncounted case_AC21_unconsumed_counted sed_route \
+  's/^            reraise_unconsumed += 1.*$/            pass/'
+# ⑯ 전방 포인터 대입 삭제 → 후속이 생겨도 영구히 막는다.
+mut 1/1 fwd_pointer_never_written case_AC20_reexpiry_blocks_again sed_route \
+  's/^            d0\["superseded_by"\] = it\["id"\]$/            pass/'
+# ⑰ 포인터 초기화 삭제 → 재만료를 낡은 포인터가 푼다(조용한 승인).
+# [Task 3 실행 노트] 브리프 원안은 이 셀을 case_AC20_reexpiry_blocks_again 에 겨눴으나
+# 실측 no_teeth(clean=0, mutated=0) — 그 케이스가 만드는 두 decides 레코드(gid·succ) 중
+# 어느 쪽도 pop() 이 지우는 대상 상태(포인터가 이미 찍힌 레코드가 같은 id 로 새 permit
+# 을 다시 받는 것)에 놓이지 않는다: gid 의 permit 은 포인터가 찍히기 «전»에 이미 소모되고,
+# succ 는 애초에 포인터를 받은 적이 없다. sed 패턴 자체는 정확히 매치한다(수동 확인) —
+# 대상을 case_AC20_stale_pointer_cleared_on_reobserve(픽스처로 그 조합을 강제하는 케이스)
+# 로 바꾼다.
+# [Task 8a 재앵커] 이 셀과 ㉒(decide_pointer_not_cleared)은 같은 리터럴
+# `d.pop("superseded_by", None)` 을 겨누고 오직 **들여쓰기**(8-space `cmd_observe_diff`
+# vs 4-space `cmd_decide`)로만 갈렸다 — 오늘은 각자 정확히 한 줄만 맞지만, 훗날 누가
+# `cmd_decide` 의 pop 을 `if` 안으로 옮기면(들여쓰기가 8-space 로 바뀌면) 이 셀이 «두
+# 줄 다» 맞고도 여전히 caught 를 내 다른 것을 재는 줄 모른다(헤더-satisfiable 류 함정,
+# CLAUDE.md 「grep 락의 헤더-satisfiable 함정」). 이 줄에만 있는 꼬리 주석으로 재앵커해
+# 들여쓰기가 바뀌어도 자기 줄만 계속 맞게 한다 — 실측: 재앵커 후에도 정확히 한 줄만
+# 맞고(다른 pop 은 안 건드림) 판정은 여전히 caught.
+mut 1/1 fwd_pointer_not_cleared case_AC20_stale_pointer_cleared_on_reobserve sed_state \
+  's/d\.pop("superseded_by", None)   # 이 만료 인스턴스는 끝났다.*/pass/'
+# ⑱ 술어를 역방향 supersedes 스캔으로 복원 — 이 셀이 「전방이냐 역방이냐」의 유일한 변별기다.
+#    앞의 둘은 «막느냐 마느냐» 만 흔들고 방향을 구별하지 않는다.
+mut 1/1 predicate_backward_scan case_AC20_nonobligation_successors_still_block sed_state \
+  's/if d\["state"\] == "expired" and not d\.get("superseded_by")/if d["state"] == "expired" and i not in {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")}/'
+
+# ── 만료 재결정 탈출구 (Task 4, AC22) ───────────────────────────────────────
+# ⑲ 탈출구를 되돌린다 → expired 는 다시 열지 않는다(영구 차단, 후속이 끝내 안 생기면
+#    사용자에게 길이 없다).
+mut 1/1 expired_redecide_refused case_AC22_expired_escape_hatch sed_state \
+  's/if d\["state"\] not in ("open", "expired"):/if d["state"] != "open":/'
+# ⑳ 만료의 「보류」 거부를 지운다 → 보류 한 번에 승인이 열린다(구멍) — 위 BEFORE 재현이
+#    바로 이 변이가 실제로 만드는 상태다.
+mut 1/1 expired_hold_allowed case_AC22_expired_escape_hatch sed_state \
+  's/^    if d\["state"\] == "expired" and a\.choice == "hold":$/    if False:/'
+# ㉑ 가드를 완전히 연다 — 음의 요구(rejected·held·applied·adopted 네 상태 모두 거부)는
+#    넓히는 변이로만 잰다(좁히는 변이는 이 술어에 닿지 않는다). [리뷰 M5] adopted 는
+#    이미 연 permit 이 관측 대기 중이라 재결정 대상이 아니다(설계 §6.4) — 넷 중 하나만
+#    빠지면 재는 폭이 좁아지므로 네 상태 전부 case 에 있어야 한다.
+mut 1/1 redecide_guard_widened case_AC22_nonexpired_states_still_refused sed_state \
+  's/if d\["state"\] not in ("open", "expired"):/if False:/'
+# ㉒ 재결정이 자기 자신의 낡은 포인터를 지우는 것(설계 §6.4 규칙②, 브리프에 없던 정정 —
+#    Task 3 은 `cmd_observe_diff` 의 관측-시점 pop 하나만 구현했다)을 지운다. 4-space
+#    들여쓰기로 앵커해 `cmd_observe_diff` 의 8-space pop(⑰ 이 잡는 그 줄)과 구별한다 —
+#    둘 다 똑같이 `d.pop("superseded_by", None)` 라 들여쓰기가 유일한 변별기다.
+#    `case_AC22_stale_pointer_cleared_via_redecide` 의 중간 단언(재결정 «직후», 다음
+#    라운드 관측 전)만 이 pop 을 격리해서 잰다 — 그 관측-시점 pop 은 다음 라운드까지
+#    기다려야 걸리므로 이 창을 못 잡는다.
+mut 1/1 decide_pointer_not_cleared case_AC22_stale_pointer_cleared_via_redecide sed_state \
+  's/^    d\.pop("superseded_by", None)$/    pass/'
+# ㉓ [리뷰 I1] post 만료의 원복-경고 꼬리(§6.4 탈출구 마지막 문장)를 지운다 → 렌더가
+#    「채택」을 원복 관측 생략의 뜻으로 밝히지 않는다. `case_AC22_expired_escape_hatch`
+#    만으로는 안 잡힌다(F_DEC 는 kind="pre") — post 만료까지 실제로 걷는
+#    `case_AC22_post_expiry_render_tail` 이 유일한 검출기다.
+mut 1/1 post_tail_removed case_AC22_post_expiry_render_tail sed_state \
+  's/ if d\.get("kind") == "post" else ""/ if False else ""/'
+
+# ── check-intent 일반 fix 경로의 앵커 실재 검사 (Task 5, AC23) ─────────────
+# ㉔ 일반 경로의 앵커 실재 검사 제거 — 슬러그 오타가 보호 검사를 건너뛴다.
+# insert-after 분기도 문자 그대로 같은 줄(`if not cls["found"] and target != PREAMBLE:`)을
+# 갖고 있어 순수 텍스트 sed 는 둘 다 잡는다(헤더-satisfiable 함정) — 바로 앞 줄인
+# `return escalate("anchor_immutable")`(파일에 유일)에 앵커해 `n` 으로 그 다음 줄만
+# 겨눈다(cell ② 와 같은 기법).
+mut 1/1 general_anchor_unresolved_off case_AC23_general_fix_anchor_unresolved sed_anchor \
+  '/return escalate("anchor_immutable")/{n;s/if not cls\["found"\] and target != PREAMBLE:/if False:/;}'
+
+# ── `_permit_covers` 의 라운드 경계 (Task 6, AC24) ──────────────────────────
+# ㉕ permit 의 라운드 경계 삭제 — 낡은 permit 이 영원히 보호 승격을 막는다.
+mut 1/1 permit_round_unbounded case_AC24_stale_permit_does_not_cover sed_route \
+  's/if int(p\["round"\]) == n and anchor in p\["apply_anchors"\]/if anchor in p["apply_anchors"]/'
+
+# ── 재비판 verdict 어휘 밖 값의 강제 계수 (Task 7, AC27) ────────────────────
+# ㉖ 어휘 밖 verdict 의 강제 계수 제거 — 다시 조용히 confirm 이 된다.
+mut 1/1 unknown_verdict_silent case_AC27_unknown_verdict_coerced sed_route \
+  's/^                L\.coerced("verdict", vd, "confirm")$/                pass/'
+
+# ── Task 8a — `cmd_finalize` 분해 «전» 커버리지 공백 넷 + 불변식 하나 (AC26 절반) ──
+# 이 매트릭스 열둘(스물여섯 셀)은 계보 해소의 2패스 순서 · `blocks` 재매핑(keep_of) ·
+# `escalated` 이월 · bucket 충돌 계수 중 어느 것도 겨누지 않았다 — Task 8b 의 분해가
+# 이 넷을 깨도 지금까지는 소리가 안 났다. 다섯째는 이 PR 의 fail-closed 설계가 서 있는
+# 불변식(재상승 후속은 `items` 를 안 지난다)이다.
+#
+# ㉗ 계보 해소 2패스 순서 붕괴 — 명시 지목(supersedes)을 먼저 큐에서 비우는 패스를
+#    지우면, 단일 패스가 f-순서(익명화 정렬)대로 돈다. 이 케이스의 두 회귀-round-2
+#    finding("AC 가 여전히 하나뿐이다"·"명시 지목")은 sha1(summary) 정렬상 무지목 쪽이
+#    f1(먼저), 명시 지목 쪽이 f2(나중) — 실측 확인. 단일 패스에서 f1 이 먼저 돌면
+#    무지목 항목이 자동 연결로 큐(원본 finding 하나)를 선점해 명시 지목과 같은 계보를
+#    받아버린다(T15 위반: "지목된 조상은 자동 연결에서 빠지고 남는 것은 새 계보").
+mut 1/1 lineage_two_pass_collapsed case_T14_T15_lineage sed_route \
+  's/if it\.get("supersedes"):/if False:  # MUT: two-pass collapsed/'
+# ㉘ `blocks` 재매핑에서 `keep_of` 리다이렉트 제거 — same_as 로 흡수된 원본을 가리키던
+#    blocks 가 생존자의 최종 id 로 안 따라가고 그냥 사라진다(하향: 소실이 계수도 없이
+#    조용히 일어난다). case_T02_same_as_max 는 b.py 의 ask 가 c.py 항목(same_as 로
+#    흡수됨)을 blocks 로 가리키는 실제 흡수-재매핑 경로다.
+mut 1/1 blocks_keep_of_bypassed case_T02_same_as_max sed_route \
+  's/r2 = keep_of\.get(r, r)/r2 = r/'
+# ㉙ escalated 이월 제거 — round 불일치(아직 자기 차례가 아닌 예약)를 버려서
+#    keep_esc 에 안 남긴다(하향: 「소비되지 않으면 다음으로 넘어간다」가 「소비되지
+#    않으면 사라진다」가 된다). 자연 경로로 이 분기를 밟으려면 finalize 를 건너뛴
+#    라운드가 있어야 한다(AC21 의 reraise 조기-반환과 같은 종류) — 기존 케이스 중
+#    이걸 겨눈 것이 없어 case_escalated_round_mismatch_carries_over 를 새로 썼다.
+mut 1/1 escalated_mismatch_dropped case_escalated_round_mismatch_carries_over sed_route \
+  's/keep_esc\.append(e)/pass/'
+# ㉚ bucket 충돌 계수 문턱을 1→2 로 올린다 — 정확히 둘이 충돌하는 실측 사례(T13)의
+#    공시가 0 으로 죽는다(하향: 진짜 충돌인데 안 보인다). `v > 1` 은 파일에 유일.
+mut 1/1 bucket_conflict_threshold_raised case_T13_ids_distinct sed_route \
+  's/if v > 1/if v > 2/'
+# ㉛ 재상승 후속을 `items` 파이프라인으로 새게 한다 — `final.append(...)` 대신
+#    `items[...] =` 로 저장하면, 그 시점엔 same_as·재비판 verdict 처리·분류 루프가
+#    이미 다 끝난 뒤라(파일에서 그 셋은 전부 이 줄보다 앞선다) `items` 는 죽은
+#    변수다: 아무도 다시 안 읽는다. 그래서 이 항목은 `final`(따라서 출력·
+#    `record_findings`)에서 통째로 사라진다 — same_as/reject 가 «먹혀서» 깨지는 게
+#    아니라 애초에 안 만들어진 것처럼 사라지는 하향 변이다. escalated 블록(같은
+#    리터럴 `final.append({"f": None, "layer": f0["layer"], ...`)과 문자 그대로
+#    같아 순수 텍스트 sed 는 헤더-satisfiable 함정에 걸린다 — 바로 앞의 재상승
+#    전용 가드(`if not d0 or d0.get("state") != "expired":`)부터 이 줄까지만
+#    range 로 좁혀 재상승 쪽 occurrence 하나만 잡는다(수동 확인: escalated 의
+#    동일 리터럴은 range 밖이라 안 건드림).
+# [Task 8b 재앵커] 분해로 이 블록이 `_auto_decides()` 안으로 갔다 — 그 함수에는 `items`
+# 가 **아예 없다**(불변식이 위치가 아니라 스코프로 보장되게 된 것 자체가 분해의 성과다).
+# 그래서 옛 RHS `items["_reraise_leaked"] = (…)` 는 NameError 를 내고, 옛 LHS
+# `final.append(` 는 누산기 개명(`extra`)으로 매치 0 건이 되어 셀이 no_teeth 로 떨어졌다(실측).
+# BEFORE: s/final\.append({"f": None,/items["_reraise_leaked"] = ({"f": None,/
+# AFTER : s/extra\.append({"f": None,/_leaked = ({"f": None,/
+# 겨누는 규칙과 하향의 «관측 결과»는 그대로다 — 후속 항목이 만들어지되 누산기에 안 들어가
+# `final`·출력·`record_findings` 에서 통째로 사라진다. 바뀐 것은 그 죽은 싱크의 이름뿐이다
+# (옛 이름 `items` 는 「지나면 안 되는 파이프라인」을 가리켰고, 지금은 그 파이프라인이
+# 이 스코프에 존재하지 않아 이름으로 가리킬 대상이 없다).
+mut 1/1 reraise_leaks_into_items case_reraise_successor_immune_to_recritic sed_route \
+  '/if not d0 or d0\.get("state") != "expired":/,/"_source": "reraise"}/{
+s/extra\.append({"f": None,/_leaked = ({"f": None,/
+}'
+
+# ── same_as 가 가리키는 대상이 union-find 의 `parent` 에 없을 때의 강제 계수 (Task 7b, AC7b) ──
+# ㉜ union-find 의 y-not-in-parent(및 x-not-in-parent) 갈래에서 coerced 호출 둘을
+#    지운다 — 병합만 조용히 스킵되고 다시 원장 어디에도 안 남는 Task 7b 이전 상태로
+#    돌아간다(AC27 의 어휘 밖 verdict 와 같은 종류의 하향). 두 줄 다 이 파일에 유일.
+mut 2/2 same_as_unknown_target_silent case_AC7b_unknown_same_as_target_coerced sed_route \
+  's/^                L\.coerced("same_as", x, None)$/                pass/
+s/^                L\.coerced("same_as", y, None)$/                pass/'
 finish
