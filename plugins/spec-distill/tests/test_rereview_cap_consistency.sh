@@ -77,10 +77,18 @@ for f in "${TARGETS[@]}"; do
 done
 
 # ── 4. 음의 짝 — 상한 어휘가 나오는 **모든** 자리의 숫자가 CAP 과 같은가 ────
-# 어휘 셋: 정본 표기(`rereview_cap: N`) · 엔진 상수(`REREVIEW_CAP = N`) · 산문(`재리뷰 상한 N`).
+# 어휘: 정본 표기(`rereview_cap: N`) · 엔진 상수(`REREVIEW_CAP = N`) · 한국어 산문
+# (`재리뷰 상한 N`) · **영어 산문**(`re-review max N` / `auto re-review, max N` /
+# `re-review cap N`).
+#
+# 〔fix round 1 / M-1〕 영어 형태가 빠져 있었다. 이 PR 이 README 에서 지운 옛 문구가 바로
+# `auto re-review, max 5` · `re-review max 5` 였으므로 오늘 잔존은 0 이고 락은 통과한다 —
+# 그러나 **다음 저자가 영어로 쓰면 이 축이 침묵한다.** 잔존 0 인 지금이 어휘를 넓힐 때다
+# (오늘 통과가 내일의 커버리지 증거가 아니다).
+#
 # 서로 다른 상한(브리프 리뷰의 `재dispatch 상한 2`, G6 의 `재시도 상한 3`)은 이 어휘에
 # 걸리지 않는다 — 같은 숫자를 쓰더라도 다른 값이므로 코퍼스에 넣지 않는다.
-CAP_RE='rereview_cap: [0-9]+|REREVIEW_CAP = [0-9]+|재리뷰 상한 [0-9]+'
+CAP_RE='rereview_cap: [0-9]+|REREVIEW_CAP = [0-9]+|재리뷰 상한 [0-9]+|re-?review[^0-9]{0,12}(max|cap)[^0-9]{0,4}[0-9]+'
 bad=0
 seen=0
 for f in "$REF" "$ENGINE" "${TARGETS[@]}"; do

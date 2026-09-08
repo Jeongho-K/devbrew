@@ -81,8 +81,15 @@ grep -qF 'state_path.py" session-id' <<<"$w_out" \
 # (b) 는 «키가 $session_id 가 아니다»(S8/S10)보다 세다 — 어떤 이름이 오든 전체 수와
 # harness_sid 로 키잉된 수가 갈리는 순간 잡힌다. 열거가 아니라 도출이다.
 grep -qE '^STATE="\$ROOT/\$harness_sid/' "$SKILL" \
-  && ok "S2a: READ 가 \$harness_sid 로 \$STATE 를 만든다" \
+  && ok "S2a: arm 원장 READ 가 \$harness_sid 로 \$STATE 를 만든다" \
   || no "S2a: \$STATE 가 \$harness_sid 에서 도출되지 않는다 — 훅과 다른 파일을 읽는다"
+# S2a2 〔fix round 1 / M-3〕: 엔진 상태 디렉터리도 같은 sid 로 키잉된다.
+# S2a 의 `^STATE="` 는 `STATE_DIR=` 을 매치하지 않는다 — 엔진 state(`docreview-state.md`)를
+# 다른 디렉터리로 쪼개는 편집이 **잡히지 않았다.** arm 원장과 엔진 상태가 갈리면 같은 세션의
+# 두 상태가 다른 자리에 앉고, 재개·GC·훅 판독이 서로 다른 것을 본다.
+grep -qE '^STATE_DIR="\$ROOT/\$harness_sid"' "$SKILL" \
+  && ok "S2a2: 엔진 state 디렉터리도 \$harness_sid 로 키잉된다 (arm 원장과 같은 자리)" \
+  || no "S2a2: \$STATE_DIR 이 \$ROOT/\$harness_sid 가 아니다 — 엔진 상태가 arm 원장과 다른 디렉터리로 갈린다"
 # sid 를 받는 verb 는 둘뿐이다(check-born 은 sid 인자를 안 받는다 — 조회이지 상태
 # write 가 아니다). 그 둘의 **모든** 호출과 harness_sid 로 키잉된 호출의 수를 비교한다.
 sid_tot=$(grep -cE 'arm_ledger\.py" (mark-reviewed|clear-inflight) "' "$SKILL")

@@ -128,9 +128,7 @@ Agent({
 
 ## 원장
 
-arm-once 원장(`armed_paths`·`inflight_paths`·`dispatch_attempts`)을 지우는 손은 리포 전체에서 이
-파일 하나뿐이다. 아래 네 호출이 빠지면 arm-once 게이트가 통째로 죽고, G6 상한 3 이 이 문서의 자동
-dispatch 를 영구 중단시킨다.
+아래 네 호출이 arm 원장(`armed_paths`·`inflight_paths`·`dispatch_attempts`)을 갱신하는 자리 전부다.
 
 ### mark-reviewed — 승인 게이트에서 사용자가 진행(①/②)을 고른 뒤
 
@@ -143,9 +141,7 @@ python3 "${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/scripts/arm_ledger.py" ma
 
 이 한 호출이 **in-flight 표시도 함께 지운다** — 그래서 정상 경로에서는 아래 두 종료 자리의
 `clear-inflight` 를 부를 일이 없다. **예외** — `fin.json` 의 `blocks` 에 critic 사망이 실린 라운드,
-즉 아무도 리뷰하지 않은 라운드에서는 찍지 않는다. 그 라운드를 기록하면 "리뷰가 실제로 일어났을
-때만 표시된다"는 기록 시점의 근거가 무너진다. 배제된 라운드는 원장이 비어 다음 편집이 재시도하고,
-`dispatch_attempts` 는 계속 올라 G6 상한이 결국 멈춘다.
+즉 아무도 리뷰하지 않은 라운드에서는 **호출하지 않는다.**
 
 `$harness_sid` 가 빈 값이면 상태 파일을 특정할 수 없으므로 호출하지 않고, 조용히 넘어가는 대신
 advisory 를 낸다:
@@ -161,15 +157,12 @@ python3 "${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/scripts/arm_ledger.py" ch
 ```
 
 exit 0 = git-tracked(할 말 없음). exit 1 = 미커밋 — 스크립트가 stderr 로 낸 advisory 를 **그대로**
-사용자에게 노출한다. arm-once 의 세션-바깥 조건이 `is_born`(git 추적 여부)이라, 커밋하지 않은 채
-세션을 넘기면 이 문서의 리뷰가 한 번 더 발동한다. out-of-scope 경로면 exit 2 + advisory(비-fatal)
-이고, 이 호출은 판정만 하며 상태를 쓰지 않으므로 실패해도 잃을 상태가 없다(P14).
+사용자에게 노출한다. exit 2 = 스코프 밖 경로 — advisory 를 노출하되 진행을 막지 않는다.
 
 ### clear-inflight A — 문서 부재로 끝나는 경로
 
 `$spec_path` 가 working-tree 에 없으면(삭제된 worktree 경로 등) 게이트를 띄우지 않고 끝난다. 이
-문면 그대로 advisory 를 내고, **in-flight 표시를 걷어낸다** — 남겨 두면 `INFLIGHT_TTL_SEC` 만료
-까지 그 키가 발견 제외로 살아 있다.
+문면 그대로 advisory 를 내고, **in-flight 표시를 걷어낸다.**
 
 > `[spec-distill] current_spec '<path>' 부재 (working-tree에 없음) — stale state. current_spec 재선택 또는 세션 리셋 필요. handoff 진행 안 함.`
 
@@ -177,10 +170,8 @@ exit 0 = git-tracked(할 말 없음). exit 1 = 미커밋 — 스크립트가 std
 python3 "${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/scripts/arm_ledger.py" clear-inflight "$harness_sid" "$spec_path"
 ```
 
-**이 호출의 rc 를 성공 증거로 읽지 말 것** — CLI 는 지웠든 못 지웠든 항상 exit 0 이고, 「지울 표시가
-없었다」와 「스코프 밖 경로·상태 파일 부재로 아무것도 못 했다」가 스킬 입장에서 구별되지 않는다.
-소리를 내는 것은 원장 판독 실패와 write 실패 둘뿐이니 stderr 에 뜬 것만 사용자에게 노출한다.
-`$harness_sid` 가 빈 값이면 호출하지 않고 위와 같은 사유의 advisory 를 낸다.
+CLI 는 지웠든 못 지웠든 항상 exit 0 이다 — **rc 를 성공 증거로 읽지 말고** stderr 에 뜬 것만
+사용자에게 노출한다. `$harness_sid` 가 빈 값이면 호출하지 않고 위와 같은 사유의 advisory 를 낸다.
 
 ### clear-inflight B — ④ 멈춤으로 끝나는 경로
 
@@ -190,17 +181,13 @@ python3 "${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/scripts/arm_ledger.py" cl
 python3 "${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/scripts/arm_ledger.py" clear-inflight "$harness_sid" "$spec_path"
 ```
 
-여기도 A 와 같은 이유로 **rc 를 성공 증거로 읽지 않는다**.
-`$harness_sid` 가 빈 값이면 호출하지 않고 같은 사유의 advisory 를 낸다 — 형제 자리 둘
-(mark-reviewed · A)이 그 문구를 요구하므로 여기만 침묵하면 그 비대칭이 다음 복사본으로
-옮겨간다. 자동 재발동 여부를 이 호출이 정하지는 않는다 —
-`armed_paths` 가 정한다. 재개는 사용자 요청 시 이 skill 의 수동 호출로 한다.
+여기도 A 와 같이 **rc 를 성공 증거로 읽지 않는다**.
+`$harness_sid` 가 빈 값이면 호출하지 않고 같은 사유의 advisory 를 낸다. 이 호출은 재발동을
+열지 않는다(`armed_paths` 가 정한다) — 재개는 사용자 요청 시 이 skill 의 수동 호출로 한다.
 
 ## 게이트
 
-골격 · 두 가드 · 예외 경로의 정본은 아래 파일이다 — `conducting-interview` 종료 Step B 와 같은
-계약이라 어느 skill 밑도 아닌 플러그인 루트에 산다. 게이트 진입 시 읽고 따르며, 여기에는 이 skill
-의 어휘만 남는다.
+골격 · 두 가드 · 예외 경로의 정본은 아래 파일이다. 게이트 진입 시 읽고 따른다.
 
 ```
 Read ${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/references/proceed-gate.md
@@ -223,8 +210,7 @@ Read ${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/references/proceed-gate.md
 - **① 의 정지 요건** — verbatim `/compact` 명령을 노출한 자리에서 **턴 종료(STOP)** 한다. 같은 턴
   에서 `writing-plans` 를 호출하지 않는다(compact 전 진입은 옵션 ① 을 무력화한다). 진입은 사용자가
   `/compact` 를 실제로 실행한 **다음 턴**에 사용자 트리거로만 일어나고, 사용자가 redirect 하면
-  미진입한다(P17). **이 문단이 이 skill 의 AC19 기계적 검증 앵커다** — 정본에도 같은 어휘가 있지만
-  그것은 계약 서술이지 이 skill 의 앵커가 아니다.
+  미진입한다(P17).
 - **polite stop 금지 (AP2)** — ①/② 를 골랐는데 narrate 만 하고 `## 원장` 의 두 호출과 다음 단계
   진입을 skip 하면 polite stop 이다. 이 skill 을 종료하는 모든 경로는 이 게이트를 거치거나, 게이트를
   거치지 않는 예외 경로(문서 부재 · kill switch)면 명시적 advisory 단락을 동반한다 — 게이트-less
