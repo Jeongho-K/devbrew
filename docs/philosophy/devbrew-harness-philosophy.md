@@ -70,7 +70,7 @@ KEEP-12 — Three Laws를 코드로 집행하는 load-bearing 원칙. 각 엔트
 
 ### AP3 — Self-Approval (the #1 anti-pattern)
 **Law 2 집행.** 같은 턴이 쓰고 승인하는 것 — Law 2로 엄격히 금지되고 P3 tool-deny로 구조적으로 집행된다. Load-bearing: fresh context가 self-bias anchor를 끊는다 — 같은 context의 reviewer는 자신이 방금 쓴 코드를 *defend*하는 default로 들어가므로, 승인은 다른 agent/다른 skill/최소한 fresh context reviewer로 route해야 한다.
-코드: `shared/docreview/agents/doc-critic.md` (Write/Edit deny로 self-approval 구조 차단)
+코드: `shared/docreview/agents/doc-critic.md` (`tools:` allowlist에 Write/Edit이 없어 self-approval 구조 차단)
 
 ## Load-bearing Meta-Rules
 

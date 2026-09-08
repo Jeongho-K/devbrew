@@ -34,6 +34,18 @@ done < <(find "$SD/skills/reviewing-spec" "$SD/references/docreview-profiles" \
               "$REPO_ROOT/shared/docreview" -type f 2>/dev/null | sort)
 CORPUS+=("$SD/README.md")
 
+# 양의 짝 ③ — README.md 가 코퍼스 원소로 실재하고 읽을 수 있다.
+# 실측(mutation): README.md 를 옮기거나 이름을 바꿔도 배열 리터럴 "$SD/README.md" 는
+# 문자열이라 그대로 남고, 아래 `grep -lF` 는 대상 부재를 `2>/dev/null` 로 삼킨다 — 그러면
+# 양의 짝 ①(개수 ≥4)·②(살아있는 스위치 두 건)는 나머지 파일들만으로도 만족돼 본 판정이
+# README 없이도 조용히 GREEN 을 낸다. 그래서 이 자리를 **파일시스템**에서 직접 확인한다
+# (배열 원소 존재 자체가 아니라 그 경로에 실제 파일이 있는지).
+if [ -f "$SD/README.md" ]; then
+  ok "AC6: README.md 가 코퍼스 경로에 실재한다 (양의 짝 — path drift 감지)"
+else
+  no "AC6: README.md 가 코퍼스 경로에 없다(path drift) — 아래 부재 판정이 README 없이도 통과할 수 있다"
+fi
+
 # 양의 짝 ① — 코퍼스가 비어 있지 않다. 부재 락은 코퍼스가 0 이면 통째로 공허하다.
 if [ "${#CORPUS[@]}" -ge 4 ]; then
   ok "AC6: design 자리 표면 ${#CORPUS[@]}개 수집 (부재 판정이 공허하지 않다)"

@@ -1,8 +1,8 @@
 # Changelog
 
-## [1.0.0] — 2026-09-08
+## [1.0.0] — 2026-09-09
 
-major인 이유: **design doc 자리(`reviewing-spec`)의 verdict 계약이 깨진다.** `approved`/`needs_revise` 산출물은 더 이상 나오지 않는다 — 승인은 문서 리뷰 엔진(`shared/docreview/`)의 게이트 판정(`approval_gate_open`, 열린 항목이 없으면 즉시 · 상한 도달·stagnation 이면 승인 게이트 1단계 경유)을 **집계**해서 도출된다. `reviewing-spec/SKILL.md` 는 384줄이 재작성된 엔진 껍데기가 됐다 — 절차 8단계의 정본은 `shared/docreview/references/reviewing-document.md` 하나이고, 이 skill 에는 이 자리의 것(입력 슬롯 · 프로필 선택 · dispatch 둘 · 원장 갱신 · 게이트 진입)만 남는다. `description` 의 "design docs reviewed by a physically-separated Law 2 reviewer" 문구는 여전히 참이다 — `doc-critic`·`doc-recritic` 도 `tools:` 에 쓰기가 없다. 바뀐 것은 리뷰어의 이름뿐이다.
+major인 이유: **design doc 자리(`reviewing-spec`)의 verdict 계약이 깨진다.** `approved`/`needs_revise` 산출물은 더 이상 나오지 않는다 — 승인은 문서 리뷰 엔진(`shared/docreview/`)의 게이트 판정(`approval_gate_open`, 열린 항목이 없으면 즉시 · 상한 도달·stagnation 이면 승인 게이트 1단계 경유)을 **집계**해서 도출된다. `reviewing-spec/SKILL.md` 는 235줄(base 297줄)로 재작성된 엔진 껍데기가 됐다 — 절차 8단계의 정본은 `shared/docreview/references/reviewing-document.md` 하나이고, 이 skill 에는 이 자리의 것(입력 슬롯 · 프로필 선택 · dispatch 둘 · 원장 갱신 · 게이트 진입)만 남는다. `description` 의 "design docs reviewed by a physically-separated Law 2 reviewer" 문구는 여전히 참이다 — `doc-critic`·`doc-recritic` 도 `tools:` 에 쓰기가 없다. 바뀐 것은 리뷰어의 이름뿐이다.
 
 ### Removed
 
