@@ -81,8 +81,10 @@ grep -qE '^\|[[:space:]]*\**[[:space:]]*spec\b' "$SKILL" \
 grep -q 'drafting-spec' "$SKILL" \
   && no "drafting-spec still referenced in reviewing-spec" || ok "drafting-spec ref removed from reviewing-spec"
 
-# F9-D: scan agents/ + templates/ too — the exact dirs this PR cleaned of
-# drafting-spec/Mode-B refs (spec-reviewer persona, spec-template comment).
+# F9-D: scan agents/ + templates/ too — the exact dirs an earlier PR cleaned of
+# drafting-spec/Mode-B refs (design 자리 리뷰어 persona · spec-template comment).
+# 그 persona 파일은 문서 리뷰 엔진 전환(T7)으로 사라졌지만 두 디렉토리는 여전히
+# 스캔 루트다 — 코퍼스를 좁히면 이 부재 단언이 조용히 약해진다.
 # Task 33: `$PLUGIN/references` (플러그인 레벨 공유 계약, skills/ 밖) 도 스캔 루트다.
 #
 # 〔fix round 1 / F4〕 루트를 덧붙이기만 하면 오타·개명 시 `grep -r` 의 *No such file* 이

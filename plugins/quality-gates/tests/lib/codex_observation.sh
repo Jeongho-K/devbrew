@@ -117,10 +117,6 @@ obs_invoke() {
       PATH="$OBS_MOCKBIN:$PATH" CODEX_CAPTURE_DIR="$capture" CLAUDE_PLUGIN_ROOT="$qg" \
         bash "$cand" "$input" "$OBS_REPO" "$out" >/dev/null 2>&1 || rc=$?
       ;;
-    run_spec_codex_reviewer.sh)
-      PATH="$OBS_MOCKBIN:$PATH" CODEX_CAPTURE_DIR="$capture" CLAUDE_PLUGIN_ROOT="$sd" \
-        bash "$cand" "$input" "$OBS_REPO" "$out" >/dev/null 2>&1 || rc=$?
-      ;;
     run_brief_codex_reviewer.sh)
       PATH="$OBS_MOCKBIN:$PATH" CODEX_CAPTURE_DIR="$capture" CLAUDE_PLUGIN_ROOT="$sd" \
         bash "$cand" direction "$input" "$OBS_REPO" "$out" >/dev/null 2>&1 || rc=$?

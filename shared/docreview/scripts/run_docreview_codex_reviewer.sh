@@ -7,7 +7,7 @@
 # spec-distill·quality-gates 두 플러그인에 같은 파일 단위 심볼릭 링크로 배포되므로(설계
 # §12 「신규(호스트)」) consumer= 경로가 어느 한 플러그인과도 같을 수 없다(처분 락 축 A⑤
 # — 이 파일 자체가 애초에 어느 플러그인 서브트리에도 없다). 그래서 orchestrator 로 적고
-# 실제 소비자는 이 주석이 밝힌다. fail-open 인 이유는 형제 run_spec_codex_reviewer.sh 와
+# 실제 소비자는 이 주석이 밝힌다. fail-open 인 이유는 형제 run_brief_codex_reviewer.sh 와
 # 같다 — codex 는 모델 다양성 보조지 주 판정자가 아니다(설계 §9 「codex 부재·실패」행:
 # 공시하되 막지 않는다).
 #
@@ -15,7 +15,7 @@
 # 성공·실패 모두 <out_yaml> 에 codex_findings_to_yaml.py --emit-keys docreview 스키마의
 # 중첩 YAML 을 쓴다. <out_yaml> 자체를 못 쓰면(디렉토리 부재·권한·RO 마운트) YAML 이
 # 애초에 불가능하므로 rc 3 으로 죽는다 — 호출자는 rc==3 을 보면 <out_yaml> 을 지워야
-# 한다(형제 run_spec_codex_reviewer.sh·run_brief_codex_reviewer.sh 와 같은 계약. 이 fail-
+# 한다(형제 run_brief_codex_reviewer.sh·run_seed_codex_reviewer.sh 와 같은 계약. 이 fail-
 # closed 가 핵심이다 — 조용히 죽으면 직전 라운드의 stale YAML 이 이번 라운드 판정으로
 # 읽힌다).
 #
@@ -40,7 +40,7 @@ if [[ -z "$OUTPUT_PATH" ]]; then
 fi
 
 # 절대화는 `cd "$PROJECT_DIR"` **이전**이다 — 아니면 상대 경로가 project_dir 기준으로
-# 조용히 잘못 풀린다(형제 run_spec_codex_reviewer.sh B3 의 교훈과 같은 자리).
+# 조용히 잘못 풀린다(형제 러너들이 B3 에서 얻은 교훈과 같은 자리).
 [[ "$OUTPUT_PATH" = /* ]] || OUTPUT_PATH="$PWD/$OUTPUT_PATH"
 [[ "$DOC" = /* ]] || DOC="$PWD/$DOC"
 [[ "$PROFILE" = /* ]] || PROFILE="$PWD/$PROFILE"
@@ -102,8 +102,8 @@ t = pathlib.Path(prof_path).read_text(encoding="utf-8")
 m = re.match(r"^---\n(.*?)\n---\n", t, re.DOTALL)
 fm_text = m.group(1) if m else ""
 
-# PyYAML 없이 stdlib 만으로 — 형제 러너 셋(build_brief_codex_prompt.py ·
-# build_seed_codex_prompt.py · build_spec_codex_prompt.py)이 third-party 모듈을
+# PyYAML 없이 stdlib 만으로 — 형제 프롬프트 빌더들(build_brief_codex_prompt.py ·
+# build_seed_codex_prompt.py 등)이 third-party 모듈을
 # 안 쓰는 것과 같은 이유다: 이 러너는 `HOME` 이 격리되는 하니스(예: codex 인증
 # 격리)에서 site-packages 의 PyYAML 에 닿지 못해 죽는다(실측 — 이 파일이 그
 # 하니스에서 유일하게 third-party import 를 했다). 필요한 것은 프로필
