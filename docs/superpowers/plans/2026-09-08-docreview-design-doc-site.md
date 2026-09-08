@@ -948,6 +948,8 @@ S2 를 **지우지 말고** 새 불변식으로 바꾼다: 껍데기의 READ 와
 | `plugins/quality-gates/tests/lib/codex_observation.sh:120` | `obs_invoke` 인자 표의 `run_spec_codex_reviewer.sh)` arm | 죽은 arm | 지운다. `run_docreview_codex_reviewer.sh` arm 은 PR 1b 가 이미 넣었다 |
 | `plugins/quality-gates/tests/test_codex_gate_observation.sh:73,319` | `UNGATED_run_docreview_codex_reviewer_sh` ratchet 항목이 「호출자 0」이라 적혀 있다 + 라벨 | 껍데기가 그 러너를 부르므로 **거짓** | 그 ratchet 줄을 **손으로 지운다**(그 원장의 주석이 「자동 만료되지 않는다」고 명시). 같은 파일 :88 의 `codex-gate:begin` 마커 하한 `-ge 3` 과 실제 마커 수를 함께 확인한다 |
 | `plugins/spec-distill/references/proceed-gate.md:3,117` · `conducting-interview/references/finishing.md:227` · `reviewing-brief/SKILL.md:429` | 「`reviewing-spec` 의 옵션 ① 블록에 앵커가 산다」 · 「cap 5」 | 살아 있는 문서의 죽은 인용 | 새 사실로 고친다. cap 은 2 이고 앵커는 껍데기 안이다 |
+| `shared/codex/runner_common.sh:9` + `copy-of` 사본 둘(`plugins/spec-distill/scripts/`·`plugins/quality-gates/scripts/`) | 소비자 목록에 삭제되는 러너를 열거 | 거짓 인용 | 세 파일을 **한 커밋에서** 함께 고친다(바이트 동일 계약). 그 자리에 `run_docreview_codex_reviewer.sh` 를 넣는다 — 실제로 이 정본을 source 하는 러너다 |
+| `plugins/spec-distill/skills/reviewing-brief/SKILL.md:29` · `plugins/spec-distill/scripts/run_seed_codex_reviewer.sh:5` | 「`run_spec_codex_reviewer.sh` 와 같은 규약」이라는 산문 비유 — **실행 표면**이다 | 거짓 인용. T7 Step 4 의 ① grep 이 이것을 잡는다 | 살아 있는 형제(`run_brief_codex_reviewer.sh` 또는 `run_docreview_codex_reviewer.sh`)로 비유 대상을 바꾼다 |
 | `plugins/spec-distill/scripts/codex_prompt_common.py` 및 그 `copy-of` 사본들의 docstring | 「spec-distill 의 `build_spec_codex_prompt.py`·`build_brief_codex_prompt.py`」 | 거짓 인용(비차단) | **`copy-of` 사본은 바이트 동일이어야 하므로 정본과 사본을 같은 커밋에서 함께 고친다.** 정본은 `shared/codex/codex_prompt_common.py` |
 
 - [ ] **Step 1: 표 A 를 지우기 전에, 표 C 의 재조준을 먼저 한다**
