@@ -13,10 +13,12 @@
 # 되살리려면 집행 지점을 먼저 만들어야 하고, 이름만 먼저 돌아오면 이 락이 RED 다.
 #
 # ── 스코프 ──────────────────────────────────────────────────────────────────
-# 코퍼스는 T7 이 소유하는 design 자리 표면이다: 진입 skill · design-doc 프로필 · 공유
-# 엔진. **`README.md` 는 코퍼스 밖이다** — 그 파일의 스위치 목록 행은 아직 살아 있고
-# 그것을 걷어내는 것은 T8(문서·버전) 의 일이다. 여기서 함께 재면 이 락이 T8 전까지
-# 영구 RED 가 되어 「오래된 RED 는 풍경이 된다」로 간다.
+# 코퍼스는 T7 이 소유하는 design 자리 표면(진입 skill · design-doc 프로필 · 공유 엔진)
+# **더하기 `README.md`**. T8(문서·버전) 이 이 커밋에서 README 의 스위치 목록 행을
+# 지우면서 같은 커밋으로 코퍼스를 여기까지 넓혔다 — 넓히지 않고 줄만 지우면, 다음
+# 사람이 그 줄을 되살려도(집행 지점 없이) 이 락은 계속 침묵한다. 넓히기 전에는
+# 「README 는 코퍼스 밖」이 T8 전까지 영구 RED 를 피하려는 의도적 좁힘이었다(「오래된
+# RED 는 풍경이 된다」 회피) — 이 커밋이 그 이유를 없앴으므로 좁힘도 함께 없앤다.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -30,6 +32,7 @@ while IFS= read -r f; do
   [ -n "$f" ] && CORPUS+=("$f")
 done < <(find "$SD/skills/reviewing-spec" "$SD/references/docreview-profiles" \
               "$REPO_ROOT/shared/docreview" -type f 2>/dev/null | sort)
+CORPUS+=("$SD/README.md")
 
 # 양의 짝 ① — 코퍼스가 비어 있지 않다. 부재 락은 코퍼스가 0 이면 통째로 공허하다.
 if [ "${#CORPUS[@]}" -ge 4 ]; then

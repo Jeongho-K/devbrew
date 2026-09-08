@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.0.0] — 2026-09-08
+
+major인 이유: **design doc 자리(`reviewing-spec`)의 verdict 계약이 깨진다.** `approved`/`needs_revise` 산출물은 더 이상 나오지 않는다 — 승인은 문서 리뷰 엔진(`shared/docreview/`)의 게이트 판정(`approval_gate_open`, 열린 항목이 없으면 즉시 · 상한 도달·stagnation 이면 승인 게이트 1단계 경유)을 **집계**해서 도출된다. `reviewing-spec/SKILL.md` 는 384줄이 재작성된 엔진 껍데기가 됐다 — 절차 8단계의 정본은 `shared/docreview/references/reviewing-document.md` 하나이고, 이 skill 에는 이 자리의 것(입력 슬롯 · 프로필 선택 · dispatch 둘 · 원장 갱신 · 게이트 진입)만 남는다. `description` 의 "design docs reviewed by a physically-separated Law 2 reviewer" 문구는 여전히 참이다 — `doc-critic`·`doc-recritic` 도 `tools:` 에 쓰기가 없다. 바뀐 것은 리뷰어의 이름뿐이다.
+
+### Removed
+
+- **`agents/spec-reviewer.md`** — 유일한 dispatch 자리였던 껍데기화 전 `reviewing-spec/SKILL.md` 와 함께 삭제. 대체는 `shared/docreview/agents/{doc-critic,doc-recritic}.md` 를 `# copy-of:` 마커로 바이트 동일하게 배포한 `agents/doc-critic.md` · `agents/doc-recritic.md` (심볼릭 링크가 아니라 물리 사본 — dispatch 검증상 심볼릭 링크 agent 는 실제로 호출되지 않는다).
+- **`scripts/run_spec_codex_reviewer.sh`** · **`scripts/build_spec_codex_prompt.py`** — codex 병렬 co-reviewer 러너/프롬프트 빌더. 대체는 `shared/docreview/scripts/run_docreview_codex_reviewer.sh`(프로필 인자로 자리를 흡수, 심볼릭 링크 배포).
+- **`DEVBREW_SPEC_DISTILL_SKIP_HANDOFF_CHECK` (README 문서화 제거).** 이 kill switch 의 유일한 집행 지점이 `spec-reviewer.md` 였다 — 그 agent 가 사라지며 집행 지점이 0 이 됐다. 리포 전체(`shared/`·엔진 스크립트·모든 프로필·모든 skill)를 대상으로 독자를 확인했고 살아 있는 읽기 지점이 없다(전수 확인: `git grep -n`). 이 스위치가 끄던 검사(`handoff_incomplete`)는 이제 `design-doc.md` 프로필의 layer2 rubric 항목이라, 그 opt-out 은 이제 프로필을 고치는 것이다(P21 — 집행 없는 switch 를 문서화하면 "껐다고 믿게만" 만든다). `test_handoff_kill_switch.sh` 의 코퍼스를 같은 커밋에서 README 로 넓혀, 이 스위치 이름이 design 자리 표면(엔진 포함)에 재등장하면 RED 가 나도록 했다.
+- 고아가 된 테스트 6개(`test_spec_reviewer_frontmatter.sh` · `test_spec_reviewer_design_checklist.sh` · `test_run_spec_codex_reviewer.sh` · `test_build_spec_codex_prompt.sh` · `test_reviewing_spec_codex_merge.sh` · `test_reviewing_spec_design_routing.sh`) — 피검자가 사라져 함께 삭제.
+
+### Changed
+
+- **재리뷰 상한 5 → 2.** 정본은 `shared/docreview/references/reviewing-document.md` 의 `` `rereview_cap: 2` `` 한 줄이고, `docreview_state.py` 의 `REREVIEW_CAP` · `reviewing-spec/SKILL.md` · 이 README(흐름도 + AP16, 2곳) 넷을 `test_rereview_cap_consistency.sh` 가 cross-file 로 대조한다(∀ 짝 — 옛 값 5 를 이름으로 금지하지 않고, 상한 어휘가 나오는 모든 자리의 숫자가 정본과 같은지를 잰다). 라운드 4 이상은 여전히 사용자가 승인 게이트에서 열어야만 돈다.
+- **능력 축소 — design doc 리뷰의 외부 prior-art 대조가 Claude·codex 양쪽에서 동시에 0 이 됐다.** 옛 `spec-reviewer` 는 `tools:` 에 `WebSearch, WebFetch` 를 가졌고 `run_spec_codex_reviewer.sh` 는 codex 웹 검색을 기본 ON 으로 켰다. 새 `doc-critic`·`doc-recritic` 은 `tools: Read, Grep, Glob` 뿐이고 `design-doc.md` 프로필은 `web: false` 를 고정한다 — 이 결정은 설계 §5.3·OQ-C 의 의도이고 이 릴리스는 그것을 뒤집지 않는다. `DEVBREW_SPEC_DISTILL_DISABLE_WEB` 은 이제 소비자 **둘**(interview 웹 리서치 · codex brief co-reviewer)만 끄고, design-doc 리뷰는 이 스위치의 대상이 아니다 — 프로필이 이미 꺼 놨으므로 켜고 끌 것이 없다.
+- **엔진 결함 후속 수정 (PR 2, 리뷰 라운드).** `doc-critic`/`doc-recritic` 이 첫 호출자로 붙은 뒤 리뷰가 추가로 적발한 결함들 — 재상승(reraise) 후속이 원본의 `kind`·`prev_hash` 를 물려받게(원복 의무 강등 방지) · 사후 고지 꼬리(`_post_kind_notice`)가 만료된 원본뿐 아니라 후속에도 닿게 · 재상승·`escalated` 예약 양쪽의 누적·dedup·미소비 계수 통일 · 재상승 후속의 「보류」 거부(제안 선택지와 받아주는 선택지를 한 함수로) · 상태 축의 정본 표(`is_open`·`gate_summary`·`render_gate` 한 표에서 도출) · golden `fin.json` 재캡처. 전부 `shared/docreview/scripts/docreview_state.py`·`docreview_route.py` 쪽 수정이라 이 플러그인은 심볼릭 링크로 함께 받는다(cache key).
+
+### Fixed
+
+- **엔진 러너의 PyYAML 의존 제거 · 배선 락의 심볼릭 링크 맹점 (Task 6b).** `run_docreview_codex_reviewer.sh` 의 프로필 파서가 stdlib 만으로 `layer_rubric`·`allowed_dispositions`·`web` 을 읽고, `check_wiring.py` 류의 배선 락이 심볼릭 링크로 배포된 엔진 스크립트를 실제로 검사한다.
+
 ## [0.58.0] — 2026-09-08
 
 ### Fixed

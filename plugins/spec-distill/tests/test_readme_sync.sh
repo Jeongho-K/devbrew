@@ -13,6 +13,10 @@
 # floor로 전환: v0.23.0 feature가 여전히 shipped임을 뜻하는 invariant는 이제 "0.26 이상"으로
 # 표현되고, 미래 minor bump마다 pin이 위로만 ratchet된다(qg 쪽 test_qg_publish_docs.sh·
 # test_artifact_metadata.sh와 동형 관용구).
+# v1.0.0(문서 리뷰 엔진 첫 호출자 배선)에서 major가 0을 벗어났다 — "0.(26-99)"만 매치하는
+# 옛 정규식은 그 순간부터 항상 RED다(major bump는 이 invariant를 절대 되돌리지 않는데도).
+# qg 두 락과 같은 관용구로 "major ≥ 1(임의 minor·patch)"를 OR로 더해 위로만 ratchet되게
+# 고쳤다 — 다음 major bump에도 다시 고칠 필요가 없다.
 # CHANGELOG [0.20.0]/[0.22.0]/[0.23.0] 엔트리는 append-only 기록이라 리터럴 pin이 correct —
 # 버전 bump마다 최신 엔트리 pin을 **추가**하고 과거 pin은 절대 빼지 않는다(누산). 뺀 순간
 # 그 히스토리 엔트리가 삭제돼도 이 스위트가 조용히 통과해 append-only 보장이 깨진다.
@@ -34,8 +38,8 @@ CHANGELOG="$REPO_ROOT/plugins/spec-distill/CHANGELOG.md"
 
 . "$(cd "$(dirname "$0")/../../.." && pwd)/shared/tests/assert.sh"
 
-grep -qE '"version": "0\.(2[6-9]|[3-9][0-9])\.[0-9]+"' "$PLUGIN_JSON" \
-  && ok "T20: plugin.json version >= 0.26.x" \
+grep -qE '"version": "([1-9][0-9]*)\.[0-9]+\.[0-9]+"|"version": "0\.(2[6-9]|[3-9][0-9])\.[0-9]+"' "$PLUGIN_JSON" \
+  && ok "T20: plugin.json version >= 0.26.x (major >= 1 포함)" \
   || no "T20: plugin.json이 0.26 floor 미만"
 grep -qE '^## \[0\.23\.0\] — 2026-[0-9]{2}-[0-9]{2}$' "$CHANGELOG" \
   && ok "T20: CHANGELOG [0.23.0] 엔트리 + ISO 날짜" \
