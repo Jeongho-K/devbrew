@@ -328,18 +328,33 @@ mut 0/4 predicate_backward_scan case_AC20_nonobligation_successors_still_block s
 # ── 만료 재결정 탈출구 (Task 4, AC22) ───────────────────────────────────────
 # ⑲ 탈출구를 되돌린다 → expired 는 다시 열지 않는다(영구 차단, 후속이 끝내 안 생기면
 #    사용자에게 길이 없다).
+# [Task 4(2026-09-08-docreview-design-doc-site) 재앵커] 원래 대상 줄(`cmd_decide` 안의
+# `if d["state"] not in ("open", "expired"):`, bracket 인덱싱)은 §6.4 한계 (a) 가
+# 그 술어를 `decide_choices`(선택지 축의 정본) 하나로 모으면서 사라졌다 — 같은 조건이
+# 이제 `decide_choices` 안에 `.get()` 형태(`d.get("state") not in (...)`)로 산다.
+# `cmd_decide` 자신에는 `d["state"] == "expired"` 한 조각만 남는데(사유 리터럴 분기용,
+# 전체 술어가 아니다), 그건 이 셀이 겨누는 게이트가 아니다 — 재앵커 대상은
+# `decide_choices` 의 첫 줄이다.
 mut 1/1 expired_redecide_refused case_AC22_expired_escape_hatch sed_state \
-  's/if d\["state"\] not in ("open", "expired"):/if d["state"] != "open":/'
+  's/if d\.get("state") not in ("open", "expired"):/if d.get("state") != "open":/'
 # ⑳ 만료의 「보류」 거부를 지운다 → 보류 한 번에 승인이 열린다(구멍) — 위 BEFORE 재현이
 #    바로 이 변이가 실제로 만드는 상태다.
+# [Task 4(2026-09-08-docreview-design-doc-site) 재앵커] 원래 대상 줄(`if d["state"] ==
+# "expired" and a.choice == "hold":`)도 같은 이유로 사라졌다. `decide_choices` 의 둘째
+# 가드(`if d.get("state") == "expired" or _is_reraise_successor(st, fid):`)가 지금
+# 「보류 제외」를 정하는 자리인데, 이 셀은 **expired 쪽 절만** 지운다(`or
+# _is_reraise_successor(...)` 는 남긴다) — 안 그러면 이 셀이 재상승 후속의 보류 거부
+# (Step 5 의 별도 `reraise_successor_hold_allowed` 셀이 정확히 그쪽을 겨눈다)까지
+# 함께 흔들어 두 결함이 한 셀에 뭉친다.
 mut 1/1 expired_hold_allowed case_AC22_expired_escape_hatch sed_state \
-  's/^    if d\["state"\] == "expired" and a\.choice == "hold":$/    if False:/'
+  's/^    if d\.get("state") == "expired" or _is_reraise_successor(st, fid):$/    if _is_reraise_successor(st, fid):/'
 # ㉑ 가드를 완전히 연다 — 음의 요구(rejected·held·applied·adopted 네 상태 모두 거부)는
 #    넓히는 변이로만 잰다(좁히는 변이는 이 술어에 닿지 않는다). [리뷰 M5] adopted 는
 #    이미 연 permit 이 관측 대기 중이라 재결정 대상이 아니다(설계 §6.4) — 넷 중 하나만
 #    빠지면 재는 폭이 좁아지므로 네 상태 전부 case 에 있어야 한다.
+# [Task 4(2026-09-08-docreview-design-doc-site) 재앵커] ⑲와 같은 이유·같은 새 대상 줄.
 mut 1/1 redecide_guard_widened case_AC22_nonexpired_states_still_refused sed_state \
-  's/if d\["state"\] not in ("open", "expired"):/if False:/'
+  's/if d\.get("state") not in ("open", "expired"):/if False:/'
 # ㉒ 재결정이 자기 자신의 낡은 포인터를 지우는 것(설계 §6.4 규칙②, 브리프에 없던 정정 —
 #    Task 3 은 `cmd_observe_diff` 의 관측-시점 pop 하나만 구현했다)을 지운다. 4-space
 #    들여쓰기로 앵커해 `cmd_observe_diff` 의 8-space pop(⑰ 이 잡는 그 줄)과 구별한다 —
@@ -519,4 +534,27 @@ mut 1/1 escalate_reason_not_carried case_GR_escalated_fix_reason_persists sed_st
 #    다시 도달 가능한가를 렌더가 알려주지 않는다」결함으로 되돌린다.
 mut 1/1 escalated_fix_no_drop_hint case_GR_escalated_fix_drop_clears_block sed_state \
   's/, drop 하면 이 차단이 풀린다)"$/)"/'
+
+# ── 재상승 후속의 「보류」 (Task 4 of 2026-09-08-docreview-design-doc-site,
+#    설계 §6.4 알려진 한계 (a)) ───────────────────────────────────────────────
+# ㊸ 브리프 변이 ①. `_is_reraise_successor` 를 `return False` 로 눌러 「승계된
+#    의무를 진 open」이라는 사실 자체를 지운다 — `decide_choices` 의 둘째 가드가
+#    `d.get("state") == "expired" or False` 로 줄어 재상승 후속도 평범한 open 과
+#    똑같이 「보류」를 받는다(구멍이 다시 열린다, 이 태스크가 닫으려던 바로 그것).
+# churn 은 손으로 도출했다 — sed 가 앵커 줄(`def _is_reraise_successor...:`)을 «그대로
+# 다시 낸 뒤» 새 줄 하나를 끼운다(⑨ protected_self_only 와 같은 기법). diff 의 LCS 는
+# 안 바뀐 앵커 줄을 삽입 지점으로만 보므로 삭제 0·추가 1(1/2 가 아니다) — ⑨ 가 이미
+# 실측으로 확정한 모양이다.
+mut 0/1 reraise_successor_hold_allowed case_AC22b_reraise_successor_hold_refused sed_state \
+  's/^def _is_reraise_successor(st, fid) -> bool:$/def _is_reraise_successor(st, fid) -> bool:\
+    return False  # MUT/'
+# ㊹ 브리프 변이 ②(적응) — 브리프 원안은 `_decision_view`(docreview_route.py)의
+#    `alternatives` 를 상수로 되돌리라 했지만, Step 3 판단(위 `_decision_view`·
+#    `decide_choices` 헤더 코멘트)에 따라 그 함수는 애초에 `decide_choices` 를 쓰지
+#    않는다 — 되돌릴 것이 없다. 실제로 「제안 = 수용」을 잇는 자리는 `_rg_decide`
+#    이므로, 이 셀은 브리프의 의도(그 결선을 끊으면 `case_choices_offered_equal_accepted`
+#    가 잡아야 한다)를 그 자리로 옮겨 적용한다 — `decide_choices` 호출을 걷어내고
+#    `_decision_view` 와 같은 모양의 상수 목록으로 되돌린다.
+mut 1/1 rg_decide_alternatives_hardcoded case_choices_offered_equal_accepted sed_state \
+  's/alternatives = \[_CHOICE_LABEL\[c\] for c in decide_choices(st, fid)\]/alternatives = ["채택(적용)", "기각(원복)", "보류"]/'
 finish

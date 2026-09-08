@@ -43,6 +43,12 @@ case_AC22_expired_escape_hatch
 case_AC22_nonexpired_states_still_refused
 case_AC22_post_expiry_render_tail
 case_AC22_stale_pointer_cleared_via_redecide
+# Task 4 (2026-09-08-docreview-design-doc-site) — 같은 이유(F-8/Ruling 23)로 여기도
+# 등록한다: 매트릭스(test_docreview_mutations.sh)에서만 불리면 규칙이 실제로 깨져도
+# 「양성대조 실패(계측기 고장)」로만 보고돼 행동 락으로는 안 잡힌다. 브리프의 파일
+# 목록엔 없었지만(브리프는 이 파일을 몰랐다) 형제 case_AC22_* 들과 같은 종류다.
+case_AC22b_reraise_successor_hold_refused
+case_choices_offered_equal_accepted
 # Task 2 재리뷰(F-8/Ruling 23) — escalated 케이스 넷은 지금까지 매트릭스
 # (test_docreview_mutations.sh)에서만 불렸다. 그 규칙이 진짜로 깨지면 매트릭스는
 # 「양성대조 실패(계측기 고장)」로만 보고해, 다음 독자를 규칙이 아니라 계측기로

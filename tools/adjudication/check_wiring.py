@@ -176,8 +176,9 @@ _DR_ESCALATED_FIX_NOT_LIVE = (
     "d0.get('state') != 'expired'`)와 같은 모양·같은 이유). `f0` 존재만으로는 이 "
     "fix 가 «지금도» escalated 상태인지 모른다 — Task 2 의 누적(`>= n`)이 소비 "
     "창을 1 라운드에서 무한대로 넓혀, 예약이 만들어진 뒤 사용자가 `cmd_fix "
-    "event=drop`(상태 검사 없이 무조건 대입, docreview_state.py:474-475)이나 "
-    "`event=intent-pass`(같은 무조건 대입, :467-473)로 그 fix 를 escalated 밖으로 "
+    "event=drop`(상태 검사 없이 무조건 대입, docreview_state.py:542-543 — Task "
+    "4(2026-09-08-docreview-design-doc-site)가 그 앞에 줄을 더해 옛 474-475 에서 "
+    "밀렸다)이나 `event=intent-pass`(같은 무조건 대입, :535-541)로 그 fix 를 escalated 밖으로 "
     "옮겼을 수 있다(F-3 실측: drop 뒤에도 옛 예약이 소비돼 후속을 부활시켰다). "
     "형제 주석이 이미 결론을 적어 뒀다 — 사용자가 이미 다른 처분을 내렸으면 그 "
     "처분이 의무를 진다: 버려지는 새 항목이 없다."
@@ -414,11 +415,15 @@ EXEMPT = {
     ("plugins/quality-gates/scripts/docreview_route.py", 96,
      "return in _permit_covers @ if int(p['round']) == n and anchor in p['apply_anchors']"):
         _DR_PERMIT_SEARCH,
-    ("plugins/quality-gates/scripts/docreview_route.py", 311,
+    # Task 4(2026-09-08-docreview-design-doc-site) — `_decision_view`(:167 이전)에
+    # 7줄 주석을 더해 그 아래 아홉 자리 전부가 +7 밀렸다(311→318 ⋯ 492→499, 전부
+    # 같은 폭 — `_decision_view` 위쪽의 :96 자리는 이 삽입보다 앞이라 안 밀렸다).
+    # 아홉 키의 줄번호를 현재 위치로 갱신한다 — 사유(`_DR_*` 상수)는 무변경이다.
+    ("plugins/quality-gates/scripts/docreview_route.py", 318,
      "continue in _absorb_same_as @ if not live"): _DR_ABSORB_GROUP_DEAD,
-    ("plugins/quality-gates/scripts/docreview_route.py", 330,
+    ("plugins/quality-gates/scripts/docreview_route.py", 337,
      "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
-    ("plugins/quality-gates/scripts/docreview_route.py", 335,
+    ("plugins/quality-gates/scripts/docreview_route.py", 342,
      "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
     # Task 2 — escalated 예약을 재상승(AC21)과 대칭으로 맞추면서 줄번호가 밀렸다.
     # F-2/F-3 재리뷰(Ruling 20·21) 가 한 번 더 바꿨다: dedup continue(옛 404)는
@@ -426,21 +431,21 @@ EXEMPT = {
     # (`scan()` 이 그 호출을 disposition 으로 자동 인식해 guarded=True) — 그래서
     # 아래 목록에서 통째로 빠졌다(EXEMPT_BASELINE 주석 참조). 대신 F-3 이 새
     # discard 자리(fix 가 지금도 escalated 상태인지 검사)를 하나 늘렸다. 다섯
-    # 키의 줄번호를 현재 위치로 갱신한다(400/405/416[신설]/441/452/492) — 사유는
-    # 위 `_DR_*` 상수 참조.
-    ("plugins/quality-gates/scripts/docreview_route.py", 400,
+    # 키의 줄번호를 현재 위치로 갱신했다(당시 400/405/416[신설]/441/452/492, Task 4
+    # 가 다시 +7 갱신했다 — 위 참조) — 사유는 위 `_DR_*` 상수 참조.
+    ("plugins/quality-gates/scripts/docreview_route.py", 407,
      "continue in _auto_decides @ if int(e['round']) >= n"): _DR_ESCALATED_NOT_DUE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 405,
+    ("plugins/quality-gates/scripts/docreview_route.py", 412,
      "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 416,
+    ("plugins/quality-gates/scripts/docreview_route.py", 423,
      "continue in _auto_decides @ if not fx0 or fx0.get('state') != 'escalated'"):
         _DR_ESCALATED_FIX_NOT_LIVE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 441,
+    ("plugins/quality-gates/scripts/docreview_route.py", 448,
      "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 452,
+    ("plugins/quality-gates/scripts/docreview_route.py", 459,
      "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
         _DR_RERAISE_ALREADY_DECIDED,
-    ("plugins/quality-gates/scripts/docreview_route.py", 492,
+    ("plugins/quality-gates/scripts/docreview_route.py", 499,
      "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
         _DR_LINEAGE_NOT_RERAISE,
 }

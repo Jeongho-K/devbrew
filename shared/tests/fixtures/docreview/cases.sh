@@ -339,6 +339,89 @@ case_AC22_stale_pointer_cleared_via_redecide() {
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets '"'"$gid"'" in d["blocked_expired"]')" "True" "AC22: 재만료는 다시 막는다(픽스처 없이 CLI 로)"
   rm -rf "$d"
 }
+# ── 재상승 후속의 「보류」 거부 (Task 4 of 2026-09-08-docreview-design-doc-site,
+#    설계 §6.4 알려진 한계 (a)) ───────────────────────────────────────────────
+# 전방 포인터는 의무를 후속으로 «옮긴다» — 원본은 `superseded_by` 로 blocked_expired
+# 를 벗어나고 후속은 평범한 open decide 다. 그 후속에 「보류」가 통과하면 원본의
+# 차단을 한 홉 건너에서 푼다(AC20 의 전방 포인터 + AC21 의 예약 누적이 재상승을 항상
+# 성공시키면서 이 재설계 자신이 만든 결함). `case_AC22_stale_pointer_cleared_via_redecide`
+# 와 같은 경로로 픽스처 없이 실제 재상승 후속을 CLI 로 얻는다.
+case_AC22b_reraise_successor_hold_refused() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
+  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
+  local succ; succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$gid"'"].get("superseded_by")')" "$succ" "AC22b: finalize 가 gid 에 전방 포인터를 남긴다(선결조건, 재상승)"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["state"]')" "open" "AC22b: 후속은 평범한 open decide 다(선결조건 — 열려 있지 않으면 「보류」시도 자체가 무의미)"
+  py docreview_state.py decide --state-dir "$d" --id "$succ" --choice hold --quote '보류' >/dev/null 2>&1
+  assert_eq "$?" "1" "AC22b: 재상승 후속의 「보류」는 거부된다(원본의 차단을 한 홉 건너에서 풀지 못한다)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "False" \
+    "AC22b: 보류 시도 뒤에도 승인은 열리지 않는다"
+  rm -rf "$d"
+}
+# `decide_choices` 를 실제로 import 해 낸다(문자열로 옮겨 적지 않는다) — heredoc-in-$()
+# 파싱 함정을 피해 st_yaml 처럼 python -c 한 줄로 둔다.
+dc_choices() {   # dc_choices <state-dir> <fid> → decide_choices(st, fid) 의 python 리스트 repr
+  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from docreview_state import load_state, decide_choices; st = load_state(sys.argv[2]); print(decide_choices(st, sys.argv[3]))' "$SCRIPTS" "$1" "$2"
+}
+# render 의 그 id 블록에서 「대안:」 줄을 뽑아 decide_choices 가 내는 집합과 «라벨로
+# 바꾼 뒤» 비교한다(라벨 문자열이 아니라 집합 — 순서 무관). fid 는 hash 파생이라
+# "] <fid> —" 조합이 그 id 의 [decide…] 헤더 줄에서만 나온다.
+choices_match() {   # choices_match <render-text> <fid> <state-dir> → True/False
+  local alt; alt="$(printf '%s\n' "$1" | grep -F -A4 -- "] $2 —" | grep '대안: ' | head -1)"
+  python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from docreview_state import load_state, decide_choices
+LABEL = {"adopt": "채택(적용)", "reject": "기각(원복)", "hold": "보류"}
+st = load_state(sys.argv[2])
+choices = decide_choices(st, sys.argv[3])
+expected = {LABEL[c] for c in choices}
+alt_line = sys.argv[4]
+offered = set()
+if "대안: " in alt_line:
+    offered = {x.strip() for x in alt_line.split("대안: ", 1)[1].split("/")}
+print(bool(choices) and expected == offered)
+' "$SCRIPTS" "$3" "$2" "$alt"
+}
+# 「제안 = 수용」 등식 — 한 state 안에 세 부류(평범한 open · expired(비후속) · 재상승
+# 후속)를 모두 만들고 각각을 잰다. open 부류 둘(평범한 open·재상승 후속)은 실제로
+# 렌더되는 「대안:」 줄로 비교한다(그 줄을 내는 렌더러가 `_rg_decide` 하나뿐이라서다 —
+# expired 는 `_rg_expired` 가 따로 그려 「대안:」 줄 자체가 없다, `_rg_held_decide` 도
+# 마찬가지로 이 줄이 없다). expired(비후속)는 `decide_choices` 를 직접 불러 「채택/기각
+# 둘뿐」이 유지되는지만 잰다 — render 비교 대상이 아니다(render 문구를 바꿔도 이
+# 단언은 안 흔들린다, 그건 이 락의 범위 밖이다).
+case_choices_offered_equal_accepted() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
+  local succ normal
+  succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
+  # critic-nolayer2 가 같은 라운드에 만드는 무관 lineage(Non-goals, aaaa 와 다른 bucket)
+  # — 이것이 「평범한 open」.
+  normal="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" not in x["summary"]][0]')"
+  # 「expired(비후속)」 — 새 decide 를 이번 라운드(2)에 심어 채택 → 다음 라운드
+  # 무변경 → expired, 후속은 만들지 않는다(finalize 를 다시 안 부른다).
+  seed_findings "$d" '[{"id":"ffff0001#r2.1","lineage":"ffff0001#r2.1","bucket":"ffff0001","origin":"reviewer","layer":2,"category":"ambiguity","anchor":"#2-goals","edit_scope":"#2-goals","disposition":"decide","summary":"막힌 만료 테스트용","evidence":null,"blocks":[],"kind":"pre"}]'
+  py docreview_state.py decide --state-dir "$d" --id 'ffff0001#r2.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 3 — 변경 없음 → ffff expired(후속 없음)
+  local blocked="ffff0001#r2.1"
+
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["state"]')" "open" "선결: 재상승 후속은 open 이다"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$normal"'"]["state"]')" "open" "선결: 평범한 항목도 open 이다"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$blocked"'"]["state"], st["decides"]["'"$blocked"'"].get("superseded_by")')" "('expired', None)" "선결: 막힌 항목은 후속 없이 expired 다"
+
+  local render; render="$(py docreview_state.py gate --state-dir "$d" --render)"
+  assert_eq "$(choices_match "$render" "$normal" "$d")" "True" "제안=수용: 평범한 open — 「대안:」 줄과 decide_choices 가 같은 집합"
+  assert_eq "$(choices_match "$render" "$succ" "$d")" "True" "제안=수용: 재상승 후속 — 「대안:」 줄과 decide_choices 가 같은 집합(둘 다 보류 없이 둘)"
+  assert_eq "$(dc_choices "$d" "$blocked")" "['adopt', 'reject']" "제안=수용: expired(비후속) — decide_choices 도 보류 없이 둘"
+  rm -rf "$d"
+}
 case_T23_post_adopt_applied() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; next_round "$d" "$FX/design-sample-r2.md" >/dev/null
   seed_findings "$d" "[$F_POST]"
@@ -1093,7 +1176,7 @@ case_escalated_accumulates() {
 # 클로저는 그 앞의 가드(`if not fx or fx["state"] not in ("pending", "intent_passed"):
 # return _reject(...)`)를 반드시 지나야 한다. **[F-5 재리뷰 정정]** "escalate 가 한
 # 번 일어나면 다시는 그 가드를 못 지난다"는 예전 서술은 **틀렸다** — `cmd_fix` 의
-# `intent-pass` 분기(`docreview_state.py:467-473`)는 현재 상태를 검사하지 않고
+# `intent-pass` 분기(`docreview_state.py` 의 `cmd_fix` 안, "intent-pass" 갈래)는 현재 상태를 검사하지 않고
 # `fx["state"] = "intent_passed"` 로 무조건 대입하고, `intent_passed` 는 그 가드의
 # 허용 집합 안이다. 즉 `escalate → intent-pass → escalate` 로 **check-intent 경유의
 # 자연 재예약도 가능하다** — 도달성은 원래 서술보다 더 높다. 그와 별개로 이 파일의

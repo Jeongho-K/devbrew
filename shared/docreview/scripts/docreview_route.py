@@ -166,6 +166,13 @@ def cmd_prepare(a) -> int:
 
 # ── finalize ─────────────────────────────────────────────────────────────
 def _decision_view(it, doc):
+    # `alternatives` 는 상수로 둔다 — 이 함수는 `_remap_blocks` 를 거쳐 `cmd_finalize` 가
+    # `record_findings` 를 부르기 «전에» 불린다(설계 §6.4 한계 (a) Task 4 판단). 그
+    # 시점엔 이 라운드의 어떤 id 도 아직 `st["decides"]` 에 없어, `decide_choices(st, it["id"])`
+    # 를 여기 쓰면 재상승 후속뿐 아니라 이 라운드의 평범한 open 도 전부 빈 리스트를 받는다
+    # — 대상을 좁히지 못하고 오히려 더 넓게 깨진다. 실제 수용 선택지(제안=수용)는
+    # `docreview_state._rg_decide` 가 render_gate 시점에 `decide_choices` 로 이 상수를
+    # 덮어쓴다 — 사용자가 보는 마지막 자리가 거기다. 여기서 손대지 않는다.
     nref = None
     if doc and Path(doc).is_file():
         nref = len(refs_of(doc, it["anchor"]))

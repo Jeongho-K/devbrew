@@ -325,6 +325,30 @@ def is_open(st, fid) -> bool:
     return False
 
 
+def _is_reraise_successor(st, fid) -> bool:
+    """이 id 를 `superseded_by` 로 가리키는 만료 항목이 있는가 — 즉 승계된 의무를 지는가."""
+    return any(d.get("superseded_by") == fid for d in st["decides"].values())
+
+
+# ── 선택지 축의 정본 (설계 §6.4 알려진 한계 (a)) ───────────────────────────────
+# 상태 축(GATE_ROWS)이 「열려 있는가·막는가·보이는가」를 한 표로 모으듯, 이 함수는
+# 「이 decide 에 실제로 받아들여지는 재결정이 무엇인가」를 한 곳으로 모은다. `cmd_decide`
+# 의 거부 술어와 `_rg_decide`(render_gate 의 「대안:」 줄)가 **둘 다** 이 함수를 쓴다 —
+# 제안하는 선택지와 받아주는 선택지가 갈라지면 사용자는 거부될 것을 고르게 된다(「열거가
+# 둘이면 어긋난다」가 상태 축이 아니라 선택지 축에서 재발한 것). `docreview_route.py` 의
+# `_decision_view` 는 여기 못 낀다 — record_findings 이전(라우팅 시점)에 불려 이 라운드의
+# `st["decides"][fid]` 가 아직 없다(있으면 이 함수는 그 id 를 모조리 빈 리스트로 본다,
+# 재상승 후속뿐 아니라 이 라운드의 평범한 open 도). 그래서 마지막 자리(`_rg_decide`)만 쓴다.
+def decide_choices(st, fid) -> list:
+    """이 항목에 «실제로 받아들여지는» 재결정 선택지 목록."""
+    d = st["decides"].get(fid) or {}
+    if d.get("state") not in ("open", "expired"):
+        return []
+    if d.get("state") == "expired" or _is_reraise_successor(st, fid):
+        return ["adopt", "reject"]          # 보류 없음 — 의무를 넘길 자리가 없다
+    return ["adopt", "reject", "hold"]
+
+
 def _refresh_open_lineages(st, n) -> None:
     r = st["rounds"].setdefault(str(n), {"open_lineages": [], "progress": 0, "route_report": None})
     r["open_lineages"] = sorted({st["findings"][f]["lineage"] for f in st["findings"] if is_open(st, f)})
@@ -425,18 +449,24 @@ def cmd_decide(a) -> int:
     d = st["decides"].get(a.id)
     if not d:
         return fail("unknown_decide", id=a.id)
-    # 만료(expired)만 재결정을 받는다(설계 §6.4 탈출구) — 후속이 끝내 안 생기는 입력에
-    # 사용자의 길이 없으면 영구 차단이다. rejected · held · applied 는 이미 누군가 의무를
-    # 졌거나 소멸한 것이라 다시 열지 않는다. adopted 도 거부한다 — 그 라운드에 이미 연
-    # permit 이 아직 관측을 기다리는 중이라, 다음 라운드가 스스로 applied 나 expired 로
-    # 답한다(재결정할 대상이 아니라 결과를 기다리는 중인 것뿐이다).
-    if d["state"] not in ("open", "expired"):
+    # 수용 술어는 `decide_choices` 하나로 모은다(설계 §6.4 한계 (a)). rejected · held ·
+    # applied 는 이미 누군가 의무를 졌거나 소멸한 것이라 다시 열지 않는다. adopted 도
+    # 거부한다 — 그 라운드에 이미 연 permit 이 아직 관측을 기다리는 중이라, 다음
+    # 라운드가 스스로 applied 나 expired 로 답한다(재결정할 대상이 아니라 결과를
+    # 기다리는 중인 것뿐이다). open·expired 만 재결정을 받되(설계 §6.4 탈출구 — 후속이
+    # 끝내 안 생기는 입력에 사용자의 길이 없으면 영구 차단이다), expired 와 재상승
+    # 후속(승계된 의무를 진 open)은 「보류」가 빠진다 — 「보류」는 항목을 held 로 내려
+    # 어떤 차단 목록에도 안 들게 만들어 «한 번의 보류로 승인이 열린다», expired 에선
+    # 탈출구가 아니라 구멍이고 재상승 후속에선 그 구멍이 원본의 차단을 한 홉 건너에서
+    # 푼다(§6.4 한계 (a) 그 자체 — 「만료라서 못 한다」와 「승계 의무를 지고 있어서 못
+    # 한다」는 다른 사실이라 사유 리터럴도 갈린다).
+    allowed = decide_choices(st, a.id)
+    if not allowed:
         return fail("decide_not_open", id=a.id, state=d["state"])
-    # 만료의 선택지는 「채택」과 「기각」 둘뿐이다. 「보류」는 항목을 held 로 내려
-    # 열린 decide 에도 차단 만료에도 안 들게 만들어 «한 번의 보류로 승인이 열린다» —
-    # 탈출구가 아니라 구멍이다.
-    if d["state"] == "expired" and a.choice == "hold":
-        return fail("decide_hold_not_allowed_for_expired", id=a.id)
+    if a.choice not in allowed:
+        if d["state"] == "expired":
+            return fail("decide_hold_not_allowed_for_expired", id=a.id)
+        return fail("decide_hold_not_allowed_for_reraise_successor", id=a.id)
     n = int(st["round"])
     f = st["findings"][a.id]
     entry = {"decision_id": "D%d.%d" % (n, len(st["decision_log"]) + 1), "round": n,
@@ -678,13 +708,22 @@ def gate_summary(st) -> dict:
     return g
 
 
+_CHOICE_LABEL = {"adopt": "채택(적용)", "reject": "기각(원복)", "hold": "보류"}
+
+
 def _rg_decide(st, g, fid):
+    # [Task 4 — §6.4 한계 (a)] 「대안:」 줄은 `dv.get("alternatives")`(docreview_route.py
+    # `_decision_view` 의 상수 목록)가 아니라 `decide_choices` 로 낸다 — 그쪽은 라우팅
+    # 시점(record_findings 이전)에 불려 이 id 를 못 보므로 여기가 «제안 = 수용» 이
+    # 실제로 성립하는 유일한 자리다(위 `decide_choices` 헤더 코멘트). `dv` 는 변경·근거·
+    # 영향 세 필드에는 여전히 쓴다 — 그 셋은 항목별 서술이라 선택지 축과 무관하다.
     f = st["findings"][fid]
     dv = f.get("decision_view") or {}
+    alternatives = [_CHOICE_LABEL[c] for c in decide_choices(st, fid)]
     return ["[decide%s] %s — %s" % (" auto" if dv.get("auto") else "", fid, f.get("summary")),
             "  변경: %s" % dv.get("change", f.get("summary")),
             "  근거: %s" % dv.get("basis", f.get("evidence") or "—"),
-            "  대안: %s" % " / ".join(dv.get("alternatives") or ["채택", "기각", "보류"]),
+            "  대안: %s" % " / ".join(alternatives),
             "  영향: %s" % dv.get("impact", f.get("anchor"))]
 
 
