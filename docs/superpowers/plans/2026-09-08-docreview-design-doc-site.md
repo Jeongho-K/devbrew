@@ -1006,6 +1006,7 @@ grep -E 'IMPORT|ANCHOR|unwired|도출' /tmp/wiring-before.txt | head -20
 | `plugins/spec-distill/tests/test_handoff_context_empty_subsections.sh:6` · `test_handoff_context_section_required.sh:7` · `test_handoff_conversation_reference.sh:6` · `test_handoff_design_mode.sh:6` · `test_handoff_kill_switch.sh:6` | 다섯 다 `AGENT=…/spec-reviewer.md` | handoff 축이 통째로 소멸(대부분 vacuous) | `plugins/spec-distill/references/docreview-profiles/design-doc.md` 로 재조준. 그 프로필의 `layer_rubric.layer2` 에 `handoff_incomplete` 가 실재한다(:16) |
 | `plugins/spec-distill/tests/test_web_kill_switch.sh:88,115,304-307` | 러너 이름 arm + 감사 범위 주석 | 죽은 arm(비차단) | arm 을 `run_docreview_codex_reviewer.sh` 로 바꾼다. **304-307 의 주석은 그대로 둔다** — 과거 실패의 기록이지 현행 인용이 아니다 |
 | `plugins/quality-gates/tests/lib/codex_observation.sh:120` | `obs_invoke` 인자 표의 `run_spec_codex_reviewer.sh)` arm | 죽은 arm | 지운다. `run_docreview_codex_reviewer.sh` arm 은 PR 1b 가 이미 넣었다 |
+| `plugins/quality-gates/tests/test_codex_gate_observation.sh` 의 `UNGATED_run_spec_codex_reviewer_sh` 등재 줄 + 그 위 주석 블록 | T6b 가 새로 넣었다(그 러너가 아직 살아 있으므로) | **삭제 후 조용히 썩는다** — 후보는 실재 파일에서 도출되므로 파일이 사라지면 그 변수는 아무도 읽지 않고 단언도 note 도 없다. 이 파일 헤더의 「목록은 줄어들기만 한다」는 «게이트가 생김» 방향에만 참이다 | **`git rm` 과 같은 커밋에서 그 줄과 주석 블록을 함께 지운다.** 줄번호는 밀렸으니 이름으로 찾는다 |
 | `plugins/quality-gates/tests/test_codex_gate_observation.sh:73,319` | `UNGATED_run_docreview_codex_reviewer_sh` ratchet 항목이 「호출자 0」이라 적혀 있다 + 라벨 | 껍데기가 그 러너를 부르므로 **거짓** | 그 ratchet 줄을 **손으로 지운다**(그 원장의 주석이 「자동 만료되지 않는다」고 명시). 같은 파일 :88 의 `codex-gate:begin` 마커 하한 `-ge 3` 과 실제 마커 수를 함께 확인한다 |
 | `plugins/spec-distill/tests/test_arm_ledger_timing.sh` (T12b) | 옛 어휘 두 토큰(`claude_verdict_unrecoverable`·`codex_degraded`)으로 껍데기를 잰다 | RED 1줄 | 두 토큰을 엔진 어휘(`blocks`·`critic 사망`)로 바꾼다. **불변식 자체는 껍데기에 살아 있다** — 락을 지우지 않는다 |
 | `plugins/spec-distill/references/proceed-gate.md:3,117` · `conducting-interview/references/finishing.md:227` · `reviewing-brief/SKILL.md:429` | 「`reviewing-spec` 의 옵션 ① 블록에 앵커가 산다」 · 「cap 5」 | 살아 있는 문서의 죽은 인용 | 새 사실로 고친다. cap 은 2 이고 앵커는 껍데기 안이다 |
@@ -1046,7 +1047,7 @@ cd /Users/jeonghokim/Downloads/devbrew
 # ① 식별자 — 실행 표면에서 0 이어야 한다(CHANGELOG·docs 의 이력 언급은 코퍼스 밖)
 git grep -n 'spec-reviewer\|spec_reviewer\|run_spec_codex_reviewer\|build_spec_codex_prompt' \
   -- 'plugins/*/agents/*' 'plugins/*/skills/*' 'plugins/*/scripts/*' 'plugins/*/hooks/*' \
-     'plugins/*/commands/*' 'plugins/*/references/*' 'shared/*' | grep -v CHANGELOG
+     'plugins/*/commands/*' 'plugins/*/references/*' 'plugins/*/tests/*' 'shared/*' | grep -v CHANGELOG
 # ② 개념 별칭 — verdict 어휘가 실행 표면에 남았는가(AC2)
 git grep -n 'needs_revise\|needs_interview\|combined_verdict\|claude_verdict\|Stagnation_signal\|issue_history\|raised_count\|dismissed_by_user' \
   -- 'plugins/spec-distill/skills/reviewing-spec/*' 'plugins/spec-distill/README.md'
@@ -1068,6 +1069,7 @@ Task 6 의 report 가 적은 RED 목록과 대조한다. 새로 생긴 RED 는 b
 
 **Files:**
 - Modify: `plugins/spec-distill/README.md` · `CHANGELOG.md` · `.claude-plugin/plugin.json`
+- Modify: `plugins/quality-gates/CHANGELOG.md` · `.claude-plugin/plugin.json` (이 PR 이 그 플러그인의 테스트를 고쳤다 — CLAUDE.md 의 bump 요구)
 - Modify: `shared/README.md`(디렉토리 표에 `docreview/` 행)
 - Modify: `docs/philosophy/devbrew-harness-philosophy.md:28,73`(코드 지도의 리뷰 자리 목록)
 
