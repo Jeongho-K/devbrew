@@ -118,6 +118,19 @@ def _unquote(v):
     return v
 
 
+def _last_match(pattern, text):
+    # PyYAML 은 매핑에 같은 키가 두 번 나오면 **나중 값이 이긴다**(실측:
+    # `yaml.safe_load("a: 1\na: 2")` == {"a": 2}). `re.search` 는 반대로 첫
+    # 매치를 낸다 — 중복 키가 있으면 이 러너와 `load_profile()` 이 서로 다른
+    # 값을 "정답"으로 읽는, fail-open 방향의 불일치가 된다(리뷰 F-5 항목
+    # 5·6 — `web:` 중복은 킬 스위치에 인접한 통제라 특히 위험하다). 마지막
+    # 매치를 취해 PyYAML 의 last-wins 규칙에 맞춘다.
+    last = None
+    for last in re.finditer(pattern, text):
+        pass
+    return last
+
+
 def _flow_list(key, text):
     # `layer1`·`layer2` 는 `layer_rubric:` 아래 2칸 들여쓰기다 — `allowed_
     # dispositions` 는 최상위(들여쓰기 없음). 둘 다 받으려면 줄 시작의 임의
@@ -132,7 +145,17 @@ def _flow_list(key, text):
     # 여전히 유효하므로 게이트가 안 잡는다) 프롬프트는 "assign a disposition
     # from: " 뒤가 빈 채로 나간다. 트레일링 `# comment` 도 두 형식 모두에서
     # 허용한다(비교 지점: `web:` 아래에도 같은 요구가 있다).
-    mm = re.search(r"(?m)^\s*" + re.escape(key) + r":[ \t]*\[(.*?)\][ \t]*(?:#.*)?$", text)
+    #
+    # 반환은 리스트(가능하면 채워서, 정말 없거나 비었으면 `[]`) 또는 `None`
+    # (아래) — `None` 은 "헤더는 있는데 이 함수가 못 읽는 모양"이라는 별개의
+    # 사실이다. 이 구분이 필요한 이유(리뷰 F-5): `layer2` 는 정당하게 비어
+    # 있을 수 있어(seed.md — `layer2: []`) 호출부가 "비었다"만으로는 진짜
+    # 빈 것과 못 읽은 것을 가르지 못한다. `layer1`·`allowed_dispositions` 는
+    # 게이트가 비지 않음을 보장하니 `[]`만으로 충분하지만, `layer2` 처럼
+    # 게이트가 비어도 허용하는 키는 `None` 신호가 있어야 줄바꿈된 flow
+    # 리스트(`layer2: [placeholder,\n  ambiguity]`) 같은 모양을 "정상적으로
+    # 비었다"와 구별해 호출부에 넘길 수 있다.
+    mm = _last_match(r"(?m)^\s*" + re.escape(key) + r":[ \t]*\[(.*?)\][ \t]*(?:#.*)?$", text)
     if mm:
         inner = mm.group(1).strip()
         if not inner:
@@ -143,11 +166,25 @@ def _flow_list(key, text):
     # 원소가 빈 문자열이 된다("\n  - a".splitlines() == ['', '  - a']) — 그
     # 빈 줄이 `- ` 패턴에 안 맞아 첫 항목을 보기도 전에 루프가 끊긴다(실측
     # 회귀 — 고치기 전엔 block 세 프로필 모두 빈 리스트를 냈다).
-    mm = re.search(r"(?m)^\s*" + re.escape(key) + r":[ \t]*(?:#.*)?\n", text)
+    mm = _last_match(r"(?m)^\s*" + re.escape(key) + r":[ \t]*(?:#.*)?\n", text)
     if not mm:
+        # 헤더 줄 자체가 이 두 형태(flow·block) 중 어디에도 안 맞는다. 콜론
+        # 뒤에 공백·코멘트가 아닌 내용이 있으면(줄바꿈된 flow list 등) 그
+        # 키는 «존재하지만 이 파서가 못 읽는 모양»이다 — 키가 아예 없는 것과
+        # 다르다(리뷰 F-5, layer2 잔여). 콜론 뒤에 아무 내용도 없으면(키
+        # 자체가 없거나, `key:` 뿐이고 뒤에 목록이 없거나) 정말 빈 것으로
+        # 본다.
+        if re.search(r"(?m)^\s*" + re.escape(key) + r":[ \t]*\S", text):
+            return None
         return []
     items = []
     for line in text[mm.end():].splitlines():
+        # 빈 줄·줄 전체 주석은 목록 «안»에서도 유효하다(YAML 블록 시퀀스
+        # 문법) — 항목이 아니라고 끊으면 리뷰 F-5 항목 2·3(빈 줄/주석으로
+        # 잘리는 목록)이 재발한다. 항목도 아니고 빈 줄·주석도 아닌 첫 줄에서만
+        # 끊는다(다음 키로의 dedent, 또는 frontmatter 끝).
+        if not line.strip() or re.match(r"^[ \t]*#", line):
+            continue
         im = re.match(r"^\s*-\s*(.*?)[ \t]*(?:#.*)?$", line)
         if not im:
             break
@@ -159,11 +196,38 @@ def _flow_list(key, text):
 lr_layer1 = _flow_list("layer1", fm_text)
 lr_layer2 = _flow_list("layer2", fm_text)
 ad = _flow_list("allowed_dispositions", fm_text)
-# YAML(그리고 PyYAML 의 `load_profile()`)은 불리언 대소문자를 가린다 — `True`·
-# `TRUE`·`true` 전부 파이썬 `True` 다(리뷰 F-1: `isinstance(True, bool)` 이라
-# 상위 게이트가 그대로 통과시킨다). `(?i)` 로 대소문자 무시 + 트레일링 코멘트
-# 허용.
-web = re.search(r"(?im)^web:[ \t]*true[ \t]*(?:#.*)?$", fm_text) is not None
+# **게이트-유도 불변식(리뷰 F-5)** — `docreview_state.py:load_profile()` 이
+# `layer_rubric.layer1` 이 비지 않고 `allowed_dispositions` 가 비지 않고
+# decide·ask 를 포함함을 이미 강제한다(그 파일 :97-100·:104-106) — 그 검증을
+# 통과한 프로필이라면 이 러너가 이 둘을 비어 있게 읽을 방법이 원리적으로
+# 없다. 그러므로 여기서 비어 있다는 것은 "그 프로필이 실제로 비었다"가 아니라
+# "이 stdlib 파서가 그 모양을 못 읽었다"는 뜻이다 — 개별 모양을 하나씩
+# 나열해 고치는 대신(리뷰가 잡은 여섯 개 중 다섯이 이런 식으로 새로 생겼을
+# 것이다), **그 도출 자체를 실패로 선언한다.** `layer2` 는 게이트가 비어도
+# 허용하므로 같은 논리가 안 통한다 — 대신 `_flow_list` 가 낸 `None`(헤더는
+# 있는데 못 읽음)을 그대로 실패 신호로 받는다. 값을 채우지 못한 채 진행해
+# "assign a disposition from: " 뒤가 빈 프롬프트를 조용히 내보내는 대신,
+# 러너의 기존 loud 경로(`emit_fallback prompt_build_failed`)로 넘긴다 — 새
+# 실패 모드가 아니라 이미 있던 계약을 이 지점까지 넓히는 것이다.
+if lr_layer1 is None or lr_layer2 is None or ad is None or not lr_layer1 or not ad:
+    sys.exit(1)
+lr_layer2 = lr_layer2 or []
+# YAML 1.1 진리값 어휘 — PyYAML 의 SafeLoader 가 `true`·`yes`·`on` 을 대소문자
+# 불문하고 파이썬 `True` 로 접는다(실측: `yaml.safe_load("web: yes")` ==
+# {"web": True}). `y`/`n` 한 글자는 PyYAML 에서도 문자열로 남아 `load_profile()`
+# 의 `isinstance(data["web"], bool)` 게이트에 애초에 안 걸리므로 여기서
+# 따로 받을 필요가 없다(리뷰 F-5 항목 4).
+#
+# **진리값 패턴으로만 `_last_match` 하지 않는다** — 값 자체로 걸러 검색하면
+# "web: true\nweb: false"(true 가 먼저, false 가 나중) 처럼 **마지막 값이
+# 거짓인** 경우, 그 패턴에 맞는 줄이 앞의 true 하나뿐이라 그것이 "마지막
+# 매치"로 잡혀 PyYAML 의 실제 last-wins(false)와 어긋난다 — 항목 5(중복
+# `web:` 키)를 값-특정 정규식으로 "닫았다"고 착각할 뻔한 자리다. 대신 값과
+# 무관하게 **`web:` 줄 자체**의 마지막 occurrence 를 먼저 찾고, 그 줄의
+# 값만 진리값 어휘와 대조한다 — PyYAML 이 실제로 하는 것(키로 마지막을
+# 고른 뒤 그 값을 해석)과 같은 순서다.
+web_mm = _last_match(r"(?im)^web:[ \t]*(\S+)[ \t]*(?:#.*)?$", fm_text)
+web = web_mm is not None and re.match(r"(?i)^(true|yes|on)$", web_mm.group(1)) is not None
 pathlib.Path(meta_path).write_text("web: %s\n" % ("true" if web else "false"), encoding="utf-8")
 
 pre = ""
