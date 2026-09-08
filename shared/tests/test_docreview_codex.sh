@@ -207,4 +207,18 @@ assert_file_grep "$TMPD/shape-dup-layer1-cap.txt" 'marker_last_wins_category' \
 assert_file_absent "$TMPD/shape-dup-layer1-cap.txt" 'goal_fit' \
   "러너: 중복 layer1: 키 → 첫 선언(goal_fit 등)은 안 실린다(first-match 회귀 방지)"
 
+# 리뷰 F-6 — `ground_truth:` 의 block scalar 안에 layer1/layer2/allowed_
+# dispositions 처럼 보이는 decoy 줄이 있어도(frontmatter 상 진짜 필드
+# «뒤»에 와서 스코프 안 된 last-match 라면 진짜를 이겼을 것) 진짜 값만
+# 읽는다 — `layer_rubric:` 블록 밖의 내용은 애초에 검색 범위에 안 들어온다.
+mutate_case ground-truth-decoy
+assert_file_grep "$TMPD/shape-ground-truth-decoy-cap.txt" 'goal_fit' \
+  "러너: ground_truth: block scalar 안 decoy → 진짜 layer1(goal_fit)을 읽는다(리뷰 F-6)"
+assert_file_absent "$TMPD/shape-ground-truth-decoy-cap.txt" 'decoy_layer1' \
+  "러너: ground_truth: 안 decoy_layer1 은 안 실린다(F-6 회귀 방지)"
+assert_file_absent "$TMPD/shape-ground-truth-decoy-cap.txt" 'decoy_layer2' \
+  "러너: ground_truth: 안 decoy_layer2 는 안 실린다(F-6 회귀 방지)"
+assert_file_grep "$TMPD/shape-ground-truth-decoy-cap.txt" 'assign a disposition from: decide, ask, fix, defer, drop' \
+  "러너: ground_truth: 안 decoy(allowed_dispositions: [decide]) 대신 진짜 다섯 처분을 읽는다(F-6)"
+
 finish

@@ -14,7 +14,7 @@ import sys
 
 SHAPES = (
     "wrapped-layer1", "wrapped-layer2", "block-blank", "block-comment",
-    "web-yes", "dup-web", "dup-layer1",
+    "web-yes", "dup-web", "dup-layer1", "ground-truth-decoy",
 )
 
 
@@ -68,6 +68,24 @@ def main():
             r"^(  layer1: \[[^\]]*\])$",
             r"\1\n  layer1: [marker_last_wins_category]",
             text, count=1, flags=re.MULTILINE)
+    elif shape == "ground-truth-decoy":
+        # 리뷰 F-6 — 다른 최상위 키(`ground_truth:`)의 block scalar 안에
+        # layer1·layer2·allowed_dispositions 처럼 보이는 줄을 심는다. 원본의
+        # 단일행 `ground_truth: "..."` 를 지우고, frontmatter 를 닫는 `---`
+        # 바로 앞(= 진짜 layer_rubric·allowed_dispositions 보다 뒤, 텍스트
+        # 상 "마지막 occurrence")에 decoy 를 심은 block scalar 로 다시
+        # 넣는다 — 스코프 안 된 `_last_match` 라면 이 decoy 가 진짜 값을
+        # 이겨야 결함이 실제로 드러난다.
+        text = re.sub(r"^ground_truth:.*$\n?", "", text, count=1, flags=re.MULTILINE)
+        decoy = (
+            "ground_truth: |\n"
+            "  decoy block scalar deliberately mimicking field headers\n"
+            "  layer1: [decoy_layer1]\n"
+            "  layer2: [decoy_layer2]\n"
+            "  allowed_dispositions: [decide]\n"
+            "  end of decoy\n"
+        )
+        text = re.sub(r"\n---\n", "\n" + decoy + "---\n", text, count=1)
 
     open(dst, "w", encoding="utf-8").write(text)
     return 0

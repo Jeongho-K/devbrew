@@ -131,10 +131,37 @@ def _last_match(pattern, text):
     return last
 
 
-def _flow_list(key, text):
-    # `layer1`·`layer2` 는 `layer_rubric:` 아래 2칸 들여쓰기다 — `allowed_
-    # dispositions` 는 최상위(들여쓰기 없음). 둘 다 받으려면 줄 시작의 임의
-    # 공백을 허용해야 한다(`^\s*`) — 앵커를 열 칸 고정으로 두면 한쪽이 깨진다.
+def _block_span(top_key, text):
+    # **컬럼-0 키의 마지막 occurrence 뒤부터, 다음 컬럼-0 키(또는 frontmatter
+    # 끝) 앞까지**가 그 최상위 키의 몸통이다. 이 함수가 존재하는 이유(리뷰
+    # F-6): `ground_truth:` 같은 다른 최상위 키가 block scalar(`ground_truth:
+    # |`)일 수 있고, 그 스칼라 «본문»에 우연히 "layer1: [decoy]" 같은 줄이
+    # 있으면 `_last_match(r"^\s*layer1:...", 전체 frontmatter)` 가 그 decoy 를
+    # 진짜 헤더로 잘못 집는다 — YAML 구조 경계를 안 지키는 정규식의 대가다.
+    # 이걸 막는 성질은 이미 `web:` 에 있다(컬럼 0 고정, `\s*` 없음) — block
+    # scalar 의 내용은 **부모보다 반드시 더 들여써야** 하므로(YAML 문법)
+    # 컬럼 0에 올 수 없다. `layer_rubric:` 자신도 최상위 키라 같은 성질을
+    # 쓸 수 있다: 그 블록의 시작·끝을 컬럼-0 경계로 먼저 자르면, `layer1`/
+    # `layer2` 검색을 그 안으로만 좁혀 다른 키의 block scalar 내용이 애초에
+    # 검색 범위에 들어오지 않는다. 중복 `layer_rubric:` 도 last-wins 로 고른다
+    # (다른 키들과 같은 계약).
+    matches = list(re.finditer(r"(?m)^" + re.escape(top_key) + r":[^\n]*\n?", text))
+    if not matches:
+        return ""
+    start = matches[-1].end()
+    nm = re.search(r"(?m)^\S", text[start:])
+    return text[start:start + nm.start()] if nm else text[start:]
+
+
+def _flow_list(key, text, indented=True):
+    # `layer1`·`layer2` 는 `layer_rubric:` 아래 2칸 들여쓰기다(`indented=True`,
+    # 기본값) — 호출부가 `_block_span("layer_rubric", ...)` 로 이미 좁혀진
+    # 텍스트를 넘기므로 `^\s*` 가 다른 최상위 키의 block scalar 내용을 잘못
+    # 물 위험이 없다(리뷰 F-6, 위 `_block_span` 설명 참조). `allowed_
+    # dispositions` 는 최상위 키라 `indented=False` 로 불러 컬럼 0에
+    # 고정한다 — `web:` 과 같은 성질(block scalar 내용은 부모보다 반드시
+    # 더 들여써야 하므로 컬럼 0에 못 온다, YAML 문법).
+    prefix = r"^\s*" if indented else r"^"
     #
     # 형식은 **둘 다** 받는다 — flow(`key: [a, b, c]`)와 block(`key:\n  - a\n
     # - b`). `load_profile()`(docreview_state.py, 실 PyYAML)은 이 상위 스키마
@@ -155,7 +182,7 @@ def _flow_list(key, text):
     # 게이트가 비어도 허용하는 키는 `None` 신호가 있어야 줄바꿈된 flow
     # 리스트(`layer2: [placeholder,\n  ambiguity]`) 같은 모양을 "정상적으로
     # 비었다"와 구별해 호출부에 넘길 수 있다.
-    mm = _last_match(r"(?m)^\s*" + re.escape(key) + r":[ \t]*\[(.*?)\][ \t]*(?:#.*)?$", text)
+    mm = _last_match(r"(?m)" + prefix + re.escape(key) + r":[ \t]*\[(.*?)\][ \t]*(?:#.*)?$", text)
     if mm:
         inner = mm.group(1).strip()
         if not inner:
@@ -166,7 +193,7 @@ def _flow_list(key, text):
     # 원소가 빈 문자열이 된다("\n  - a".splitlines() == ['', '  - a']) — 그
     # 빈 줄이 `- ` 패턴에 안 맞아 첫 항목을 보기도 전에 루프가 끊긴다(실측
     # 회귀 — 고치기 전엔 block 세 프로필 모두 빈 리스트를 냈다).
-    mm = _last_match(r"(?m)^\s*" + re.escape(key) + r":[ \t]*(?:#.*)?\n", text)
+    mm = _last_match(r"(?m)" + prefix + re.escape(key) + r":[ \t]*(?:#.*)?\n", text)
     if not mm:
         # 헤더 줄 자체가 이 두 형태(flow·block) 중 어디에도 안 맞는다. 콜론
         # 뒤에 공백·코멘트가 아닌 내용이 있으면(줄바꿈된 flow list 등) 그
@@ -174,7 +201,7 @@ def _flow_list(key, text):
         # 다르다(리뷰 F-5, layer2 잔여). 콜론 뒤에 아무 내용도 없으면(키
         # 자체가 없거나, `key:` 뿐이고 뒤에 목록이 없거나) 정말 빈 것으로
         # 본다.
-        if re.search(r"(?m)^\s*" + re.escape(key) + r":[ \t]*\S", text):
+        if re.search(r"(?m)" + prefix + re.escape(key) + r":[ \t]*\S", text):
             return None
         return []
     items = []
@@ -193,9 +220,10 @@ def _flow_list(key, text):
             items.append(_unquote(val))
     return items
 
-lr_layer1 = _flow_list("layer1", fm_text)
-lr_layer2 = _flow_list("layer2", fm_text)
-ad = _flow_list("allowed_dispositions", fm_text)
+LAYER_RUBRIC_BLOCK = _block_span("layer_rubric", fm_text)
+lr_layer1 = _flow_list("layer1", LAYER_RUBRIC_BLOCK)
+lr_layer2 = _flow_list("layer2", LAYER_RUBRIC_BLOCK)
+ad = _flow_list("allowed_dispositions", fm_text, indented=False)
 # **게이트-유도 불변식(리뷰 F-5)** — `docreview_state.py:load_profile()` 이
 # `layer_rubric.layer1` 이 비지 않고 `allowed_dispositions` 가 비지 않고
 # decide·ask 를 포함함을 이미 강제한다(그 파일 :97-100·:104-106) — 그 검증을
