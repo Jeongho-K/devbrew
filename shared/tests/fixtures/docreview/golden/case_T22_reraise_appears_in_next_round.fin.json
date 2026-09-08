@@ -44,6 +44,7 @@
    "evidence": "라운드 2 에 채택 변경 관측 없음 (D1.1)",
    "origin": "auto",
    "kind": "pre",
+   "prev_hash": null,
    "immutable": false,
    "bucket": "fee27fc9",
    "id": "fee27fc9#r2.2",
