@@ -48,6 +48,12 @@ case_AC22_stale_pointer_cleared_via_redecide
 # 「양성대조 실패(계측기 고장)」로만 보고돼 행동 락으로는 안 잡힌다. 브리프의 파일
 # 목록엔 없었지만(브리프는 이 파일을 몰랐다) 형제 case_AC22_* 들과 같은 종류다.
 case_AC22b_reraise_successor_hold_refused
+# Task 5 (2026-09-08-docreview-design-doc-site) — 같은 이유(F-8/Ruling 23)로 여기도
+# 등록한다. 브리프의 파일 목록에도 없었다(브리프는 이 파일을 몰랐다) — AC22b 위
+# 코멘트가 이미 기록한 바로 그 사정 그대로다.
+case_AC22c_reraise_inherits_post_kind
+case_AC22c_reraise_inherits_prev_hash
+case_AC22c_reraise_preserves_pre_kind
 case_choices_offered_equal_accepted
 case_decide_reason_literals_not_open_and_expired
 # Task 2 재리뷰(F-8/Ruling 23) — escalated 케이스 넷은 지금까지 매트릭스

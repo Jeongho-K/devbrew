@@ -467,11 +467,16 @@ def _auto_decides(a, st, prof, sections, n, L):
         # 없다」와 「대상은 있는데 이미 재결정됐다」를 같은 숫자로 뭉개면 안 된다.
         if not d0 or d0.get("state") != "expired":
             continue          # 사용자가 이미 재결정했다 — 의무는 그 결정이 진다
+        # 후속은 원본의 «성격»을 물려받는다. `pre`(아직 안 한 편집)와 `post`(이미
+        # 일어난 변경의 원복 의무)는 permit 의 종류가 다르고, `post` 만 해시 대조를
+        # 한다 — 하드코딩하면 원복 의무가 「앵커가 닿기만 하면 통과」로 강등된다
+        # (설계 §6.4 알려진 한계 (b)).
         extra.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "채택 후 미적용(expired): " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
                       "supersedes": r["finding_id"], "evidence": r.get("reason"), "origin": "auto",
-                      "kind": "pre", "immutable": bool(f0.get("immutable")), "_source": "reraise"})
+                      "kind": d0.get("kind") or "pre", "prev_hash": d0.get("prev_hash"),
+                      "immutable": bool(f0.get("immutable")), "_source": "reraise"})
     st["reraise"] = []
     return extra, reraise_unconsumed, esc_unconsumed
 

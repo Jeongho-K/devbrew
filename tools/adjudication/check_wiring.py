@@ -448,7 +448,9 @@ EXEMPT = {
     ("plugins/quality-gates/scripts/docreview_route.py", 469,
      "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
         _DR_RERAISE_ALREADY_DECIDED,
-    ("plugins/quality-gates/scripts/docreview_route.py", 509,
+    # Task 5 — 재상승 후속의 kind·prev_hash 승계 주석(4줄)이 `_auto_decides` 재상승
+    # 갈래 위에 끼어들며 아래로 5줄 밀렸다(옛 509 → 514). 가드 텍스트 자체는 그대로다.
+    ("plugins/quality-gates/scripts/docreview_route.py", 514,
      "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
         _DR_LINEAGE_NOT_RERAISE,
 }

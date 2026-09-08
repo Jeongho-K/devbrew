@@ -387,6 +387,75 @@ case_AC22b_reraise_successor_hold_refused() {
     "AC22b: 보류 시도 뒤에도 승인은 열리지 않는다(I5 — 이 항목이 유일한 블로커였으므로 공허하지 않다)"
   rm -rf "$d"
 }
+# ── 재상승 후속의 kind·prev_hash 승계 (Task 5, 설계 §6.4 알려진 한계 (b)) ────────
+# 원본이 post(얼림 diff 가 만든 사후 결정)였고 「기각」으로 원복 permit(expect_hash =
+# 기각 시점 스냅샷 해시)이 열렸는데 그 원복이 관측되지 않아 만료하면, 후속은 원본의
+# kind·prev_hash 를 물려받아야 한다 — 하드코딩된 "pre" 는 「채택」이 해시 대조 없는
+# apply permit 을 열게 만들어 원복 의무를 「앵커가 닿기만 하면 통과」로 강등시킨다
+# (되돌리지 않은 얼림 위반이 그대로 승인된다). `_post_with_real_hash`(T25·T26 이
+# 쓰는 헬퍼, 실제 r1 해시를 prev_hash 로 갖는 post finding 을 심고 기각까지 걷는다)
+# 로 원복 permit 을 연 뒤, 그 라운드 관측 안 됨(post 만료)까지 실제로 걷고
+# finalize 로 후속을 낸다.
+#
+# 선결조건 렌더 단언은 `case_AC22_post_expiry_render_tail` 과 같은 대상을 finalize
+# «전»(원본이 아직 `blocked_expired` — 즉 `_rg_expired` 로 렌더되는) 시점에 잰다.
+# finalize 뒤엔 `_resolve_ids_and_lineage` 가 원본에 `superseded_by` 를 써 원본이
+# `superseded_expired`(`_rg_superseded` 렌더, 꼬리 없음)로 넘어가고 후속은 아직
+# `open_decide`(`_rg_decide` 렌더, 역시 꼬리 없음)라 — 실측(수동 재현) — finalize
+# 뒤 어느 시점에도 이 케이스 하나만으로는 꼬리가 다시 안 보인다. 그래서 꼬리
+# 단언은 finalize 전에 둔다(브리프의 단언 순서를 시간순으로 읽지 않는다 — 단언은
+# 이 라운드 전체에 걸쳐 참인 사실의 집합이지, finalize 뒤에만 성립해야 하는 게
+# 아니다).
+case_AC22c_reraise_inherits_post_kind() {
+  local d; d="$(_post_with_real_hash)"; next_round "$d" "$FX/design-sample-r2.md" >/dev/null   # 원복 관측 안 됨 → expired + 재상승 예약
+  assert_eq "$(st_yaml "$d" 'st["decides"]["dddd0001#r2.1"]["state"], st["decides"]["dddd0001#r2.1"]["kind"]')" "('expired', 'post')" "AC22c: 선결조건 — 사후 결정이 post 만료다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c '원복 의무를 관측 없이 종결한다')" "1" "AC22c: 선결조건 — finalize 전 만료 렌더에 원복 경고 꼬리가 실린다"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep3.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff3.json" --doc "$FX/design-sample-r2.md" > "$d/fin3.json"
+  local succ; succ="$(jget "$d/fin3.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["kind"]')" "post" "AC22c: 후속이 원본의 kind(post)를 물려받는다(하드코딩 pre 가 아니다)"
+  local out; out="$(py docreview_state.py decide --state-dir "$d" --id "$succ" --choice adopt --quote '재확인: 이번엔 채택')"
+  assert_eq "$(printf '%s' "$out" | jgets 'd["state"], d["permit"]')" "('applied', None)" "AC22c: post 후속의 「채택」은 즉시 applied 다(사후 채택의 계약 — pre 였다면 adopted + apply permit)"
+  rm -rf "$d"
+}
+# 위 케이스와 같은 셋업이지만 kind 승계와 «독립»된 축(prev_hash)만 잰다 — 변이
+# ①(kind 하드코딩 복원)과 변이 ②(prev_hash 승계 삭제)가 한 케이스 안에서 서로를
+# 가리지 않도록 쪼갠다(브리프 Step 3 — 하나를 되돌려도 다른 단언이 여전히 RED 면
+# 매트릭스에서 어느 변이가 어느 단언을 잡았는지 구별이 안 된다). `prev_hash` 는
+# `record_findings` 가 `PUBLIC_FIELDS` 를 거치지 않고 항목에서 직접 읽으므로
+# (`st["decides"][fid] = {..., "prev_hash": it.get("prev_hash"), ...}`, `kind`
+# 처럼 `PUBLIC_FIELDS` 목록에 없어도 decides 레코드에 실린다) 이 단언은 그 경로가
+# 실제로 값을 나른다는 것까지 함께 잰다.
+case_AC22c_reraise_inherits_prev_hash() {
+  local d; d="$(_post_with_real_hash)"; next_round "$d" "$FX/design-sample-r2.md" >/dev/null   # 원복 관측 안 됨 → expired + 재상승 예약
+  local orig_hash; orig_hash="$(st_yaml "$d" 'st["decides"]["dddd0001#r2.1"]["prev_hash"]')"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep3.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff3.json" --doc "$FX/design-sample-r2.md" > "$d/fin3.json"
+  local succ; succ="$(jget "$d/fin3.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["prev_hash"]')" "$orig_hash" "AC22c: 후속의 prev_hash 가 원본의 prev_hash 와 같다"
+  rm -rf "$d"
+}
+# [Task 5 실행 노트] 브리프의 두 변이(하드코딩 "pre" 복원 · prev_hash 승계 삭제)는
+# «post» 원본만 겨눈다. `d0.get("kind") or "pre"` 는 양방향 값을 다루는 식이라,
+# 반대 방향 회귀(«pre» 원본인데 후속이 "post" 로 과잉 승계되는 것 — kind 를 무조건
+# "post" 로 강제하는 변이)를 잡는 락이 그때까지 하나도 없었다(실측 — 기존
+# case_AC20_*·case_AC21_* 는 F_DEC(kind="pre")로 실제 finalize 재상승을 여러 번
+# 걷지만 성공의 kind 를 단언하는 자리가 없다, T28 은 다른 갈래(escalated)라 무관).
+# 이 방향이 위험한 이유: "post" 로 잘못 태어나면 「채택」이 `cmd_decide` 의
+# `if d.get("kind") == "post":` 분기를 타 permit 없이 즉시 applied 로 끝난다 —
+# 「실제로 그 편집이 관측됐는가」를 permit 이 검증하는 pre 의 정상 계약을 건너뛴다.
+# `case_AC22_stale_pointer_cleared_via_redecide` 의 앞부분(F_DEC 채택 → 무변경 →
+# expired → finalize)과 같은 셋업을 재사용해 실제 라우팅으로 후속을 낸다.
+case_AC22c_reraise_preserves_pre_kind() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
+  local succ; succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["kind"]')" "pre" "AC22c: pre 원본의 후속은 pre 로 남는다(post 로 과잉 승계되지 않는다)"
+  rm -rf "$d"
+}
 # `decide_choices` 를 실제로 import 해 낸다(문자열로 옮겨 적지 않는다) — heredoc-in-$()
 # 파싱 함정을 피해 st_yaml 처럼 python -c 한 줄로 둔다.
 dc_choices() {   # dc_choices <state-dir> <fid> → decide_choices(st, fid) 의 python 리스트 repr

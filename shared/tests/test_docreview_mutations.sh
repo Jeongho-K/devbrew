@@ -610,4 +610,37 @@ s/fail("decide_hold_not_allowed_for_expired", id=a\.id)/fail("MUT_expired_reason
 #    같은 종류).
 mut 1/1 rg_expired_unwired_and_offers_hold case_choices_offered_equal_accepted sed_state \
   's/alt = " \/ "\.join(_CHOICE_LABEL\[c\] for c in decide_choices(st, fid))/alt = "채택 \/ 기각 \/ 보류"/'
+
+# ── 재상승 후속의 kind·prev_hash 승계 (Task 5, 2026-09-08-docreview-design-doc-site,
+#    설계 §6.4 알려진 한계 (b)) ── 표준 원 숫자(①…㊾)는 지난 태스크들에서 이미
+#    ㊾(49)까지 다 썼다 — 이 유니코드 블록의 마지막 글자는 ㊿(50) 하나뿐이라
+#    셋 중 첫째만 원 숫자를 받고 나머지 둘은 (51)·(52) 로 이어 붙인다.
+#
+# ㊿ 재상승 후속의 kind 승계를 하드코딩 "pre" 로 되돌린다 — 원본이 post(얼림 diff
+#    가 만든 사후 결정, 기각으로 원복 permit 이 열렸다가 미관측 만료)였는데 후속이
+#    다시 "pre" 로 태어난다(§6.4 한계 (b) 그 자체 — 되돌리지 않은 얼림 위반의
+#    「채택」이 해시 대조 없는 apply permit 을 열어 그대로 승인된다).
+#    `case_AC22c_reraise_inherits_post_kind` 만이 이 축을 잰다 — kind 단언과
+#    「채택 → 즉시 applied」단언 둘 다 이 변이 하나로 무너진다(cmd_decide 의
+#    post 분기 자체가 안 타므로).
+mut 1/1 reraise_kind_hardcoded_pre case_AC22c_reraise_inherits_post_kind sed_route \
+  's/"kind": d0\.get("kind") or "pre", "prev_hash": d0\.get("prev_hash"),/"kind": "pre", "prev_hash": d0.get("prev_hash"),/'
+# (51) prev_hash 승계만 지운다(kind 승계는 그대로 둔다) — 후속이 post 로는 태어나되
+#    원복 대상 해시를 잃는다. `case_AC22c_reraise_inherits_prev_hash` 하나만 이
+#    축을 잰다 — kind 는 안 건드렸으므로 `case_AC22c_reraise_inherits_post_kind`
+#    의 kind·즉시-applied 단언은 이 변이에서 여전히 GREEN 이다(두 변이가 서로
+#    가리지 않도록 브리프가 요구한 분리, Step 3).
+mut 1/1 reraise_prev_hash_dropped case_AC22c_reraise_inherits_prev_hash sed_route \
+  's/"kind": d0\.get("kind") or "pre", "prev_hash": d0\.get("prev_hash"),/"kind": d0.get("kind") or "pre",/'
+# (52) 반대 방향 회귀 — kind 승계를 무조건 "post" 로 강제한다("pre" 원본까지도
+#    "post" 로 과대 일반화). 브리프의 두 변이는 post 원본만 겨눴다 — `d0.get(
+#    "kind") or "pre"` 는 양방향 값을 다루는 식이라 이 반대쪽 실패 모드가 그때까지
+#    잡히지 않았다(위 cases.sh 의 [Task 5 실행 노트] 참조 — 기존 case_AC20_*·
+#    case_AC21_* 는 F_DEC(kind="pre")로 실제 재상승을 여러 번 걷지만 성공의
+#    kind 를 단언한 적이 없다). 이 방향이 위험한 이유: "post" 로 잘못 태어나면
+#    「채택」이 permit 없이 즉시 applied 로 끝나(`cmd_decide` 의 post 분기) 「그
+#    편집이 실제로 관측됐는가」를 검증하는 pre 의 정상 계약을 건너뛴다.
+#    `case_AC22c_reraise_preserves_pre_kind` 만이 이 축을 잰다.
+mut 1/1 reraise_kind_hardcoded_post case_AC22c_reraise_preserves_pre_kind sed_route \
+  's/"kind": d0\.get("kind") or "pre", "prev_hash": d0\.get("prev_hash"),/"kind": "post", "prev_hash": d0.get("prev_hash"),/'
 finish
