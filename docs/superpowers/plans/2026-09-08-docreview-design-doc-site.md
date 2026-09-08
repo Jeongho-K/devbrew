@@ -966,6 +966,45 @@ grep -E 'IMPORT|ANCHOR|unwired|도출' /tmp/wiring-before.txt | head -20
 
 ---
 
+## Park — 이 PR 이 닫지 않고 이름 붙여 안고 가는 것
+
+### P1 — `layer_rubric` 안의 셋째 키를 통한 재귀 미끼 (확인된 익스플로잇, 조용함)
+
+`docreview_state.py` 의 `load_profile()` 은 **최상위 키만** 여분 키 검사를 하고 `layer_rubric` 자신의
+키는 열거하지 않는다(`.get("layer1")`·`.get("layer2")` 만 본다). 그래서 아래가 게이트를 **통과**한다:
+
+```yaml
+layer_rubric:
+  layer1: [goal_fit, …]
+  layer2: [placeholder, …]
+  foo: |
+    layer1: [decoy_recursive_layer1]
+    layer2: [decoy_recursive_layer2]
+```
+
+러너의 `_block_span("layer_rubric", …)` 은 블록으로 옳게 좁히지만 `_flow_list` 가 **그 블록 «안에서»
+다시 무제한 last-match** 를 하므로, 더 깊이 들여쓴 `foo` 의 블록 스칼라 안 미끼가 이긴다. 결과는
+`Layer 1 … categories: decoy_recursive_layer1`, rc=0, 가드 미발동 — **조용한 오독**이다.
+
+**닫지 않는 이유(판정).** 정지 조건을 미리 선언했다는 것만이 이유가 아니다. ① 도달 경로가
+**저자 실수 한 갈래뿐**이다 — 프로필은 리포 내부 데이터이고 신뢰 경계를 넘어오지 않는다.
+② 폭발 반경이 **codex 자문 채널 하나**다 — codex 는 설계상 fail-open 공시 대상이고(§9·D7) Claude
+critic 경로와 라우팅은 이 파서를 지나지 않는다. ③ 옳은 고침은 러너의 세 번째 패치가 아니라
+**게이트에서 `layer_rubric` 의 허용 키를 `{layer1, layer2}` 로 닫는 것**이고, 그것은 프로필 스키마
+변경이라 네 자리 전부에 걸린다 — PR 3 이 brief 프로필을 붙일 때 함께 하는 것이 맞다.
+
+**PR 3 착수 시 첫 항목으로 올린다.** 되돌리는 말: 「지금 닫아」 — `load_profile` 한 줄 + 락 하나다.
+
+### P2 — spike 테스트가 추적되는 골든 픽스처를 자기 실행으로 덮어쓴다
+
+`plugins/quality-gates/tests/spike/test_codex_json_extraction.sh` 는 실제 codex 를 호출하고 그 출력으로
+`spike/fixtures/codex_jsonl_sample.json` 을 **덮어쓴다.** 이 PR 의 리뷰어가 그것을 돌렸다가
+`test_artifact_codex_reviewer.sh` · `test_findings_parser.sh` 두 개를 일시적으로 깨뜨렸고
+`git checkout --` 로 복원했다. 스윕이 `/spike/` 를 제외하는 이유가 이것인데, **그 사실이 그 파일
+자신에는 적혀 있지 않다.** 이 PR 범위 밖이라 고치지 않는다.
+
+---
+
 ### Task 7: 삭제 전수(D0) 실행 — 파일 셋 + 고아 락 다섯 + 같은 커밋 재조준 여덟
 
 **Files:** 아래 세 표가 전수다. 설계 §5.5 는 씨앗이었고 이것이 네 축(식별자 · 개념 별칭 · 의존 폐포 · 생산자↔소비자 양방향)으로 도출한 결과다.
