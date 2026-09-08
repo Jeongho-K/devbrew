@@ -377,7 +377,12 @@ mut 1/1 blocks_keep_of_bypassed case_T02_same_as_max sed_route \
 #    않으면 사라진다」가 된다). 자연 경로로 이 분기를 밟으려면 finalize 를 건너뛴
 #    라운드가 있어야 한다(AC21 의 reraise 조기-반환과 같은 종류) — 기존 케이스 중
 #    이걸 겨눈 것이 없어 case_escalated_round_mismatch_carries_over 를 새로 썼다.
-mut 1/1 escalated_mismatch_dropped case_escalated_round_mismatch_carries_over sed_route \
+# [Task 2 재앵커] 그 케이스는 `case_escalated_accumulates` 로 이름이 바뀌고 기대값의
+# 뜻이 뒤집혔다(이월 → 누적) — 이 셀이 겨누는 규칙(아직 자기 차례가 아닌 예약을
+# «버리지 않고 보존»하는가)은 조건이 `!= n - 1` 이든 `>= n` 이든 그대로다. sed 대상
+# `keep_esc.append(e)` 도 문자 그대로 살아있다(뒤에 주석만 붙었다) — 케이스 이름만
+# 갱신한다.
+mut 1/1 escalated_mismatch_dropped case_escalated_accumulates sed_route \
   's/keep_esc\.append(e)/pass/'
 # ㉚ bucket 충돌 계수 문턱을 1→2 로 올린다 — 정확히 둘이 충돌하는 실측 사례(T13)의
 #    공시가 0 으로 죽는다(하향: 진짜 충돌인데 안 보인다). `v > 1` 은 파일에 유일.
@@ -416,4 +421,26 @@ s/extra\.append({"f": None,/_leaked = ({"f": None,/
 mut 2/2 same_as_unknown_target_silent case_AC7b_unknown_same_as_target_coerced sed_route \
   's/^                L\.coerced("same_as", x, None)$/                pass/
 s/^                L\.coerced("same_as", y, None)$/                pass/'
+
+# ── escalated 예약 누적·dedup·미소비 계수 (Task 2) — 재상승(AC21, 위 ⑬⑭⑮)과 같은
+# 규칙을 escalated 예약에도 적용한다. 번호는 파일 끝에 이어 붙인다(당겨 채우지
+# 않는다, 위 ⑬ 앞 주석의 관례) — ㉙(escalated_mismatch_dropped)이 겨누는 자리(아직
+# 자기 차례가 아닌 예약을 보존하는가)는 이 태스크로도 안 바뀌어 그 자리 그대로
+# 둔다(케이스 이름만 `case_escalated_accumulates` 로 갱신, 위 참조).
+# ㉝ escalated 축적 조건을 옛 규칙(`!= n - 1`)으로 되돌린다 — Task 2 의 핵심 수정을
+#    직접 흔든다. `>= n` → `!= n - 1` 이면 라운드 1 예약(이번 라운드 3 보다 두
+#    라운드 전)이 다시 「직전 라운드가 아니다」로 판정돼 keep_esc 로 이월되고,
+#    case 의 첫 단언(fid1·fid2 둘 다 소비된다)이 fid2 하나만 나와 깨진다.
+mut 1/1 escalated_prev_round_only case_escalated_accumulates sed_route \
+  's/if int(e\["round"\]) >= n:/if int(e["round"]) != n - 1:/'
+# ㉞ escalated dedup(`esc_seen`) 제거 — 같은 finding_id 가 두 번 예약되면 후속도
+#    두 번 생긴다(하향: 라운드당 하나여야 할 후속이 중복된다). 형제 ⑭
+#    (reraise_no_dedup)와 같은 종류·같은 기법(가드를 `if False:` 로 눌러 매번
+#    통과시킨다).
+mut 1/1 escalated_no_dedup case_escalated_dedup sed_route \
+  's/^        if e\["finding_id"\] in esc_seen:$/        if False:/'
+# ㉟ escalated 미소비 계수를 다시 조용히 버린다 — 계수가 0 으로 굳는다(형제 ⑮
+#    reraise_loss_uncounted 와 같은 종류·같은 기법).
+mut 1/1 escalated_loss_uncounted case_escalated_unconsumed_counted sed_route \
+  's/^            esc_unconsumed += 1.*$/            pass/'
 finish

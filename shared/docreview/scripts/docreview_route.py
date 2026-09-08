@@ -365,7 +365,7 @@ def _auto_decides(a, st, prof, sections, n):
     """사후·이월 auto decide — 얼림 diff(post) · check-intent 거부(pre) · expired 재상승(pre).
 
     `st["escalated"]` 은 아직 자기 차례가 아닌 예약만 남기고, `st["reraise"]` 는 비운다.
-    낸 값은 (새 항목들, 미소비 예약 수).
+    낸 값은 (새 항목들, 미소비 재상승 예약 수, 미소비 escalated 예약 수).
 
     이 함수에 `items` 가 없다는 것이 설계다 — 재상승 후속이 same_as 흡수 · 재비판
     reject · 처분 강제를 지나지 않는다는 불변식이 여기서는 스코프로 보장된다(분해
@@ -384,13 +384,25 @@ def _auto_decides(a, st, prof, sections, n):
                           "prev_hash": c.get("old_hash"), "immutable": cls["immutable"], "_source": "diff"})
     prev = st["findings"]
     keep_esc = []
+    esc_seen = set()
+    esc_unconsumed = 0
+    # Task 2 — 형제 재상승(AC21)과 대칭으로 맞춘다. 이전엔 `!= n - 1`(정확히 직전
+    # 라운드의 예약만 소비)이라 `finalize` 가 이 루프 전에 조기 반환한 라운드가 하나라도
+    # 끼면 그 예약의 라운드 번호가 영원히 어긋나 소비도 계수도 안 됐다(escalated 예약
+    # 자체는 사라지지 않았지만 — keep_esc 가 보존한다 — 다음 라운드에도 다시 `!= n-1`
+    # 검사에 걸려 영원히 kept 로만 남았다). `>= n` 은 「이번 라운드 이후에 생긴 예약만
+    # 보류」로 바꿔 그 앞의 예약을 전부 소비 대상으로 삼는다.
     for e in st.get("escalated") or []:
-        if int(e["round"]) != n - 1:
-            keep_esc.append(e)
+        if int(e["round"]) >= n:
+            keep_esc.append(e)   # 이번 라운드 이후에 생긴 예약 — 아직 자기 차례가 아니다
             continue
         f0 = prev.get(e["finding_id"])
         if not f0:
+            esc_unconsumed += 1   # 대상 finding 부재 — 버리지 않고 센다(공시는 게이트가, 재상승과 같은 규칙)
             continue
+        if e["finding_id"] in esc_seen:
+            continue   # 한 계보에 라운드당 후속 하나(재상승 dedup, cmd_observe_diff 와 같은 규칙)
+        esc_seen.add(e["finding_id"])
         extra.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "check-intent 거부 후 상향: " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
@@ -420,7 +432,7 @@ def _auto_decides(a, st, prof, sections, n):
                       "supersedes": r["finding_id"], "evidence": r.get("reason"), "origin": "auto",
                       "kind": "pre", "immutable": bool(f0.get("immutable")), "_source": "reraise"})
     st["reraise"] = []
-    return extra, reraise_unconsumed
+    return extra, reraise_unconsumed, esc_unconsumed
 
 
 def _order_key(it):   # 리뷰어 항목은 f 순, 사후 항목은 그 뒤
@@ -535,9 +547,9 @@ def _pub(it):
 def _build_report(L, st, n, final, rejected_items, degrade, stats):
     """출력 JSON 을 조립하고 같은 요약을 `st["rounds"][n]["route_report"]` 에 남긴다.
 
-    `stats` 는 앞 단계가 낸 계수 넷(bucket_conflicts · lineage_mismatch · revived ·
-    reraise_unconsumed). 키 순서는 골든(`shared/tests/fixtures/docreview/golden/`)이
-    바이트로 고정하므로 재배열하지 않는다.
+    `stats` 는 앞 단계가 낸 계수 다섯(bucket_conflicts · lineage_mismatch · revived ·
+    reraise_unconsumed · escalated_unconsumed). 키 순서는 골든(`shared/tests/fixtures/
+    docreview/golden/`)이 바이트로 고정하므로 재배열하지 않는다.
     """
     report = L.report()
     adv = list(report["reasons"])
@@ -557,6 +569,7 @@ def _build_report(L, st, n, final, rejected_items, degrade, stats):
         "bucket_conflicts": stats["bucket_conflicts"], "lineage_mismatch": stats["lineage_mismatch"],
         "revived": stats["revived"], "degrade": degrade, "advisory": adv, "blocks": L.blocks(),
         "reraise_unconsumed": stats["reraise_unconsumed"],
+        "escalated_unconsumed": stats["escalated_unconsumed"],
     }
     # 키를 «이름으로» 편다 — `render_disposition.disposition_report()` 의 같은
     # 결정과 같은 이유다(그 파일 :54-56): `report["counts"]` 를 `.items()` 로
@@ -574,6 +587,7 @@ def _build_report(L, st, n, final, rejected_items, degrade, stats):
         "bucket_conflicts": stats["bucket_conflicts"], "revived": len(stats["revived"]),
         "lineage_mismatch": stats["lineage_mismatch"],
         "reraise_unconsumed": stats["reraise_unconsumed"],
+        "escalated_unconsumed": stats["escalated_unconsumed"],
     }
     return out
 
@@ -602,7 +616,7 @@ def cmd_finalize(a) -> int:
     same_as = _apply_recritic(items, verdicts, added, L)
     keep_of = _absorb_same_as(items, same_as, L)
     final, rejected_items = _classify_items(items, st, prof, sections, n, L)
-    extra, reraise_unconsumed = _auto_decides(a, st, prof, sections, n)
+    extra, reraise_unconsumed, escalated_unconsumed = _auto_decides(a, st, prof, sections, n)
     final.extend(extra)
     bucket_conflicts, lineage_mismatch, revived = _resolve_ids_and_lineage(st, final, rejected_items, n)
     _remap_blocks(final, keep_of, a.doc)
@@ -612,7 +626,8 @@ def cmd_finalize(a) -> int:
     record_findings(st, final + rejected_items, n)
     out = _build_report(L, st, n, final, rejected_items, degrade,
                         {"bucket_conflicts": bucket_conflicts, "lineage_mismatch": lineage_mismatch,
-                         "revived": revived, "reraise_unconsumed": reraise_unconsumed})
+                         "revived": revived, "reraise_unconsumed": reraise_unconsumed,
+                         "escalated_unconsumed": escalated_unconsumed})
     st["pending_recritic"] = None
     save_state(a.state_dir, st, "finalize (%d findings, %d rejected)" % (len(final), len(rejected_items)))
     print(json.dumps(out, ensure_ascii=False, indent=1))

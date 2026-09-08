@@ -639,7 +639,7 @@ def gate_summary(st) -> dict:
     g["degrade"] = rep.get("degrade") or {}
     g["advisory"] = rep.get("advisory") or []
     g["counts"] = {k: rep.get(k, 0) for k in ("rejected", "bucket_conflicts", "lineage_mismatch",
-                                              "revived", "reraise_unconsumed")}
+                                              "revived", "reraise_unconsumed", "escalated_unconsumed")}
     g["counts"]["user_rejected"] = sum(1 for v in st["rejected_lineages"].values() if v.get("by") == "user")
     return g
 
@@ -678,9 +678,9 @@ def render_gate(st, g) -> str:
     if g["approval_gate_open"] and g["unapplied_fix"]:
         out.append("미적용 fix(적용 예정 / drop): " + ", ".join(g["unapplied_fix"]))
     c = g["counts"]
-    out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d · 미소비 재상승 예약 %d"
+    out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d · 미소비 재상승 예약 %d · 미소비 상향 예약 %d"
                % (c["rejected"], c["user_rejected"], len(g["dropped"]), c["bucket_conflicts"],
-                  c["lineage_mismatch"], c["revived"], c["reraise_unconsumed"]))
+                  c["lineage_mismatch"], c["revived"], c["reraise_unconsumed"], c["escalated_unconsumed"]))
     if g["approval_ready"]:
         out.append("다음: 승인 게이트 — 진행 옵션 활성")
     elif g["two_stage"]:

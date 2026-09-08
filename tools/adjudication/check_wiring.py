@@ -140,25 +140,49 @@ _DR_REJECTED_ALREADY = (
 )
 _DR_ESCALATED_NOT_DUE = (
     "C6(1) — `_auto_decides()` 의 escalated 예약 순회. 아직 자기 라운드가 아닌 "
-    "예약(`int(e['round']) != n - 1`)은 `continue` **직전** `keep_esc.append(e)` "
-    "로 이미 보존돼(:388-389) `st['escalated'] = keep_esc` 로 다음 라운드까지 "
-    "살아남는다 — review-dispatch.py 의 `_T5_SELECT_LOOP`(discover() 가 매 Stop "
-    "재스캔) 와 같은 범주: 이번 라운드에 못 골랐다고 사라지는 게 아니라 다음 "
-    "라운드의 같은 순회에 다시 나타난다."
+    "예약(Task 2 갱신 — `int(e['round']) >= n`, 이번 라운드 이후에 생긴 예약)은 "
+    "`continue` **직전** `keep_esc.append(e)` 로 이미 보존돼 "
+    "`st['escalated'] = keep_esc` 로 다음 라운드까지 살아남는다 — "
+    "review-dispatch.py 의 `_T5_SELECT_LOOP`(discover() 가 매 Stop 재스캔) 와 "
+    "같은 범주: 이번 라운드에 못 골랐다고 사라지는 게 아니라 다음 라운드의 "
+    "같은 순회에 다시 나타난다. Task 2 이전엔 조건이 `!= n - 1`(정확히 직전 "
+    "라운드의 예약만 소비)이라 `finalize` 가 이 루프 전에 조기 반환한 라운드가 "
+    "하나라도 끼면 그 예약의 라운드 번호가 영원히 어긋나 소비도 계수도 안 되는 "
+    "결함이 있었다(형제 reraise, AC21 이 같은 결함을 먼저 닫았다) — 조건을 "
+    "`>= n` 으로 바꿔 「이번 라운드보다 앞선 예약 전부」를 소비 대상으로 삼는다. "
+    "이 continue 자체의 회계 성질(보존됨, 소실 아님)은 조건이 바뀌어도 그대로다."
 )
 _DR_ESCALATED_TARGET_GONE = (
-    "C6(1) — 도달 불가능한 방어. `f0 = prev.get(e['finding_id'])`(`prev = "
-    "st['findings']`) 가 비면 continue 하는데, `st['findings']` 는 "
-    "`record_findings()` 에서만 채워지고(docreview_state.py) 지우는 코드 경로가 "
-    "없다 — 대입만 있고 삭제가 없다(설계 §6.4, 상태는 여섯으로 닫혀 전이만 "
-    "한다). `escalated` 예약은 `docreview_state.py:491` 의 `cmd_fix` 경로에서만 "
-    "생기고 그 경로는 이미 `st['decides']`/`st['fixes']` 에 등재된 finding_id 만 "
-    "받는다 — 그 finding_id 는 애초에 `record_findings()` 가 `st['findings']` 에도 "
-    "함께 적어 뒀다(같은 호출의 같은 루프). 즉 escalated 로 예약될 수 있는 "
-    "finding_id 는 전부 이미 `st['findings']` 에 있고 지워지지 않으므로 `f0` "
-    "부재는 지금 도달 불가다 — 형제(:405, `reraise` 의 같은 모양 가드)의 "
-    "`d0`/`state` 검사에 이미 적힌 것과 같은 결론(\"지금은 도달 불가라 계수하지 "
-    "않는다\")을 `f0` 쪽에도 그대로 적용한다."
+    "C6(1) — `if not f0: esc_unconsumed += 1; continue`(Task 2 갱신). 이 자리는 "
+    "`esc_unconsumed` 를 **직접 증가**시켜 셈을 남기지만(주석 원문: \"대상 "
+    "finding 부재 — 버리지 않고 센다\"), 그 카운터는 `Ledger` 의 처분 어휘"
+    "(accept/reject/hold/absorbed/coerced/source_failed/uncountable/suppressed) "
+    "가 아니라 route 자체의 별도 advisory 채널이다 — `stats['escalated_unconsumed']` "
+    "가 `_build_report()` 를 거쳐 출력 JSON 의 `escalated_unconsumed` 필드로 "
+    "그대로 공시된다 — 형제 `_DR_RERAISE_TARGET_GONE` 과 문자 그대로 같은 "
+    "이유·같은 모양이다. **Task 2 이전엔 이 자리가 도달 불가능한 방어였다** — "
+    "`st['findings']` 는 `record_findings()` 에서만 채워지고(docreview_state.py) "
+    "지우는 코드 경로가 없어(설계 §6.4, 상태는 여섯으로 닫혀 전이만 한다), "
+    "escalated 로 예약될 수 있는 finding_id 는 전부 이미 `st['findings']` 에 "
+    "있었다 — 그 결론(production 경로에서 `f0` 부재는 지금도 도달 불가) 자체는 "
+    "바뀌지 않았다. 그런데도 CLAUDE.md 의 요구(\"판정기가 항목을 버리면 센다\")를 "
+    "형제(reraise)와 같은 강도로 만족시키기 위해 defense-in-depth 카운터를 "
+    "더했다 — `_permit_covers()` 와 같은 이유(위 `_DR_PERMIT_SEARCH`)로 여기 "
+    "순회 대상(`escalated` 예약)도 리뷰 대상 finding 이 아니라 스케줄링 레코드다."
+)
+_DR_ESCALATED_DEDUP = (
+    "C6(1) — `if e['finding_id'] in esc_seen: continue`(Task 2 신설, 형제 재상승 "
+    "dedup — `cmd_observe_diff`(docreview_state.py:589-596)의 "
+    "`if r0['finding_id'] in seen: continue` — 와 같은 규칙: 한 계보에 라운드당 "
+    "후속 하나). 이 루프의 원소(`escalated` 예약)는 위 `_DR_ESCALATED_NOT_DUE`· "
+    "`_DR_PERMIT_SEARCH` 가 이미 세운 대로 판정 대상 finding 이 아니라 스케줄링 "
+    "레코드다 — 이 continue 가 버리는 것은 finding 이 아니라 같은 finding_id 를 "
+    "겨눈 «중복 재예약» 하나뿐이고, 그 finding_id 자체는 `esc_seen` 에 먼저 "
+    "들어간 예약이 이미 이번 순회에서 후속(`extra.append`, 바로 다음 문장)을 "
+    "만들어 의무를 이행한다 — 어떤 finding 도 후속 없이 사라지지 않는다. 형제 "
+    "dedup(docreview_state.py)이 이 락의 스캔 밖에(그 파일은 `adjudication` 을 "
+    "import 하지 않는다) 있는 것과 달리 이 자리는 `_auto_decides()` 안이라 "
+    "스캔 대상이지만, 판정 실질(소실 없음)은 같다."
 )
 _DR_RERAISE_TARGET_GONE = (
     "C6(1) — `if not f0: reraise_unconsumed += 1; continue`. 이 자리는 "
@@ -398,16 +422,23 @@ EXEMPT = {
      "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
     ("plugins/quality-gates/scripts/docreview_route.py", 335,
      "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
-    ("plugins/quality-gates/scripts/docreview_route.py", 390,
-     "continue in _auto_decides @ if int(e['round']) != n - 1"): _DR_ESCALATED_NOT_DUE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 393,
+    # Task 2 — escalated 예약을 재상승(AC21)과 대칭으로 맞추면서 세 줄이 밀리고
+    # (`>= n` 조건 재작성 + `esc_seen`/`esc_unconsumed` 두 줄 신설) 새 dedup
+    # continue 하나가 늘었다. 아래 여섯 키의 줄번호를 현재 위치로 갱신한다
+    # (398/402/404/417/428/468) — 사유는 위 `_DR_*` 상수(둘은 내용도 갱신, 하나는
+    # 신설) 참조.
+    ("plugins/quality-gates/scripts/docreview_route.py", 398,
+     "continue in _auto_decides @ if int(e['round']) >= n"): _DR_ESCALATED_NOT_DUE,
+    ("plugins/quality-gates/scripts/docreview_route.py", 402,
      "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 405,
+    ("plugins/quality-gates/scripts/docreview_route.py", 404,
+     "continue in _auto_decides @ if e['finding_id'] in esc_seen"): _DR_ESCALATED_DEDUP,
+    ("plugins/quality-gates/scripts/docreview_route.py", 417,
      "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 416,
+    ("plugins/quality-gates/scripts/docreview_route.py", 428,
      "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
         _DR_RERAISE_ALREADY_DECIDED,
-    ("plugins/quality-gates/scripts/docreview_route.py", 456,
+    ("plugins/quality-gates/scripts/docreview_route.py", 468,
      "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
         _DR_LINEAGE_NOT_RERAISE,
 }
@@ -774,7 +805,16 @@ def uncited_exemptions():
 # 배선을 면제로 «갈아 끼운» 것이 아니라 실제로 이미 다른 자리에서
 # 회계됐거나(같은 대입 지점에서 `L.reject`/`L.absorbed` 동시 호출) 판정 대상
 # 자체가 없는(permit/reraise 스케줄링 탐색) 자리들이다.
-EXEMPT_BASELINE = 26
+#
+# Task 2 — 26 → 27. escalated 예약을 재상승(AC21)과 대칭으로 맞추면서 dedup
+# continue 하나(`if e['finding_id'] in esc_seen`)가 새로 생겼다 — 형제 재상승
+# dedup(docreview_state.py `cmd_observe_diff`)과 같은 규칙이지만 그 형제는
+# `adjudication` 을 import 하지 않는 파일에 있어 이 락의 스캔 밖이고, 이 자리는
+# `_auto_decides()` 안이라 스캔 대상이다(`_DR_ESCALATED_DEDUP` 참조 — 버려지는
+# 것은 판정 대상 finding 이 아니라 같은 finding_id 를 겨눈 중복 예약뿐이라
+# 소실이 없다). 배선을 면제로 갈아 끼운 게 아니라 이 태스크가 새로 만든
+# discard 자리 하나에 정직하게 근거를 단 것이다.
+EXEMPT_BASELINE = 27
 
 
 def derive_consumers(repo_root):

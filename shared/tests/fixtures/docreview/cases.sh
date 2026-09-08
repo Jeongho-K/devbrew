@@ -1029,7 +1029,35 @@ case_AC21_unconsumed_counted() {
 # (reraise 의 AC21_reraise_accumulates 와 같은 종류의 조기-반환 상황) — cases.sh 에
 # 그런 케이스가 없어 여기서 만든다. 같은 finalize 호출 안에서 이월(불일치, round=1)과
 # 소비(일치, round=2)를 동시에 겨눠 둘을 한 번에 가른다.
-case_escalated_round_mismatch_carries_over() {
+# [Task 2 — 락 뒤집기] 이 케이스는 원래 `case_escalated_round_mismatch_carries_over`
+# 였고, `_auto_decides` 의 escalated 갈래가 `!= n - 1`(정확히 직전 라운드의 예약만
+# 소비)이던 시절에 둘째 단언으로 *"소비되지 않은 라운드 1 예약은 버려지지 않고
+# 다음으로 이월된다"* 를 **의도된 동작**으로 못 박았다. Task 2 가 그 규칙을
+# `>= n`(이번 라운드보다 앞선 예약 전부를 소비)으로 뒤집는다 — `finalize` 가 이
+# 루프 전에 조기 반환한 라운드가 하나라도 끼면 라운드 번호가 영원히 어긋나 그
+# 예약이 소비도 계수도 안 되는 결함이 있었기 때문이다(형제 reraise, AC21 이 같은
+# 결함을 먼저 닫았다). 그래서 둘째 단언의 뜻도 뒤집힌다 — 라운드 1 예약은 이제
+# «이월»이 아니라 «이번 라운드에 소비»된다. 케이스 이름도 `case_escalated_accumulates`
+# 로 바꾼다. 시나리오(라운드 1 escalate → 라운드 2 finalize 건너뜀 → 라운드 2
+# escalate → 라운드 3 finalize)는 원본 그대로 둔다 — 뒤집힌 것은 기대값뿐이다.
+#
+# BEFORE(뒤집기 전 — GREEN 이었던 사실, report 에 그대로 인용):
+#   assert_eq ... "['$fid2']" "escalated 이월: round 불일치(라운드 1 예약)는 이번
+#     라운드(n-1=2)에 소비되지 않고, 일치하는 것(라운드 2 예약)만 decide 로 올라온다"
+#   assert_eq "$(st_yaml "$d" 'sorted(e["finding_id"] for e in st["escalated"])')"
+#     "['$fid1']" "escalated 이월: 소비되지 않은 라운드 1 예약은 버려지지 않고 다음으로
+#     이월된다(round 필드 그대로)"
+# AFTER(뒤집은 뒤 — 아래 본문): fid1·fid2 둘 다 소비되어 decide 로 올라온다.
+# [Task 2 실행 노트 — 회귀 실측] `>= n` 아래에서는 원 시나리오(라운드 1·2 에 escalate,
+# 라운드 3 에 finalize)만으로는 "아직 자기 차례가 아닌" 예약을 하나도 안 만든다 —
+# n=3 에 도달한 시점엔 round=1·round=2 예약 «둘 다» 이미 과거라 즉시 소비되고,
+# `keep_esc.append(e)` 가 한 번도 안 불린다(실측: ㉙ `escalated_mismatch_dropped`
+# 셀이 no_teeth 로 떨어짐 — `keep_esc.append(e)` 를 지워도 이 케이스가 안 흔들렸다).
+# 그래서 **같은 라운드에 escalate 한 예약**(round == n, 아직 자기 차례가 아님)을
+# 셋째로 더한다 — fid1 을 라운드 3(이번 finalize 와 같은 라운드)에 다시 escalate
+# 하면 그 예약은 이번 라운드 판정에서 `round(3) >= n(3)` 이라 보류된다(dedup 과는
+# 안 섞인다 — 라운드 검사가 dedup 검사보다 앞서 걸러낸다, `_auto_decides` 참조).
+case_escalated_accumulates() {
   local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
   local fid1 fid2
   fid1="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"        # #1-context, category ambiguity, disposition fix
@@ -1038,14 +1066,65 @@ case_escalated_round_mismatch_carries_over() {
   next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — finalize 를 부르지 않고 건너뛴다
   py docreview_state.py fix --state-dir "$d" --id "$fid2" --event escalate --reason 'check-intent 거부(라운드 2)' >/dev/null
   next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 3
+  py docreview_state.py fix --state-dir "$d" --id "$fid1" --event escalate --reason 'check-intent 거부(라운드 3, 아직 자기 차례가 아님)' >/dev/null
   py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep3.json"
   py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff3.json" --doc "$FX/design-sample.md" > "$d/fin.json"
-  # n=3, n-1=2 — fid1(round=1) 은 불일치라 이월(소비되지 않음), fid2(round=2) 는 일치해
-  # 이번 라운드에 decide 로 올라온다. `supersedes in (fid1,fid2)` 로 걸러 다른 자동
-  # 항목(같은 라운드 critic 이 우연히 만드는 Non-goals 자동 연결 등)과 섞이지 않게 한다.
+  # n=3. 새 계약: 「직전 라운드」가 아니라 「이번 라운드보다 앞선」 예약을 전부 소비한다
+  # — fid1(round=1)·fid2(round=2) 둘 다 이번 finalize 에서 decide 로 올라온다.
+  # `supersedes in (fid1,fid2)` 로 걸러 다른 자동 항목(같은 라운드 critic 이 우연히
+  # 만드는 자동 연결 등)과 섞이지 않게 한다. 정렬은 id 문자열 순 — fid1·fid2 의 실제
+  # 정렬 순서는 실행 시점 값에 달렸으므로 기대값도 같은 sorted() 규칙으로 낸다.
+  local expected; expected="$(python3 -c 'import sys; print(sorted(sys.argv[1:]))' "$fid1" "$fid2")"
   assert_eq "$(jget "$d/fin.json" 'sorted(x["supersedes"] for x in d["findings"] if x.get("supersedes") in ("'"$fid1"'", "'"$fid2"'"))')" \
-    "['$fid2']" "escalated 이월: round 불일치(라운드 1 예약)는 이번 라운드(n-1=2)에 소비되지 않고, 일치하는 것(라운드 2 예약)만 decide 로 올라온다"
-  assert_eq "$(st_yaml "$d" 'sorted(e["finding_id"] for e in st["escalated"])')" "['$fid1']" "escalated 이월: 소비되지 않은 라운드 1 예약은 버려지지 않고 다음으로 이월된다(round 필드 그대로)"
+    "$expected" "escalated 누적: 라운드가 어긋난 예약(라운드 1)도 버려지지 않고 이번 라운드에 소비된다"
+  assert_eq "$(st_yaml "$d" '[(e["finding_id"], e["round"]) for e in st["escalated"]]')" "[('$fid1', 3)]" \
+    "escalated 누적: 이번 라운드(3)에 새로 생긴 예약(아직 자기 차례가 아님)은 소비되지 않고 그대로 남는다"
+  rm -rf "$d"
+}
+
+# escalated dedup — 같은 finding_id 가 두 번 예약돼도 후속은 라운드당 하나(재상승
+# dedup, AC21 과 같은 규칙). **도달성 확인(Task 2 브리프 요구, `case_AC21_reraise_dedup`
+# 이 한 번 no_teeth 로 판정됐던 자리와 같은 종류)** — 프로덕션 경로에서 같은
+# finding_id 를 두 번 escalate 할 방법은 없다: 유일한 실제 진입점
+# `docreview_anchor.py cmd_check_intent` 의 `escalate()` 클로저는 그 앞의 가드
+# (`if not fx or fx["state"] not in ("pending", "intent_passed"): return _reject(...)`)
+# 를 반드시 지나야 하고, escalate 가 한 번 일어나면 `fx["state"]` 가 "escalated" 로
+# 바뀌어 그 가드를 다시 못 지난다(코드 어디에도 "escalated" → "pending" 으로 되돌리는
+# 경로가 없다) — check-intent 경유로는 자연 재예약이 불가능하다. 그러나 이 파일의
+# 다른 모든 escalated 케이스(위 `case_escalated_accumulates` 포함)가 이미 쓰는
+# 저수준 CLI(`docreview_state.py fix --event escalate`)는 그 가드를 갖지 않는다 —
+# `cmd_fix` 의 escalate 분기는 현재 상태를 검사하지 않고 매번 그대로 append 한다.
+# 재상승 쪽 dedup(`case_AC21_reraise_dedup`)이 `cmd_decide` 를 완전히 우회하는
+# 전용 픽스처(`st_open_permit.py`)로 "지금 도달 가능하지 않은 defense-in-depth"
+# 상태를 직접 구성해 이빨을 얻은 것과 같은 등급의 도달성이다 — 이쪽은 전용 픽스처
+# 조차 필요 없다, 이미 이 파일이 표준으로 쓰는 저수준 CLI 를 두 번 부르기만 하면
+# 된다. 그래서 케이스를 쓴다(도달 불가능하지 않다).
+case_escalated_dedup() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local fid; fid="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"
+  py docreview_state.py fix --state-dir "$d" --id "$fid" --event escalate --reason 'check-intent 거부(1차)' >/dev/null
+  py docreview_state.py fix --state-dir "$d" --id "$fid" --event escalate --reason 'check-intent 거부(2차, 같은 finding_id 재예약)' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — 두 예약(round=1) 모두 이번 finalize 대상
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'len([x for x in d["findings"] if x.get("supersedes")=="'"$fid"'"])')" "1" "escalated dedup: 같은 finding_id 가 두 번 예약돼도 후속은 라운드당 하나"
+  assert_eq "$(st_yaml "$d" 'st["escalated"]')" "[]" "escalated dedup: 두 예약 모두 소비되고(하나는 dedup 으로 버려짐) 목록이 빈다"
+  rm -rf "$d"
+}
+
+# escalated 미소비 계수 — 대상 finding 이 없는 예약은 버리지 않고 센다(재상승,
+# AC21③ 과 같은 규칙). `st_set_reraise.py` 와 같은 종류의 상태 강제 픽스처
+# (`st_set_escalated.py`)로 대상 finding_id 가 st["findings"] 에 없는 예약을 직접
+# 심는다 — round 는 심을 시점의 현재 라운드를 그대로 쓰므로, next_round 로 한
+# 라운드 넘겨야 그 예약이 "이번 finalize 의 대상"(round < n)이 된다.
+case_escalated_unconsumed_counted() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  python3 "$FX/st_set_escalated.py" "$d/docreview-state.md" 'zzzz9999#r1.1'
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — round=1 예약이 이번 finalize 대상
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'd["escalated_unconsumed"]')" "1" "escalated: 대상 finding 이 없는 예약은 버려지지 않고 계수된다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["counts"]["escalated_unconsumed"]')" "1" "escalated: 그 계수가 게이트에 실린다"
   rm -rf "$d"
 }
 
