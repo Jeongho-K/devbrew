@@ -906,6 +906,57 @@ S2 를 **지우지 말고** 새 불변식으로 바꾼다: 껍데기의 READ 와
 이 태스크는 삭제(Task 7) 전이므로 옛 파일들이 아직 있고, 그것들을 재던 락 일부가 RED 가 된다. **그 RED 목록을 report 에 정확히 적고** Task 7 이 그것을 0 으로 만드는지 대조한다. 커밋 메시지: `feat(docreview)!: reviewing-spec 을 엔진 껍데기로 — 상한 락 재작성(정본 = reviewing-document.md)`
 
 ---
+### Task 6b: 엔진 러너의 PyYAML 의존 제거 · 배선 락의 심볼릭 링크 맹점
+
+T6 실행 중에 드러난 두 결함이다. 둘 다 **T6 이 만든 것이 아니라 첫 호출자가 붙으면서 드러난 것**이고, 둘 다 지금 락을 RED 로 두고 있다.
+
+**Files:**
+- Modify: `shared/docreview/scripts/run_docreview_codex_reviewer.sh` (인라인 프롬프트 빌더)
+- Modify: `tools/adjudication/check_wiring.py` (IMPORT 도출의 링크 skip)
+- Modify: 필요하면 `tools/adjudication/` 의 등록부 한 곳(Ruling 9 의 최소 조치)
+
+- [ ] **Step 1: PyYAML 의존을 실측으로 재현한다**
+
+구현자가 이미 격리했다 — 추출한 codex 게이트 펜스를 `HOME` 만 바꿔 두 번 돌리면 갈린다. 그 재현을 **먼저 자기 손으로** 한 뒤 고친다. 재현되지 않으면 멈추고 보고한다(고칠 대상이 다르다는 뜻이다).
+
+- [ ] **Step 2: 빌더를 stdlib 전용으로**
+
+빌더가 프론트매터에서 읽는 것은 셋뿐이다 — `layer_rubric`(중첩: `layer1`·`layer2` 리스트) · `allowed_dispositions`(리스트) · `web`(불리언). 형제 러너 셋의 빌더가 stdlib 로 같은 일을 어떻게 하는지 **먼저 읽고** 같은 모양으로 쓴다. 새 파서를 발명하지 않는다.
+
+파싱이 실패했을 때의 동작은 **오늘과 같아야 한다** — `emit_fallback prompt_build_failed`. 새 실패 모드를 만들지 않는다.
+
+- [ ] **Step 3: 조사만 하고 고치지 않는 것 — 리포트에 사실만**
+
+`shared/docreview/scripts/docreview_state.py:21-23` 은 `import yaml` 을 `try` 로 감싸 `yaml = None` 을 두는데, `:87`·`:184`·`:198` 은 `yaml.safe_load`/`safe_dump` 를 가드 없이 부른다. PyYAML 부재 시 ImportError 가 아니라 **AttributeError** 로 죽는다. **확인만 하고 고치지 않는다** — 범위 밖이고, 고치려면 그 세 자리의 degrade 계약을 새로 정해야 한다. 사실과 재현 방법만 리포트에 적는다.
+
+- [ ] **Step 4: `check_wiring.py` 의 링크 skip 을 뺀다 — 확장 전 도출 수를 먼저 잰다**
+
+```bash
+cd /Users/jeonghokim/Downloads/devbrew
+PYTHONDONTWRITEBYTECODE=1 bash shared/tests/test_adjudication_wiring.sh > /tmp/wiring-before.txt 2>&1; echo "rc=$?"
+grep -E 'IMPORT|ANCHOR|unwired|도출' /tmp/wiring-before.txt | head -20
+```
+
+그다음 `:551` 의 `if f.is_symlink() or not f.is_file(): continue` 에서 링크 조건만 뺀다. **`not f.is_file()` 은 남긴다** — 끊어진 링크를 읽으려 들면 죽는다(파이썬의 `is_file()` 은 링크를 따라가므로 살아 있는 링크는 통과하고 끊어진 링크만 걸린다).
+
+같은 파일 안에 링크를 건너뛰는 **다른 자리**가 있는지 `git grep -n 'is_symlink' -- tools/` 로 전수한다 — 한 자리만 고치면 같은 결함이 이름만 바꿔 남는다(PR 1b 가 `extract_codex_invocations.py` 에서 같은 것을 고쳤다).
+
+- [ ] **Step 5: 확장 전후 대조 + Ruling 9 의 최소 조치**
+
+도출 수가 어떻게 변했는지 적는다. `docreview_route.py` 가 이 락의 모집단에 처음 들어오면서 나온 값(`unwired=9`, 이해도 baseline 39→57)을 **triage 한다** — 각 항목이 진짜 미배선인지, 아니면 링크 배포 때문에 잘못 잡힌 것인지.
+
+`merge_review.py` 가 IMPORT-without-ANCHOR 가 된 건에 대해: **락이 그 방향을 실제로 실패로 보는지 먼저 확인**한다. 보지 않으면 아무 조치도 하지 않는다. 본다면 두 후보(브리프 리뷰 자리의 앵커 · `TERMINAL_CONSUMERS` 항목) 중 하나를 고르고 **근거를 리포트에 적는다**.
+
+- [ ] **Step 6: 이빨 — 고친 것이 실제로 무엇을 더 잡는가**
+
+링크 skip 제거가 진짜인지: 엔진 스크립트 하나를 `consumer=` 로 지목한 앵커를 임시로 만들고 락이 그것을 IMPORT 에서 찾는지 본다. 제거 전이라면 못 찾아 RED 였을 자리다. **변이 전에 커밋한다.**
+
+- [ ] **Step 7: 스윕 + 커밋**
+
+`test_adjudication_wiring.sh` · `test_adjudication_consumed.sh` · `test_codex_gate_observation.sh` · `test_codex_backward_compat.sh` 넷이 0 이 되어야 한다. 남는 RED 는 T7 이 닫는 넷(`test_agent_input_slots` · `test_dispatch_disposition` · `test_reviewing_spec_codex_merge` · `test_arm_ledger_timing`)과 선재 둘뿐이다.
+
+---
+
 ### Task 7: 삭제 전수(D0) 실행 — 파일 셋 + 고아 락 다섯 + 같은 커밋 재조준 여덟
 
 **Files:** 아래 세 표가 전수다. 설계 §5.5 는 씨앗이었고 이것이 네 축(식별자 · 개념 별칭 · 의존 폐포 · 생산자↔소비자 양방향)으로 도출한 결과다.
@@ -947,6 +998,7 @@ S2 를 **지우지 말고** 새 불변식으로 바꾼다: 껍데기의 READ 와
 | `plugins/spec-distill/tests/test_web_kill_switch.sh:88,115,304-307` | 러너 이름 arm + 감사 범위 주석 | 죽은 arm(비차단) | arm 을 `run_docreview_codex_reviewer.sh` 로 바꾼다. **304-307 의 주석은 그대로 둔다** — 과거 실패의 기록이지 현행 인용이 아니다 |
 | `plugins/quality-gates/tests/lib/codex_observation.sh:120` | `obs_invoke` 인자 표의 `run_spec_codex_reviewer.sh)` arm | 죽은 arm | 지운다. `run_docreview_codex_reviewer.sh` arm 은 PR 1b 가 이미 넣었다 |
 | `plugins/quality-gates/tests/test_codex_gate_observation.sh:73,319` | `UNGATED_run_docreview_codex_reviewer_sh` ratchet 항목이 「호출자 0」이라 적혀 있다 + 라벨 | 껍데기가 그 러너를 부르므로 **거짓** | 그 ratchet 줄을 **손으로 지운다**(그 원장의 주석이 「자동 만료되지 않는다」고 명시). 같은 파일 :88 의 `codex-gate:begin` 마커 하한 `-ge 3` 과 실제 마커 수를 함께 확인한다 |
+| `plugins/spec-distill/tests/test_arm_ledger_timing.sh` (T12b) | 옛 어휘 두 토큰(`claude_verdict_unrecoverable`·`codex_degraded`)으로 껍데기를 잰다 | RED 1줄 | 두 토큰을 엔진 어휘(`blocks`·`critic 사망`)로 바꾼다. **불변식 자체는 껍데기에 살아 있다** — 락을 지우지 않는다 |
 | `plugins/spec-distill/references/proceed-gate.md:3,117` · `conducting-interview/references/finishing.md:227` · `reviewing-brief/SKILL.md:429` | 「`reviewing-spec` 의 옵션 ① 블록에 앵커가 산다」 · 「cap 5」 | 살아 있는 문서의 죽은 인용 | 새 사실로 고친다. cap 은 2 이고 앵커는 껍데기 안이다 |
 | `shared/codex/runner_common.sh:9` + `copy-of` 사본 둘(`plugins/spec-distill/scripts/`·`plugins/quality-gates/scripts/`) | 소비자 목록에 삭제되는 러너를 열거 | 거짓 인용 | 세 파일을 **한 커밋에서** 함께 고친다(바이트 동일 계약). 그 자리에 `run_docreview_codex_reviewer.sh` 를 넣는다 — 실제로 이 정본을 source 하는 러너다 |
 | `plugins/spec-distill/skills/reviewing-brief/SKILL.md:29` · `plugins/spec-distill/scripts/run_seed_codex_reviewer.sh:5` | 「`run_spec_codex_reviewer.sh` 와 같은 규약」이라는 산문 비유 — **실행 표면**이다 | 거짓 인용. T7 Step 4 의 ① grep 이 이것을 잡는다 | 살아 있는 형제(`run_brief_codex_reviewer.sh` 또는 `run_docreview_codex_reviewer.sh`)로 비유 대상을 바꾼다 |
