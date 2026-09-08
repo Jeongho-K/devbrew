@@ -21,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent))  # bare .parent — 배포 지점
 from adjudication import Ledger  # noqa: E402
 from docreview_anchor import classify_anchor, refs_of  # noqa: E402
 from docreview_state import (  # noqa: E402
-    RANK, fail, load_profile, load_state, record_findings, save_state, yaml,
+    RANK, _CHOICE_LABEL, _decide_choices_for, _is_reraise_successor,
+    fail, load_profile, load_state, record_findings, save_state, yaml,
 )
 
 BLOCK_RE = r"```%s[ \t]*\n(.*?)\n```"
@@ -165,21 +166,30 @@ def cmd_prepare(a) -> int:
 
 
 # ── finalize ─────────────────────────────────────────────────────────────
-def _decision_view(it, doc):
-    # `alternatives` 는 상수로 둔다 — 이 함수는 `_remap_blocks` 를 거쳐 `cmd_finalize` 가
-    # `record_findings` 를 부르기 «전에» 불린다(설계 §6.4 한계 (a) Task 4 판단). 그
-    # 시점엔 이 라운드의 어떤 id 도 아직 `st["decides"]` 에 없어, `decide_choices(st, it["id"])`
-    # 를 여기 쓰면 재상승 후속뿐 아니라 이 라운드의 평범한 open 도 전부 빈 리스트를 받는다
-    # — 대상을 좁히지 못하고 오히려 더 넓게 깨진다. 실제 수용 선택지(제안=수용)는
-    # `docreview_state._rg_decide` 가 render_gate 시점에 `decide_choices` 로 이 상수를
-    # 덮어쓴다 — 사용자가 보는 마지막 자리가 거기다. 여기서 손대지 않는다.
+def _decision_view(it, doc, st):
+    # [Task 4 fix round 1 — 리뷰 I1 정정] 이 함수는 `_remap_blocks` 를 거쳐
+    # `cmd_finalize` 가 `record_findings` 를 부르기 «전에» 불린다 — 이 라운드의
+    # 어떤 id 도 아직 `st["decides"]` 에 없다(그래서 `decide_choices(st, it["id"])`
+    # 처럼 원장을 조회하는 래퍼는 여기서 못 쓴다, 전부 빈 리스트가 된다). 그러나
+    # **원장을 몰라도 되는 두 사실**을 이미 다른 데서 안다: ① 이 id 는 몇 줄 뒤
+    # `record_findings` 가 무조건 "open" 으로 적는다(§`record_findings`) — 상태를
+    # «지어내는» 게 아니라 곧 쓰일 값을 앞당겨 아는 것이다. ② 승계 여부
+    # (`_is_reraise_successor`)는 전방 포인터가 **바로 앞 줄**
+    # (`_resolve_ids_and_lineage`, 이 함수 호출 직전)에서 이미 원본 레코드에
+    # 찍히므로 지금 계산 가능하다 — 대상은 이 id 자신이 아니라 그 id 를 가리키는
+    # «다른» 레코드라서 이 id 가 원장에 없어도 무관하다. 그래서 원장 래퍼가 아니라
+    # 순수 함수 `_decide_choices_for` 를 직접 쓴다 — 선택지 로직은 여전히
+    # `docreview_state.py` 한 곳뿐이고(`decide_choices`·`_rg_decide`·`_rg_expired`
+    # 와 같은 원본), 이 자리가 `decide_choices` 를 재구현하지 않는다.
+    choices = _decide_choices_for("open", _is_reraise_successor(st, it["id"]))
     nref = None
     if doc and Path(doc).is_file():
         nref = len(refs_of(doc, it["anchor"]))
     basis = it.get("evidence")
     if not basis:
         basis = "finding 없이 바뀜" if it["category"] == "frozen_change" else "(근거 없음)"
-    return {"change": it["summary"], "basis": basis, "alternatives": ["채택(적용)", "기각(원복)", "보류"],
+    return {"change": it["summary"], "basis": basis,
+            "alternatives": [_CHOICE_LABEL[c] for c in choices],
             "impact": "%s · 인용 %s 섹션" % (it["anchor"], nref if nref is not None else "?"),
             "auto": it.get("origin") == "auto"}
 
@@ -557,8 +567,11 @@ def _resolve_ids_and_lineage(st, final, rejected_items, n):
     return bucket_conflicts, lineage_mismatch, revived
 
 
-def _remap_blocks(final, keep_of, doc):
-    """`blocks` 의 f-참조를 흡수 생존자(keep_of)를 거쳐 최종 id 로 바꾸고, decide 에 결정 뷰를 단다."""
+def _remap_blocks(final, keep_of, doc, st):
+    """`blocks` 의 f-참조를 흡수 생존자(keep_of)를 거쳐 최종 id 로 바꾸고, decide 에 결정 뷰를 단다.
+
+    `st` 는 `_decision_view` 가 `_is_reraise_successor` 를 계산하는 데만 쓴다(원장에
+    아직 없는 이 라운드 id 자신은 안 본다 — 위 `_decision_view` 헤더)."""
     f2id = {it["f"]: it["id"] for it in final if it.get("f")}
     for it in final:
         out = []
@@ -568,7 +581,7 @@ def _remap_blocks(final, keep_of, doc):
                 out.append(f2id[r2])
         it["blocks"] = out
         if it["disposition"] == "decide":
-            it["decision_view"] = _decision_view(it, doc)
+            it["decision_view"] = _decision_view(it, doc, st)
 
 
 def _pub(it):
@@ -650,7 +663,7 @@ def cmd_finalize(a) -> int:
     extra, reraise_unconsumed, escalated_unconsumed = _auto_decides(a, st, prof, sections, n, L)
     final.extend(extra)
     bucket_conflicts, lineage_mismatch, revived = _resolve_ids_and_lineage(st, final, rejected_items, n)
-    _remap_blocks(final, keep_of, a.doc)
+    _remap_blocks(final, keep_of, a.doc, st)
 
     for it in final:
         L.accept(it["id"])

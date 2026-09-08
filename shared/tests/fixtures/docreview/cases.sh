@@ -347,19 +347,44 @@ case_AC22_stale_pointer_cleared_via_redecide() {
 # 성공시키면서 이 재설계 자신이 만든 결함). `case_AC22_stale_pointer_cleared_via_redecide`
 # 와 같은 경로로 픽스처 없이 실제 재상승 후속을 CLI 로 얻는다.
 case_AC22b_reraise_successor_hold_refused() {
-  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
-  local gid; gid="$(fsum "$d" 'Non-goals' '["id"]')"
-  py docreview_state.py decide --state-dir "$d" --id "$gid" --choice adopt --quote '채택' >/dev/null
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
   next_round "$d" "$FX/design-sample.md" >/dev/null        # 라운드 2 — 변경 없음 → expired + 예약
-  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  # [Task 4 fix round 1 — 리뷰 I5 정정] route_r1 의 기본 critic(critic-r1.txt) 은 이
+  # decide 말고도 fix·ask 여러 건을 함께 만든다 — 그 클러터가 approval_ready 를 이
+  # 성공/재상승과 무관하게 늘 False 로 묶어, 아래 마지막 단언을 공허하게 만들었다
+  # (리뷰 실측: `_is_reraise_successor` 를 `return False` 로 눌러도 approval_ready
+  # 는 여전히 False — 4개의 다른 open decide·3개의 미적용 fix·1개의 차단 ask 가
+  # 계속 막았다). layer1·layer2 둘 다 «형식은 맞지만 빈» 블록으로 다른 finding 을
+  # 하나도 안 만든다 — finalize 뒤 원장에 남는 decide 는 재상승 후속 하나뿐이라,
+  # 이 항목의 상태 전이가 approval_ready 를 «직접» 정한다(아래 클러터-없음 선결조건
+  # 이 그 사실 자체를 잰다). 별도 mktemp 없이 `$d` 안에 둔다 — 케이스 끝의
+  # `rm -rf "$d"` 가 함께 지운다.
+  local empty_critic="$d/critic-empty.txt"
+  printf '리뷰 없음.\n\n```docreview-layer1\n[]\n```\n\n```docreview-layer2\n[]\n```\n' > "$empty_critic"
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$empty_critic" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
   py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
   local succ; succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
-  assert_eq "$(st_yaml "$d" 'st["decides"]["'"$gid"'"].get("superseded_by")')" "$succ" "AC22b: finalize 가 gid 에 전방 포인터를 남긴다(선결조건, 재상승)"
+  assert_eq "$(st_yaml "$d" 'st["decides"]["aaaa0001#r1.1"].get("superseded_by")')" "$succ" "AC22b: finalize 가 원본에 전방 포인터를 남긴다(선결조건, 재상승)"
   assert_eq "$(st_yaml "$d" 'st["decides"]["'"$succ"'"]["state"]')" "open" "AC22b: 후속은 평범한 open decide 다(선결조건 — 열려 있지 않으면 「보류」시도 자체가 무의미)"
-  py docreview_state.py decide --state-dir "$d" --id "$succ" --choice hold --quote '보류' >/dev/null 2>&1
-  assert_eq "$?" "1" "AC22b: 재상승 후속의 「보류」는 거부된다(원본의 차단을 한 홉 건너에서 풀지 못한다)"
+  # I1(리뷰) — fin.json 채널 자체를 잠근다. `gate_summary` 는 선택지 목록을 전혀
+  # 안 내므로(버킷만) JSON 을 읽는 소비자에게는 이 필드가 유일한 선택지 채널이다 —
+  # render 만 맞고 fin.json 의 decision_view.alternatives 는 여전히 셋을 내던 것이
+  # 리뷰가 실측으로 잡은 결함(fin.json·state.md·골든 셋 다 새는 채널).
+  assert_eq "$(jget "$d/fin2.json" '[x["decision_view"]["alternatives"] for x in d["findings"] if x["id"]=="'"$succ"'"][0]')" \
+    "['채택(적용)', '기각(원복)']" "AC22b: fin.json 의 decision_view.alternatives 에도 「보류」가 없다(I1 — JSON 채널)"
+  # I5(리뷰) — 선결조건: 이 항목이 유일한 열린 항목이다(클러터 없음). 이게 없으면
+  # 아래 마지막 단언은 이 성공/실패와 무관하게 항상 False 라 아무것도 못 잰다.
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["open_decide"], d["unapplied_fix"], d["blocking_ask_open"]')" \
+    "(['$succ'], [], [])" "AC22b: 선결조건 — 재상승 후속이 유일한 열린 항목이다(클러터 없음, I5)"
+  local out rc
+  # `fail()`(§docreview_state.py) 은 실패 JSON 을 stderr 로 낸다 — `2>&1` 로 합쳐야
+  # $out 이 실제로 그 JSON 을 받는다(성공 경로의 `_emit` 은 stdout, 실패는 stderr).
+  out="$(py docreview_state.py decide --state-dir "$d" --id "$succ" --choice hold --quote '보류' 2>&1)"; rc=$?
+  assert_eq "$rc $(printf '%s' "$out" | jgets 'd.get("reason")')" "1 decide_hold_not_allowed_for_reraise_successor" \
+    "AC22b: 재상승 후속의 「보류」는 거부된다(원본의 차단을 한 홉 건너에서 풀지 못한다) — 사유까지 검증(I3)"
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "False" \
-    "AC22b: 보류 시도 뒤에도 승인은 열리지 않는다"
+    "AC22b: 보류 시도 뒤에도 승인은 열리지 않는다(I5 — 이 항목이 유일한 블로커였으므로 공허하지 않다)"
   rm -rf "$d"
 }
 # `decide_choices` 를 실제로 import 해 낸다(문자열로 옮겨 적지 않는다) — heredoc-in-$()
@@ -387,13 +412,39 @@ if "대안: " in alt_line:
 print(bool(choices) and expected == offered)
 ' "$SCRIPTS" "$3" "$2" "$alt"
 }
+# [Task 4 fix round 1 — 리뷰 I4] `_rg_expired` 도 괄호 안에 선택지를 나열한다 —
+# `_rg_decide` 의 「대안:」 줄과는 다른 형식(별도 줄이 아니라 한 줄에 인라인)이라
+# `choices_match` 를 그대로 못 쓴다. 정규식으로 다시 파싱하지 않는다 — 라벨
+# 자체가 괄호를 품는다(`채택(적용)`). 대신 실제로 찍히는 접두사·형식을 그대로
+# 재구성해 벗겨낸다(프로그램의 포맷 문자열과 같은 모양).
+choices_match_expired() {   # choices_match_expired <render-text> <fid> <state-dir> → True/False
+  local line; line="$(printf '%s\n' "$1" | grep -F -- "[만료·차단] $2 —" | head -1)"
+  python3 -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from docreview_state import load_state, decide_choices
+LABEL = {"adopt": "채택(적용)", "reject": "기각(원복)", "hold": "보류"}
+st = load_state(sys.argv[2])
+fid = sys.argv[3]
+choices = decide_choices(st, fid)
+expected = {LABEL[c] for c in choices}
+line = sys.argv[4]
+summary = st["findings"][fid].get("summary") or ""
+prefix = "[만료·차단] %s — %s (" % (fid, summary)
+offered = set()
+if line.startswith(prefix) and line.endswith(")"):
+    body = line[len(prefix):-1].split(" — ", 1)[0]   # post 만료 원복-경고 꼬리 제거
+    offered = {x.strip() for x in body.split("/")}
+print(bool(choices) and expected == offered)
+' "$SCRIPTS" "$3" "$2" "$line"
+}
 # 「제안 = 수용」 등식 — 한 state 안에 세 부류(평범한 open · expired(비후속) · 재상승
-# 후속)를 모두 만들고 각각을 잰다. open 부류 둘(평범한 open·재상승 후속)은 실제로
-# 렌더되는 「대안:」 줄로 비교한다(그 줄을 내는 렌더러가 `_rg_decide` 하나뿐이라서다 —
-# expired 는 `_rg_expired` 가 따로 그려 「대안:」 줄 자체가 없다, `_rg_held_decide` 도
-# 마찬가지로 이 줄이 없다). expired(비후속)는 `decide_choices` 를 직접 불러 「채택/기각
-# 둘뿐」이 유지되는지만 잰다 — render 비교 대상이 아니다(render 문구를 바꿔도 이
-# 단언은 안 흔들린다, 그건 이 락의 범위 밖이다).
+# 후속)를 모두 만들고 각각을 잰다. 셋 다 이제 렌더 텍스트로 비교한다(open 둘은
+# `_rg_decide` 의 「대안:」 줄, expired 는 `_rg_expired` 의 인라인 괄호 — [Task 4
+# fix round 1, 리뷰 I4] 전에는 expired 쪽을 `decide_choices` 하나로만 쟀는데,
+# `_rg_expired` 가 «따로» 하드코딩한 열거가 그 함수와 갈려도 이 락은 구조적으로
+# 못 봤다 — 이제 렌더 텍스트 자체를 검사해 그 축도 잡는다). `dc_choices` 로도
+# 한 번 더 재는 것은 렌더 파싱과 무관하게 함수 자체가 맞는지 보는 이중 확인이다.
 case_choices_offered_equal_accepted() {
   local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
   py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
@@ -403,7 +454,8 @@ case_choices_offered_equal_accepted() {
   local succ normal
   succ="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" in x["summary"]][0]')"
   # critic-nolayer2 가 같은 라운드에 만드는 무관 lineage(Non-goals, aaaa 와 다른 bucket)
-  # — 이것이 「평범한 open」.
+  # — 이것이 「평범한 open」. [리뷰 I2] 이 항목은 재상승 사슬(aaaa→succ)과 «같은
+  # state 안에 공존»한다 — 아래 마지막 단언(양성 짝)이 정확히 이 공존을 이용한다.
   normal="$(jget "$d/fin2.json" '[x["id"] for x in d["findings"] if x["disposition"]=="decide" and "expired" not in x["summary"]][0]')"
   # 「expired(비후속)」 — 새 decide 를 이번 라운드(2)에 심어 채택 → 다음 라운드
   # 무변경 → expired, 후속은 만들지 않는다(finalize 를 다시 안 부른다).
@@ -420,6 +472,46 @@ case_choices_offered_equal_accepted() {
   assert_eq "$(choices_match "$render" "$normal" "$d")" "True" "제안=수용: 평범한 open — 「대안:」 줄과 decide_choices 가 같은 집합"
   assert_eq "$(choices_match "$render" "$succ" "$d")" "True" "제안=수용: 재상승 후속 — 「대안:」 줄과 decide_choices 가 같은 집합(둘 다 보류 없이 둘)"
   assert_eq "$(dc_choices "$d" "$blocked")" "['adopt', 'reject']" "제안=수용: expired(비후속) — decide_choices 도 보류 없이 둘"
+  assert_eq "$(choices_match_expired "$render" "$blocked" "$d")" "True" \
+    "제안=수용: expired(비후속) — 렌더의 괄호 열거와 decide_choices 가 같은 집합(I4 — 렌더 텍스트로도 잰다)"
+
+  # [리뷰 I2] 양성 짝 — `_is_reraise_successor` 가 `== fid`(대상 특정) 대신
+  # `is not None`(존재만) 으로 넓어지면, 이 state 안에 재상승 사슬이 살아 있다는
+  # 사실 «자체»가 무관한 $normal 의 「보류」까지 잘못 거부한다. 위 두 choices_match
+  # 단언은 양쪽이 같은 decide_choices 에서 나오므로 이 축을 구조적으로 못 본다
+  # (순환) — 실제 CLI 성공 여부로 따로 잰다. 다른 단언이 읽는 상태를 바꾸므로
+  # 이 케이스의 맨 끝에 둔다.
+  local out_hold rc_hold
+  # `fail()` 은 stderr 로 낸다(`2>&1` 로 합친다) — 실패하면 "state" 키 자체가 없는
+  # JSON(`{"ok": false, "reason": ..., "id": ...}`) 이라 `.get()` 으로 받는다
+  # (`d["state"]` 는 그 갈래에서 KeyError 로 죽어 판정을 「못 잼」으로 가린다 —
+  # 매트릭스 헤더의 "값이 아예 사라질 수 있는 변이" 함정, R19/R20).
+  out_hold="$(py docreview_state.py decide --state-dir "$d" --id "$normal" --choice hold --quote '보류 — 재상승과 무관' 2>&1)"; rc_hold=$?
+  assert_eq "$rc_hold $(printf '%s' "$out_hold" | jgets 'd.get("state")')" "0 held" \
+    "I2 양성 짝: 재상승 사슬과 공존하는 평범한 open 의 「보류」는 여전히 성공한다"
+  rm -rf "$d"
+}
+# [Task 4 fix round 1 — 리뷰 I3/Ruling 32] 사유 리터럴 셋 중 나머지 둘 — 「재상승
+# 후속」쪽은 case_AC22b_reraise_successor_hold_refused 가 이미 JSON 으로 잰다(위).
+# 브리프가 「기존 케이스가 그 문자열을 재고 있다」고 전제했던 것은 실은 거짓이었다
+# (git grep 은 이 셋을 어떤 테스트도 원장 JSON 으로 재지 않았음을 보였다) — 그
+# 전제를 참으로 만든다. `cases.sh:1008`(`case_AC6_reject_reasons_extra`)의 관용구
+# (`assert_eq "$rc $(... reason)" "1 <literal>"`)를 그대로 쓴다.
+case_decide_reason_literals_not_open_and_expired() {
+  local d out rc
+  # `fail()` 은 실패 JSON 을 stderr 로 낸다 — 둘 다 `2>&1` 로 합친다.
+  d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice reject --quote '기각' >/dev/null
+  out="$(py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '다시' 2>&1)"; rc=$?
+  assert_eq "$rc $(printf '%s' "$out" | jgets 'd.get("reason")')" "1 decide_not_open" \
+    "사유 리터럴: rejected 상태의 재결정 → decide_not_open"
+  rm -rf "$d"
+  d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice adopt --quote '채택' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null        # 변경 없음 → expired(비후속)
+  out="$(py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice hold --quote '보류' 2>&1)"; rc=$?
+  assert_eq "$rc $(printf '%s' "$out" | jgets 'd.get("reason")')" "1 decide_hold_not_allowed_for_expired" \
+    "사유 리터럴: 평범한 expired 의 보류 → decide_hold_not_allowed_for_expired"
   rm -rf "$d"
 }
 case_T23_post_adopt_applied() {

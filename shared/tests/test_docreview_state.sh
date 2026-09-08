@@ -49,6 +49,7 @@ case_AC22_stale_pointer_cleared_via_redecide
 # 목록엔 없었지만(브리프는 이 파일을 몰랐다) 형제 case_AC22_* 들과 같은 종류다.
 case_AC22b_reraise_successor_hold_refused
 case_choices_offered_equal_accepted
+case_decide_reason_literals_not_open_and_expired
 # Task 2 재리뷰(F-8/Ruling 23) — escalated 케이스 넷은 지금까지 매트릭스
 # (test_docreview_mutations.sh)에서만 불렸다. 그 규칙이 진짜로 깨지면 매트릭스는
 # 「양성대조 실패(계측기 고장)」로만 보고해, 다음 독자를 규칙이 아니라 계측기로

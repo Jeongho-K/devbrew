@@ -331,22 +331,41 @@ def _is_reraise_successor(st, fid) -> bool:
 
 
 # ── 선택지 축의 정본 (설계 §6.4 알려진 한계 (a)) ───────────────────────────────
-# 상태 축(GATE_ROWS)이 「열려 있는가·막는가·보이는가」를 한 표로 모으듯, 이 함수는
-# 「이 decide 에 실제로 받아들여지는 재결정이 무엇인가」를 한 곳으로 모은다. `cmd_decide`
-# 의 거부 술어와 `_rg_decide`(render_gate 의 「대안:」 줄)가 **둘 다** 이 함수를 쓴다 —
-# 제안하는 선택지와 받아주는 선택지가 갈라지면 사용자는 거부될 것을 고르게 된다(「열거가
-# 둘이면 어긋난다」가 상태 축이 아니라 선택지 축에서 재발한 것). `docreview_route.py` 의
-# `_decision_view` 는 여기 못 낀다 — record_findings 이전(라우팅 시점)에 불려 이 라운드의
-# `st["decides"][fid]` 가 아직 없다(있으면 이 함수는 그 id 를 모조리 빈 리스트로 본다,
-# 재상승 후속뿐 아니라 이 라운드의 평범한 open 도). 그래서 마지막 자리(`_rg_decide`)만 쓴다.
-def decide_choices(st, fid) -> list:
-    """이 항목에 «실제로 받아들여지는» 재결정 선택지 목록."""
-    d = st["decides"].get(fid) or {}
-    if d.get("state") not in ("open", "expired"):
+# 상태 축(GATE_ROWS)이 「열려 있는가·막는가·보이는가」를 한 표로 모으듯, 이 함수쌍은
+# 「이 decide 에 실제로 받아들여지는 재결정이 무엇인가」를 한 곳으로 모은다. 순수
+# 부분(`_decide_choices_for`)과 원장을 읽는 래퍼(`decide_choices`)로 가른다 —
+# [Task 4 fix round 1 — 리뷰 I1 정정] 원안은 래퍼 하나뿐이었고 `docreview_route.py`
+# 의 `_decision_view` 는 "원장에 이 id 가 아직 없다"는 이유로 아예 안 썼다. 그런데
+# 그 함수가 정말 못 보는 것은 **이 id 자신의 원장 레코드**뿐이다 — 승계 여부
+# (`_is_reraise_successor`)는 전방 포인터가 **바로 그 직전 줄**(`_resolve_ids_and_
+# lineage`)에서 이미 대상 레코드(원본, 이 id 가 아니다)에 찍히므로 라우팅 시점에도
+# 계산 가능하고, 상태는 `record_findings` 가 몇 줄 뒤 무조건 "open" 으로 적을 값이라
+# 호출부가 이미 알고 있다. 순수 부분을 갈라내면 `_decision_view` 는 원장을 몰라도
+# `_decide_choices_for("open", _is_reraise_successor(st, it["id"]))` 로 같은 답을
+# 낼 수 있다 — 선택지 로직은 여전히 한 곳(이 함수)뿐이고, `decide_choices`(원장
+# 래퍼)는 원장에 없는 id 를 «open 인 셈 치는» 승격을 하지 않는다(그 승격은 나중에
+# 진짜 모르는 상태를 감추는 쪽으로 작동한다 — 실패는 닫힌 채로 둔다).
+def _decide_choices_for(state, is_successor) -> list:
+    """선택지 계산의 순수 부분 — 원장 조회 없이 상태·승계 여부만 본다."""
+    if state not in ("open", "expired"):
         return []
-    if d.get("state") == "expired" or _is_reraise_successor(st, fid):
+    if state == "expired" or is_successor:
         return ["adopt", "reject"]          # 보류 없음 — 의무를 넘길 자리가 없다
     return ["adopt", "reject", "hold"]
+
+
+def decide_choices(st, fid) -> list:
+    """이 항목에 «실제로 받아들여지는» 재결정 선택지 목록 — 원장에서 상태를 읽는 래퍼.
+    `cmd_decide` 의 거부 술어와 `_rg_decide`(render_gate 의 「대안:」 줄)·`_rg_expired`
+    가 이 래퍼를 쓴다. 원장에 id 가 아직 없으면(예: 이 라운드에 막 채번됐지만 아직
+    `record_findings` 전인 id) 상태를 모른다 — `open` 으로 승격하지 않고 빈 리스트를
+    낸다(fail-closed). 원장에 있다는 사실 없이 상태를 안다고 «주장»할 수 있는 유일한
+    호출부는 `_decision_view` 하나뿐이고, 그 자리는 이 래퍼가 아니라 `_decide_choices_for`
+    를 직접 쓴다(위 헤더 참조)."""
+    d = st["decides"].get(fid)
+    if d is None:
+        return []
+    return _decide_choices_for(d.get("state"), _is_reraise_successor(st, fid))
 
 
 def _refresh_open_lineages(st, n) -> None:
@@ -733,9 +752,17 @@ def _rg_adopted(st, g, fid):
 
 
 def _rg_expired(st, g, fid):
+    # [Task 4 fix round 1 — 리뷰 I4 정정] 예전엔 여기 "(채택 / 기각%s)" 를 직접
+    # 하드코딩했다 — `_rg_decide` 를 고치면서 남긴 **두 번째, 안 이어진 열거**였다.
+    # `decide_choices` 가 expired 에 항상 내는 값과 우연히 일치했을 뿐 그 함수를
+    # 쓰지 않았으므로, 둘이 갈려도(예: `decide_choices` 가 언젠가 expired 에 대안
+    # 선택지를 더 낸다면) 이 줄은 조용히 낡은 채로 남았을 것이다 — 이 태스크가
+    # 닫으려던 「제안 ≠ 수용」이 형제 렌더러에 그대로 있었다. `decide_choices` 로
+    # 통일한다(M3 부산물 — `_rg_decide` 와 라벨 어휘도 이제 같다).
     d = st["decides"].get(fid) or {}
     tail = " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
-    return ["[만료·차단] %s — %s (채택 / 기각%s)" % (fid, st["findings"][fid].get("summary"), tail)]
+    alt = " / ".join(_CHOICE_LABEL[c] for c in decide_choices(st, fid))
+    return ["[만료·차단] %s — %s (%s%s)" % (fid, st["findings"][fid].get("summary"), alt, tail)]
 
 
 def _rg_superseded(st, g, fid):

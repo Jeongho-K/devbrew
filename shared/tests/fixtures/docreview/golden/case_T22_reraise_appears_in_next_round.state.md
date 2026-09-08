@@ -398,7 +398,6 @@ docreview:
         alternatives:
         - 채택(적용)
         - 기각(원복)
-        - 보류
         impact: '#3-non-goals · 인용 0 섹션'
         auto: true
       state: null
