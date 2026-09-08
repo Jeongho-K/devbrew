@@ -97,11 +97,17 @@ _T5_MAIN_VALIDATION_LOOP_SUCCESS = (
     "처분 개념이 없다."
 )
 
-# T6b — `docreview_route.py` 가 이 락의 모집단에 처음 들어오면서(check_wiring.py
-# 심볼릭 링크 skip 제거, Ruling 8) 드러난 아홉 자리. 파일이 spec-distill·
-# quality-gates 두 호스트에 같은 내용의 심볼릭 링크로 배포되므로(설계 §12) 아홉
-# 자리가 «호스트마다» 별도로 스캔돼 열여덟 키가 된다 — 같은 소스의 두 배포
-# 지점이라 사유는 호스트에 무관하게 하나씩만 쓴다.
+# T6b — `docreview_route.py`의 아홉 자리. **인과관계 정정(재리뷰 F-3)**: 이
+# 파일이 이 락의 모집단에 처음 들어온 것은 이 태스크의 symlink 수정이 아니라
+# Task 6이다 — `reviewing-spec/SKILL.md`에 `consumer=plugins/spec-distill/
+# scripts/docreview_route.py` 앵커를 더한 그 커밋이 이 파일을 `by_anchor`
+# 경유로 `union`에 처음 넣었다(52591c9b 시점에 이미 `unwired=9`였다 — 이
+# 태스크가 착수하기 전). check_wiring.py의 symlink skip 제거(Ruling 8)가
+# 한 일은 같은 파일을 IMPORT 쪽에서도 보이게 한 것과, 그 결과 quality-gates
+# 배포 사본까지 union에 끌어들인 것뿐이다. `_dedup_by_realpath()`(F-2)가
+# 두 배포 지점을 하나로 접으므로 아홉 자리에 아홉 키만 쓴다 — 대표 경로는
+# `plugins/quality-gates/scripts/docreview_route.py`("q" < "s"로 union 정렬
+# 순서상 먼저 온다).
 _DR_PERMIT_SEARCH = (
     "C6(1) — `_permit_covers()` 는 `st[\"permits\"]` 를 도는 존재검사 헬퍼다 "
     "(리뷰 대상 finding 이 아니라 permit 레코드를 순회한다). 일치하는 permit 을 "
@@ -375,47 +381,32 @@ EXEMPT = {
         "만드는 경로가 코드에 없다(확인 완료). 배선하면 죽은 코드다(Task 10 "
         "의 `phase_key` 와 같은 함정).",
 
-    # T6b — docreview_route.py 아홉 자리, 두 호스트(spec-distill·quality-gates)
-    # 배포 지점마다 하나씩. 사유는 위 `_DR_*` 상수 참조(호스트 무관, 같은 소스).
-    ("plugins/spec-distill/scripts/docreview_route.py", 96,
-     "return in _permit_covers @ if int(p['round']) == n and anchor in p['apply_anchors']"):
-        _DR_PERMIT_SEARCH,
+    # T6b — docreview_route.py 아홉 자리. spec-distill·quality-gates 두 호스트에
+    # 같은 물리 파일이 심볼릭 링크로 배포되지만(설계 §12) `scan()`/`comprehension_
+    # count()`는 F-2(재리뷰)의 `_dedup_by_realpath()`로 실제 내용을 한 번만
+    # 읽는다 — 대표로 남는 경로는 `union`의 정렬 순서상 먼저 오는
+    # `plugins/quality-gates/scripts/docreview_route.py`("q" < "s")다. 그래서
+    # 키도 아홉 개면 된다(호스트마다 다시 등록하지 않는다) — 두 배포 지점이
+    # 갈리지 않는다는 보장은 `shared/tests/test_copy_of_contract.sh`의
+    # ∀-dominance 축이 이미 진다. 사유는 위 `_DR_*` 상수 참조.
     ("plugins/quality-gates/scripts/docreview_route.py", 96,
      "return in _permit_covers @ if int(p['round']) == n and anchor in p['apply_anchors']"):
         _DR_PERMIT_SEARCH,
-    ("plugins/spec-distill/scripts/docreview_route.py", 311,
-     "continue in _absorb_same_as @ if not live"): _DR_ABSORB_GROUP_DEAD,
     ("plugins/quality-gates/scripts/docreview_route.py", 311,
      "continue in _absorb_same_as @ if not live"): _DR_ABSORB_GROUP_DEAD,
-    ("plugins/spec-distill/scripts/docreview_route.py", 330,
-     "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
     ("plugins/quality-gates/scripts/docreview_route.py", 330,
      "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
-    ("plugins/spec-distill/scripts/docreview_route.py", 335,
-     "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
     ("plugins/quality-gates/scripts/docreview_route.py", 335,
      "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
-    ("plugins/spec-distill/scripts/docreview_route.py", 390,
-     "continue in _auto_decides @ if int(e['round']) != n - 1"): _DR_ESCALATED_NOT_DUE,
     ("plugins/quality-gates/scripts/docreview_route.py", 390,
      "continue in _auto_decides @ if int(e['round']) != n - 1"): _DR_ESCALATED_NOT_DUE,
-    ("plugins/spec-distill/scripts/docreview_route.py", 393,
-     "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
     ("plugins/quality-gates/scripts/docreview_route.py", 393,
      "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
-    ("plugins/spec-distill/scripts/docreview_route.py", 405,
-     "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
     ("plugins/quality-gates/scripts/docreview_route.py", 405,
      "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
-    ("plugins/spec-distill/scripts/docreview_route.py", 416,
-     "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
-        _DR_RERAISE_ALREADY_DECIDED,
     ("plugins/quality-gates/scripts/docreview_route.py", 416,
      "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
         _DR_RERAISE_ALREADY_DECIDED,
-    ("plugins/spec-distill/scripts/docreview_route.py", 456,
-     "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
-        _DR_LINEAGE_NOT_RERAISE,
     ("plugins/quality-gates/scripts/docreview_route.py", 456,
      "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
         _DR_LINEAGE_NOT_RERAISE,
@@ -594,14 +585,51 @@ def _func_of(tree, node):
     return "<module>"
 
 
+def _dedup_by_realpath(paths):
+    """같은 물리 파일을 가리키는 여러 배포 경로(심볼릭 링크)를 하나로 접는다.
+
+    F-2(T6b 재리뷰) — `docreview_route.py`가 spec-distill·quality-gates 두
+    호스트에 심볼릭 링크로 배포되므로, 링크를 그대로 따라가며 스캔하면 같은
+    아홉 개의 버리는 분기·같은 열여덟 개의 컴프리헨션을 호스트마다 다시 세게
+    된다 — `EXEMPT` 등록도 아홉이 아니라 열여덟이 필요해지고, 세 번째 호스트가
+    같은 파일을 배포하면 스물일곱이 된다(등록이 배포 지점 수에 비례해 자라는
+    건 나열이지 도출이 아니다). `derive_consumers()`의 `union`(경로별로 성립해야
+    하는 축 — ANCHOR는 `consumer=`가 앵커의 플러그인과 같아야 하므로 경로
+    자체가 의미 있다, `test_dispatch_disposition.sh` 축 A⑤)은 그대로 두고,
+    **내용을 실제로 읽는 이 함수와 `comprehension_count()`에서만** 같은 실제
+    파일을 중복으로 열지 않게 거른다.
+
+    대표로 남기는 것은 realpath 자체가 아니라 **먼저 나온 원래 인자**다 —
+    realpath를 `"file"`로 쓰면 `run_wiring_scan.py`의 `Path(r["file"]).
+    relative_to(root)`가 `root` 자신이 심볼릭 링크를 거치는 환경(worktree 등)
+    에서 갈릴 수 있다. 정체(`exempt_key`의 kind·func·guard)는 어느 배포
+    경로를 대표로 남기든 바이트가 같으므로 동일하다 — 두 링크가 갈리지
+    않는다는 보장은 `shared/tests/test_copy_of_contract.sh`의 ∀-dominance
+    축이 이미 지므로, 여기서 두 번 세는 것은 그 보장을 다시 사는 게 아니라
+    같은 사실을 중복 기록하는 것뿐이다.
+    """
+    seen_real = set()
+    out = []
+    for p in paths:
+        real = str(Path(p).resolve())
+        if real in seen_real:
+            continue
+        seen_real.add(real)
+        out.append(p)
+    return out
+
+
 def scan(paths):
     """버리는 분기 전수. 각 항목은 guarded 여부를 함께 낸다.
 
     분기 «노드»에서 출발한다 — 루프에서 출발해 하위를 훑으면 중첩 루프 안의
     한 문장이 바깥·안쪽 양쪽에 귀속돼 두 번 세어진다.
+
+    F-2: 심볼릭 링크로 같은 물리 파일을 여러 번 배포한 경우 `_dedup_by_
+    realpath()`가 한 번만 읽는다.
     """
     out = []
-    for path in paths:
+    for path in _dedup_by_realpath(paths):
         tree = ast.parse(io.open(path, encoding="utf-8").read())
         parents = _parent_map(tree)
         for n in ast.walk(tree):
@@ -678,10 +706,29 @@ def stale_exempt(repo_root):
     return [k for k in EXEMPT if k not in live]
 
 
+def stale_terminal(repo_root):
+    """`TERMINAL_CONSUMERS`의 신선도 — `stale_exempt()`와 같은 목적(F-2 재리뷰).
+
+    항목은 자기 파일이 지금도 IMPORT이고 아직 ANCHOR가 없을 때만 유효하다.
+    두 방향의 낡음: 파일이 지워지면(PR 3의 merge_review.py 등) IMPORT에서
+    빠지고, 호스트가 wiring되면(quality-gates docreview_route.py 등) ANCHOR가
+    새로 생긴다 — 둘 다 원래의 등재 사유를 무효화한다. `derive_consumers()`를
+    재사용한다(재도출 아님).
+    """
+    _, by_import, by_anchor = derive_consumers(repo_root)
+    stale = [(p, "import_gone") for p in TERMINAL_CONSUMERS if p not in by_import]
+    stale += [(p, "anchor_now_exists") for p in TERMINAL_CONSUMERS if p in by_anchor]
+    return stale
+
+
 def comprehension_count(paths):
-    """컴프리헨션 내포 수 — 요구가 아니라 회귀 축이다."""
+    """컴프리헨션 내포 수 — 요구가 아니라 회귀 축이다.
+
+    F-2: `scan()`과 같은 이유로 `_dedup_by_realpath()`를 거친다 — 아니면
+    심볼릭 링크로 배포된 같은 파일의 컴프리헨션이 호스트 수만큼 중복 계상된다.
+    """
     total = 0
-    for path in paths:
+    for path in _dedup_by_realpath(paths):
         tree = ast.parse(io.open(path, encoding="utf-8").read())
         total += sum(
             len(n.generators) for n in ast.walk(tree)
@@ -715,15 +762,19 @@ def uncited_exemptions():
 # 내던 값에 기계 단언을 붙인다. 줄이는 것은 자유, 늘리려면 이 수를 올리는
 # 커밋이 이유를 함께 적어야 한다.
 #
-# T6b — 17 → 35. `docreview_route.py` 가 심볼릭 링크 skip 제거(Ruling 8)로 이
-# 락의 모집단에 처음 들어오면서 아홉 자리가 드러났고, 그 파일이 spec-distill·
-# quality-gates 두 호스트에 같은 내용의 심볼릭 링크로 배포되므로(설계 §12) 아홉
-# 자리가 호스트마다 따로 스캔돼 열여덟(9×2)이 늘었다(17+18=35). 각 자리의 근거는
-# 위 `_DR_*` 상수 — 배선을 면제로 «갈아 끼운» 것이 아니라 실제로 이미 다른
-# 자리에서 회계됐거나(같은 대입 지점에서 `L.reject`/`L.absorbed` 동시 호출) 판정
-# 대상 자체가 없는(permit/reraise 스케줄링 탐색) 자리들이다 — 새로 생긴 진짜
-# 인구다.
-EXEMPT_BASELINE = 35
+# T6b — 17 → 26. **인과관계 정정(재리뷰 F-3)**: `docreview_route.py`가 이
+# 락의 모집단에 처음 들어온 것은 Task 6이다(`reviewing-spec/SKILL.md`의
+# `consumer=` 앵커 추가) — 52591c9b 시점에 이미 `unwired=9`였고, 이 태스크가
+# 손대기 전부터 그 아홉 자리는 미배선 RED였다. 이 태스크가 한 일은 그 아홉
+# 자리에 근거를 달아 등재해 RED를 닫은 것이다(각 자리 근거는 위 `_DR_*`
+# 상수). 배포는 spec-distill·quality-gates 두 호스트에 같은 물리 파일을
+# 심볼릭 링크로 하지만, `_dedup_by_realpath()`(F-2)가 `scan()`/`comprehension_
+# count()`에서 그 중복을 접으므로 키는 «호스트 수와 무관하게» 아홉이면
+# 된다(17+9=26) — 세 번째 호스트가 같은 파일을 배포해도 이 수는 늘지 않는다.
+# 배선을 면제로 «갈아 끼운» 것이 아니라 실제로 이미 다른 자리에서
+# 회계됐거나(같은 대입 지점에서 `L.reject`/`L.absorbed` 동시 호출) 판정 대상
+# 자체가 없는(permit/reraise 스케줄링 탐색) 자리들이다.
+EXEMPT_BASELINE = 26
 
 
 def derive_consumers(repo_root):

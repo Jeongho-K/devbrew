@@ -111,22 +111,59 @@ fm_text = m.group(1) if m else ""
 # brief·seed·generic 프로필 실측 — 참고: `docreview_state.py:load_profile()` 은
 # 이 넷을 훨씬 엄격하게 검증하지만 그건 정본 스키마 게이트이지 이 러너가
 # 다시 구현할 대상이 아니다) 새 YAML 파서를 발명하지 않고 그 모양만 좁게 뽑는다.
+def _unquote(v):
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+        v = v[1:-1]
+    return v
+
+
 def _flow_list(key, text):
     # `layer1`·`layer2` 는 `layer_rubric:` 아래 2칸 들여쓰기다 — `allowed_
     # dispositions` 는 최상위(들여쓰기 없음). 둘 다 받으려면 줄 시작의 임의
     # 공백을 허용해야 한다(`^\s*`) — 앵커를 열 칸 고정으로 두면 한쪽이 깨진다.
-    mm = re.search(r"(?m)^\s*" + re.escape(key) + r":\s*\[(.*?)\]\s*$", text)
+    #
+    # 형식은 **둘 다** 받는다 — flow(`key: [a, b, c]`)와 block(`key:\n  - a\n
+    # - b`). `load_profile()`(docreview_state.py, 실 PyYAML)은 이 상위 스키마
+    # 게이트라 둘 다 통과시키는데, 이 러너가 flow만 읽으면 그 게이트가 아무것도
+    # 보호하지 못한다 — design-doc.md 의 `protected_headings` 가 이미 block
+    # 이고(리뷰 F-1), layer1/layer2/allowed_dispositions 가 나중에 길어져 block
+    # 으로 옮겨가면 flow 전용 파서는 **조용히 빈 리스트**를 내고(그 프로필 자체는
+    # 여전히 유효하므로 게이트가 안 잡는다) 프롬프트는 "assign a disposition
+    # from: " 뒤가 빈 채로 나간다. 트레일링 `# comment` 도 두 형식 모두에서
+    # 허용한다(비교 지점: `web:` 아래에도 같은 요구가 있다).
+    mm = re.search(r"(?m)^\s*" + re.escape(key) + r":[ \t]*\[(.*?)\][ \t]*(?:#.*)?$", text)
+    if mm:
+        inner = mm.group(1).strip()
+        if not inner:
+            return []
+        return [_unquote(x) for x in inner.split(",") if x.strip()]
+    # 헤더 뒤 개행을 **정규식 안에서** 소비한다(`$` 대신 리터럴 `\n`) — `$` 로
+    # 끊으면 `mm.end()` 가 개행 문자 바로 앞에 멈춰, 그 뒤 `splitlines()` 의 첫
+    # 원소가 빈 문자열이 된다("\n  - a".splitlines() == ['', '  - a']) — 그
+    # 빈 줄이 `- ` 패턴에 안 맞아 첫 항목을 보기도 전에 루프가 끊긴다(실측
+    # 회귀 — 고치기 전엔 block 세 프로필 모두 빈 리스트를 냈다).
+    mm = re.search(r"(?m)^\s*" + re.escape(key) + r":[ \t]*(?:#.*)?\n", text)
     if not mm:
         return []
-    inner = mm.group(1).strip()
-    if not inner:
-        return []
-    return [x.strip().strip("'\"") for x in inner.split(",") if x.strip()]
+    items = []
+    for line in text[mm.end():].splitlines():
+        im = re.match(r"^\s*-\s*(.*?)[ \t]*(?:#.*)?$", line)
+        if not im:
+            break
+        val = im.group(1)
+        if val:
+            items.append(_unquote(val))
+    return items
 
 lr_layer1 = _flow_list("layer1", fm_text)
 lr_layer2 = _flow_list("layer2", fm_text)
 ad = _flow_list("allowed_dispositions", fm_text)
-web = re.search(r"(?m)^web:\s*true\s*$", fm_text) is not None
+# YAML(그리고 PyYAML 의 `load_profile()`)은 불리언 대소문자를 가린다 — `True`·
+# `TRUE`·`true` 전부 파이썬 `True` 다(리뷰 F-1: `isinstance(True, bool)` 이라
+# 상위 게이트가 그대로 통과시킨다). `(?i)` 로 대소문자 무시 + 트레일링 코멘트
+# 허용.
+web = re.search(r"(?im)^web:[ \t]*true[ \t]*(?:#.*)?$", fm_text) is not None
 pathlib.Path(meta_path).write_text("web: %s\n" % ("true" if web else "false"), encoding="utf-8")
 
 pre = ""
