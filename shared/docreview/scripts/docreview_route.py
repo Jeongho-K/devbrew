@@ -471,11 +471,18 @@ def _auto_decides(a, st, prof, sections, n, L):
         # 일어난 변경의 원복 의무)는 permit 의 종류가 다르고, `post` 만 해시 대조를
         # 한다 — 하드코딩하면 원복 의무가 「앵커가 닿기만 하면 통과」로 강등된다
         # (설계 §6.4 알려진 한계 (b)).
+        # [fix round 1 — 리뷰 M3] `d0.get("kind")` 에 `or "pre"` fallback 을 안
+        # 붙인다 — d0 는 위 가드(`if not d0 …`)를 지났으므로 이미 존재하고,
+        # `st["decides"]` 레코드를 만드는 유일한 자리(`record_findings`,
+        # docreview_state.py)가 `"kind": it.get("kind") or "pre"` 로 «기록 시점에»
+        # 이미 강제해 `d0.get("kind")` 는 항상 truthy 다 — 도달 불가능한 자리에
+        # 조용한 기본값을 또 놓으면 CLAUDE.md 「강제는 계수하되 소실이 아니다」를
+        # 어기는 uncounted coercion 이 된다.
         extra.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "채택 후 미적용(expired): " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
                       "supersedes": r["finding_id"], "evidence": r.get("reason"), "origin": "auto",
-                      "kind": d0.get("kind") or "pre", "prev_hash": d0.get("prev_hash"),
+                      "kind": d0.get("kind"), "prev_hash": d0.get("prev_hash"),
                       "immutable": bool(f0.get("immutable")), "_source": "reraise"})
     st["reraise"] = []
     return extra, reraise_unconsumed, esc_unconsumed

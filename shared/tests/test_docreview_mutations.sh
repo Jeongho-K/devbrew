@@ -614,33 +614,51 @@ mut 1/1 rg_expired_unwired_and_offers_hold case_choices_offered_equal_accepted s
 # ── 재상승 후속의 kind·prev_hash 승계 (Task 5, 2026-09-08-docreview-design-doc-site,
 #    설계 §6.4 알려진 한계 (b)) ── 표준 원 숫자(①…㊾)는 지난 태스크들에서 이미
 #    ㊾(49)까지 다 썼다 — 이 유니코드 블록의 마지막 글자는 ㊿(50) 하나뿐이라
-#    셋 중 첫째만 원 숫자를 받고 나머지 둘은 (51)·(52) 로 이어 붙인다.
+#    넷 중 첫째만 원 숫자를 받고 나머지 셋은 (51)·(52)·(53) 으로 이어 붙인다.
 #
 # ㊿ 재상승 후속의 kind 승계를 하드코딩 "pre" 로 되돌린다 — 원본이 post(얼림 diff
 #    가 만든 사후 결정, 기각으로 원복 permit 이 열렸다가 미관측 만료)였는데 후속이
 #    다시 "pre" 로 태어난다(§6.4 한계 (b) 그 자체 — 되돌리지 않은 얼림 위반의
 #    「채택」이 해시 대조 없는 apply permit 을 열어 그대로 승인된다).
-#    `case_AC22c_reraise_inherits_post_kind` 만이 이 축을 잰다 — kind 단언과
-#    「채택 → 즉시 applied」단언 둘 다 이 변이 하나로 무너진다(cmd_decide 의
-#    post 분기 자체가 안 타므로).
+#    `case_AC22c_reraise_inherits_post_kind` 만이 이 축을 잰다 — [fix round 1] 이
+#    케이스가 이제 셋(kind · 후속 자신의 렌더 꼬리 · 「채택 → 즉시 applied」)이라
+#    셋 다 이 변이 하나로 무너진다(cmd_decide 의 post 분기 자체가 안 타고,
+#    `_post_kind_notice` 도 kind!="post" 라 빈 문자열을 낸다) — 실측 RED(3).
 mut 1/1 reraise_kind_hardcoded_pre case_AC22c_reraise_inherits_post_kind sed_route \
-  's/"kind": d0\.get("kind") or "pre", "prev_hash": d0\.get("prev_hash"),/"kind": "pre", "prev_hash": d0.get("prev_hash"),/'
+  's/"kind": d0\.get("kind"), "prev_hash": d0\.get("prev_hash"),/"kind": "pre", "prev_hash": d0.get("prev_hash"),/'
 # (51) prev_hash 승계만 지운다(kind 승계는 그대로 둔다) — 후속이 post 로는 태어나되
-#    원복 대상 해시를 잃는다. `case_AC22c_reraise_inherits_prev_hash` 하나만 이
-#    축을 잰다 — kind 는 안 건드렸으므로 `case_AC22c_reraise_inherits_post_kind`
-#    의 kind·즉시-applied 단언은 이 변이에서 여전히 GREEN 이다(두 변이가 서로
-#    가리지 않도록 브리프가 요구한 분리, Step 3).
+#    원복 대상 해시를 잃는다. `case_AC22c_reraise_inherits_prev_hash` 만이 이 축을
+#    잰다 — [fix round 1 — 리뷰 M1] 그 케이스 첫 단언(공허성 바닥, 원본 prev_hash 가
+#    실제 hex 모양인지)은 이 변이가 안 건드리는 값이라 계속 GREEN, 둘째(등식)만
+#    RED — 실측 RED(1) 생존(1). kind 는 안 건드렸으므로
+#    `case_AC22c_reraise_inherits_post_kind` 의 세 단언은 이 변이에서 여전히
+#    GREEN 이다(두 변이가 서로 가리지 않도록 브리프가 요구한 분리, Step 3).
 mut 1/1 reraise_prev_hash_dropped case_AC22c_reraise_inherits_prev_hash sed_route \
-  's/"kind": d0\.get("kind") or "pre", "prev_hash": d0\.get("prev_hash"),/"kind": d0.get("kind") or "pre",/'
+  's/"kind": d0\.get("kind"), "prev_hash": d0\.get("prev_hash"),/"kind": d0.get("kind"),/'
 # (52) 반대 방향 회귀 — kind 승계를 무조건 "post" 로 강제한다("pre" 원본까지도
 #    "post" 로 과대 일반화). 브리프의 두 변이는 post 원본만 겨눴다 — `d0.get(
-#    "kind") or "pre"` 는 양방향 값을 다루는 식이라 이 반대쪽 실패 모드가 그때까지
-#    잡히지 않았다(위 cases.sh 의 [Task 5 실행 노트] 참조 — 기존 case_AC20_*·
-#    case_AC21_* 는 F_DEC(kind="pre")로 실제 재상승을 여러 번 걷지만 성공의
-#    kind 를 단언한 적이 없다). 이 방향이 위험한 이유: "post" 로 잘못 태어나면
-#    「채택」이 permit 없이 즉시 applied 로 끝나(`cmd_decide` 의 post 분기) 「그
-#    편집이 실제로 관측됐는가」를 검증하는 pre 의 정상 계약을 건너뛴다.
-#    `case_AC22c_reraise_preserves_pre_kind` 만이 이 축을 잰다.
+#    "kind")` 는 양방향 값을 다루는 식이라 이 반대쪽 실패 모드를
+#    `case_AC22c_reraise_preserves_pre_kind` 가 새로 잰다. [fix round 1 — 리뷰 I2
+#    정정] 이 케이스가 이 방향을 «처음 잡는» 락은 아니다 — 같은 변이가
+#    `test_docreview_golden.sh`(case_T22 후속의 kind 가 pre→post 로 갈려 fin.json·
+#    state.md 둘 다 어긋난다)와 `case_AC20_reexpiry_blocks_again`(post 후속은 채택
+#    즉시 applied 라 그 케이스가 기대하는 재만료 자체가 안 일어나 RED(2))도 함께
+#    무너뜨린다. 이 케이스가 유일하게 갖는 것은 **귀속**이다 — 골든 diff 도 AC20③
+#    의 실패 메시지도 `kind` 를 한 글자도 언급하지 않는데, 이 셀만 `kind` 단언을
+#    직접 겨눈다. 위험한 이유: "post" 로 잘못 태어나면 「채택」이 permit 없이
+#    즉시 applied 로 끝나(`cmd_decide` 의 post 분기) 「그 편집이 실제로
+#    관측됐는가」를 검증하는 pre 의 정상 계약을 건너뛴다.
 mut 1/1 reraise_kind_hardcoded_post case_AC22c_reraise_preserves_pre_kind sed_route \
-  's/"kind": d0\.get("kind") or "pre", "prev_hash": d0\.get("prev_hash"),/"kind": "post", "prev_hash": d0.get("prev_hash"),/'
+  's/"kind": d0\.get("kind"), "prev_hash": d0\.get("prev_hash"),/"kind": "post", "prev_hash": d0.get("prev_hash"),/'
+# (53) [fix round 1 — 리뷰 I1] `_rg_decide` 에서 사후 고지 꼬리 호출(`_post_kind_
+#    notice(d)`)을 빼 원판(꼬리가 `_rg_expired` 에만 있던 상태)으로 되돌린다 —
+#    이 셀이 겨누는 것은 배선이다: 리터럴 자체가 죽는 축은 기존 ㊾ 이웃의
+#    `post_tail_removed`(`_rg_expired`·`case_AC22_post_expiry_render_tail` 짝)가
+#    이미 재고, 여기는 `_rg_decide` 가 그 헬퍼를 «부르는지» 를 잰다 — 헬퍼가
+#    멀쩡해도 호출이 빠지면 재상승 후속이 open_decide 로 렌더되는 동안은 여전히
+#    안 보인다(이 태스크가 닫으려던 바로 그 결함의 재발 형태).
+#    `case_AC22c_reraise_inherits_post_kind` 의 렌더 꼬리 단언만 RED — kind·
+#    즉시-applied 단언은 렌더 텍스트와 무관해 생존한다(실측 RED(1) 생존(2)).
+mut 1/1 rg_decide_post_tail_unwired case_AC22c_reraise_inherits_post_kind sed_state \
+  's/"\[decide%s\] %s — %s%s" % (" auto" if dv\.get("auto") else "", fid, f\.get("summary"), _post_kind_notice(d)),/"[decide%s] %s — %s" % (" auto" if dv.get("auto") else "", fid, f.get("summary")),/'
 finish

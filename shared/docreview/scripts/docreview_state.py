@@ -730,6 +730,18 @@ def gate_summary(st) -> dict:
 _CHOICE_LABEL = {"adopt": "채택(적용)", "reject": "기각(원복)", "hold": "보류"}
 
 
+def _post_kind_notice(d) -> str:
+    """사후(`post`) 결정에만 붙는 고지 꼬리 — 「채택」이 원복 의무를 관측 없이
+    종결한다는 뜻이 성립하는 «모든» 렌더러가 같은 문장을 낸다(설계 §6.4 — 규범
+    문장은 렌더러가 아니라 그 뜻이 성립하는가에 묶인다). 리터럴은 여기 한 곳뿐 —
+    `_rg_decide`·`_rg_expired` 둘 다 이 함수를 부른다. [fix round 1 — 리뷰 I1] 전엔
+    `_rg_expired` 안에 인라인으로만 있어, 재상승 후속이 (이 태스크 이후) `post` 를
+    물려받아도 그 후속이 아직 열린 decide 인 동안(`_rg_decide` 로 렌더되는 동안)은
+    이 뜻이 사용자에게 안 닿았다 — §6.4 한계 (b) 의 절반이 렌더 축에서 그대로
+    열려 있던 자리."""
+    return " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
+
+
 def _rg_decide(st, g, fid):
     # [Task 4 — §6.4 한계 (a)] 「대안:」 줄은 `dv.get("alternatives")`(docreview_route.py
     # `_decision_view` 의 상수 목록)가 아니라 `decide_choices` 로 낸다 — 그쪽은 라우팅
@@ -739,7 +751,8 @@ def _rg_decide(st, g, fid):
     f = st["findings"][fid]
     dv = f.get("decision_view") or {}
     alternatives = [_CHOICE_LABEL[c] for c in decide_choices(st, fid)]
-    return ["[decide%s] %s — %s" % (" auto" if dv.get("auto") else "", fid, f.get("summary")),
+    d = st["decides"].get(fid) or {}
+    return ["[decide%s] %s — %s%s" % (" auto" if dv.get("auto") else "", fid, f.get("summary"), _post_kind_notice(d)),
             "  변경: %s" % dv.get("change", f.get("summary")),
             "  근거: %s" % dv.get("basis", f.get("evidence") or "—"),
             "  대안: %s" % " / ".join(alternatives),
@@ -760,9 +773,8 @@ def _rg_expired(st, g, fid):
     # 닫으려던 「제안 ≠ 수용」이 형제 렌더러에 그대로 있었다. `decide_choices` 로
     # 통일한다(M3 부산물 — `_rg_decide` 와 라벨 어휘도 이제 같다).
     d = st["decides"].get(fid) or {}
-    tail = " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
     alt = " / ".join(_CHOICE_LABEL[c] for c in decide_choices(st, fid))
-    return ["[만료·차단] %s — %s (%s%s)" % (fid, st["findings"][fid].get("summary"), alt, tail)]
+    return ["[만료·차단] %s — %s (%s%s)" % (fid, st["findings"][fid].get("summary"), alt, _post_kind_notice(d))]
 
 
 def _rg_superseded(st, g, fid):
