@@ -300,8 +300,30 @@ mut 1/1 fwd_pointer_not_cleared case_AC20_stale_pointer_cleared_on_reobserve sed
   's/d\.pop("superseded_by", None)   # 이 만료 인스턴스는 끝났다.*/pass/'
 # ⑱ 술어를 역방향 supersedes 스캔으로 복원 — 이 셀이 「전방이냐 역방이냐」의 유일한 변별기다.
 #    앞의 둘은 «막느냐 마느냐» 만 흔들고 방향을 구별하지 않는다.
-mut 1/1 predicate_backward_scan case_AC20_nonobligation_successors_still_block sed_state \
-  's/if d\["state"\] == "expired" and not d\.get("superseded_by")/if d["state"] == "expired" and i not in {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")}/'
+# [Task 3 재앵커] 원래 이 셀은 `gate_summary` 가 `blocked_expired` 를 직접 열거하던 줄
+# (`if d["state"] == "expired" and not d.get("superseded_by")`)을 겨눴다. Task 3 가
+# 그 열거를 `GATE_ROWS` 표의 `blocked_expired` 행 하나로 옮기면서 그 술어는
+# `lambda r: r["state"] == "expired" and not r.get("superseded_by")` 가 됐는데,
+# `gate_bucket(st, row)` 는 `row.pred(r)` 를 **레코드만** 넘겨 부른다(`i`, 곧 finding
+# id 는 그 술어 서명 안에 없다) — 원래 이 셀이 겨누던 「`i not in {...}` 역방향 스캔」은
+# id 를 요구하므로 행 술어 자리에서는 더 이상 표현할 수 없다(브리프의 `pred(r)` 서명을
+# verbatim 으로 유지한 결과다). 앵커가 사라져 churn 0/0 으로 계측기가 고장 신호를 냈다
+# (실측 — 재앵커 전 전체 스윕에서 이 셀 하나만 RED). 같은 개념(전방 포인터 대 역방향
+# 스캔)을 여전히 잴 수 있는 자리는 `gate_bucket` 자신이다 — id(`i`)와 `st["findings"]`
+# 둘 다 이 함수 스코프에 있다. `blocked_expired` 행일 때만 역방향 스캔으로 바꿔치기해
+# 원래 sed 와 같은 판정식(`i not in {supersedes 타겟들}`)을 재현한다 — 프로덕션
+# `gate_bucket` 은 그대로다(사본에서만 바뀐다, 아래 sed 는 mkclone 된 임시 사본을 겨눈다).
+# churn 은 손으로 5줄 치환(1 삭제/5 추가)으로 도출했지만 실측은 0/4 였다 — 치환문의
+# 마지막 줄(`return sorted(...) if row.pred(r))`)이 원본과 바이트가 같아 diff 의 LCS 가
+# 그 줄을 "안 바뀜"으로 보고 앞 네 줄만 삽입으로 셌다(이 파일의 ⑨ protected_self_only
+# 가 이미 실측한 것과 같은 종류 — 순수 삽입은 실제 diff 기준으로 선언해야 한다). 아래
+# 선언값은 손 도출이 아니라 이 실측을 그대로 반영한다.
+mut 0/4 predicate_backward_scan case_AC20_nonobligation_successors_still_block sed_state \
+  's/return sorted(i for i, r in st\[row\.ledger\]\.items() if row\.pred(r))/if row.name == "blocked_expired":\
+        return sorted(i for i, r in st[row.ledger].items()\
+                      if r["state"] == "expired"\
+                      and i not in {f.get("supersedes") for f in st["findings"].values() if f.get("supersedes")})\
+    return sorted(i for i, r in st[row.ledger].items() if row.pred(r))/'
 
 # ── 만료 재결정 탈출구 (Task 4, AC22) ───────────────────────────────────────
 # ⑲ 탈출구를 되돌린다 → expired 는 다시 열지 않는다(영구 차단, 후속이 끝내 안 생기면
@@ -466,4 +488,21 @@ mut 1/1 escalated_loss_uncounted case_escalated_unconsumed_counted sed_route \
 #    (하향: 사용자가 이미 처분한 fix 가 다시 승인을 막는다).
 mut 1/1 escalated_fix_liveness_removed case_escalated_dropped_fix_not_resurrected sed_route \
   's/if not fx0 or fx0\.get("state") != "escalated":/if False:/'
+
+# ── 상태 축의 정본 표 (Task 3) ───────────────────────────────────────────────
+# ㊴ `ask_open` 행의 `from_decide` 배제를 지운다 — `decide --choice hold` 가 심은
+#    ask(교차 원장, 위 case_GR_held_decide_cross_ledger 의 「facts I verified myself
+#    ①」)가 held_decide 행과 함께 ask_open 행에도 걸려 같은 항목이 게이트에 두 번
+#    렌더된다(하향: 이중 표시 — fail-open 은 아니지만 표의 「한 상태 = 한 행」 불변식이
+#    깨진다). churn 은 손으로 한 줄 치환(1 삭제/1 추가)으로 도출했다 — lambda 줄
+#    전체를 갈아 끼우고 뒤 문법(줄바꿈·쉼표)은 안 건드리므로 손 도출과 실측이 갈릴
+#    이유가 없다(⑱ 처럼 치환문이 원본과 바이트가 겹치는 자리가 없다).
+mut 1/1 ask_open_ignores_from_decide case_GR_held_decide_cross_ledger sed_state \
+  's/lambda r: not r\.get("answered") and not r\.get("blocks") and not r\.get("from_decide"),/lambda r: not r.get("answered") and not r.get("blocks"),/'
+# ㊵ `escalated_fix` 행의 `blocks` 를 True→False 로 되돌린다 — 설계 §6.4 한계(c)
+#    (escalate 된 fix 가 비차단) 그 자체로 회귀한다. `approval_ready` 는
+#    `GATE_ROWS` 의 `blocks` 필드에서 도출되므로(`gate_summary`), 이 한 줄이
+#    이 태스크가 실제로 고친 결함의 유일한 스위치다.
+mut 1/1 escalated_fix_no_longer_blocks case_GR_escalated_fix_blocks_approval sed_state \
+  's/lambda r: r\["state"\] == "escalated", True, True, "escalated_fix"/lambda r: r["state"] == "escalated", True, False, "escalated_fix"/'
 finish

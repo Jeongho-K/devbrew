@@ -52,4 +52,8 @@ case_escalated_accumulates
 case_escalated_dedup
 case_escalated_unconsumed_counted
 case_escalated_dropped_fix_not_resurrected
+# Task 3 — 위와 같은 이유(F-8/Ruling 23)로 여기 등록한다: 매트릭스에서만 불리면
+# 규칙이 깨져도 「양성대조 실패(계측기 고장)」로만 보고된다.
+case_GR_held_decide_cross_ledger
+case_GR_escalated_fix_blocks_approval
 finish

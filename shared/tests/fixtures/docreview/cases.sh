@@ -1148,6 +1148,15 @@ case_escalated_unconsumed_counted() {
   # `None != "1"` 은 여전히 RED 다.
   assert_eq "$(jget "$d/fin.json" 'd.get("escalated_unconsumed")')" "1" "escalated: 대상 finding 이 없는 예약은 버려지지 않고 계수된다"
   assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["counts"].get("escalated_unconsumed")')" "1" "escalated: 그 계수가 게이트에 실린다"
+  # [Task 3 실행 노트 — Ruling 24] Task 2 가 render_gate 의 계수 줄에 「미소비 상향 예약
+  # %d」를 더했는데(escalated_unconsumed), 그 줄을 게이트 **렌더 본문**에서 재는 락이
+  # 없었다(위 두 단언은 JSON 의 escalated_unconsumed 만 본다). 이 카운터는 GATE_ROWS
+  # 행이 아니다(어떤 상태 하나가 아니라 route 리포트의 집계값이라 행 모델에 안 맞는다)
+  # — Task 3 의 새 가시성 락(test_docreview_gate_visibility.sh)이 행 기반이라 이 줄을
+  # 자연스럽게 흡수하지 못한다. 대신 그 값을 이미 만들어 둔 이 케이스에 렌더 단언
+  # 하나를 더해 갭을 닫는다.
+  assert_grep "$(py docreview_state.py gate --state-dir "$d" --render)" '미소비 상향 예약 1' \
+    "escalated: 그 계수가 게이트 렌더 본문에도 보인다(Ruling 24 — Task 2 가 늘린 줄의 유일한 렌더 커버리지)"
   rm -rf "$d"
 }
 
@@ -1206,4 +1215,41 @@ case_reraise_successor_immune_to_recritic() {
   assert_eq "$succ_state" "open" "재상승 불변식: 후속의 decides 상태는 open 그대로 — 처분 강제·재비판 reject 어느 것도 안 지났다"
   assert_eq "$(jget "$d/fin.json" 'd["adjudication_held"] >= 1')" "True" "재상승 불변식: 원본 id 를 직접 겨눈 reject 시도(f: 원본id)는 unknown f 로 안전하게 hold 된다(무시되지, 크래시하지 않는다) — same_as 시도(f1→원본id)는 별도 경로(union-find y-not-in-parent 가드)로 가고 hold 가 아니라 coerced 로 잡힌다(Task 7b, 위 주석 참조) — 이 단언은 hold 쪽만 본다"
   rm -rf "$d" "$t" "$rt"
+}
+
+# ── 상태 축의 정본 표 (Task 3) ───────────────────────────────────────────────
+# [Task 3 실행 노트 — 「facts I verified myself」①의 픽스처 증명] `cmd_decide` 의
+# 「보류」는 한 finding id 로 두 원장에 동시에 쓴다 — `decides[fid].state = "held"`
+# 그리고 `asks[fid] = {answered:False, blocks:[], from_decide:True}`(§`cmd_decide`
+# hold 분기). 새 `is_open`/`gate_summary` 는 세 원장을 id 로 각각 훑으므로, 이 교차가
+# `GATE_ROWS` 의 `held_decide` 행과 `ask_open` 행 둘 다에 동시에 걸릴 수 있는 유일한
+# 자리다 — 걸리면 안 된다: `held_decide`(decides, state==held) 는 걸려야 하고
+# `ask_open`(asks, blocks 없고 not from_decide) 은 `from_decide` 배제로 걸리지
+# 않아야 한다(안 그러면 같은 항목이 두 번 렌더된다). 트레이스가 아니라 픽스처로 확인한다.
+case_GR_held_decide_cross_ledger() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_DEC]"
+  py docreview_state.py decide --state-dir "$d" --id 'aaaa0001#r1.1' --choice hold --quote '나중에' >/dev/null
+  local g; g="$(py docreview_state.py gate --state-dir "$d")"
+  assert_eq "$(printf '%s' "$g" | jgets 'd["held_decide"], d["ask_open"], d["approval_ready"]')" \
+    "(['aaaa0001#r1.1'], [], True)" "GR: hold 가 심은 ask(from_decide) 는 held_decide 행에만 걸리고 ask_open 행은 배제한다(교차 원장 id 충돌, 이중 렌더 방지)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c 'aaaa0001#r1.1')" "1" \
+    "GR: held_decide 는 게이트 본문에 한 번만 보인다(설계 §8.2 — 승인 게이트가 남은 ask 로 보인다, 한계(a) 해소)"
+  rm -rf "$d"
+}
+
+# [Task 3 실행 노트] 설계 §6.4 한계 (c) — escalated 된 fix 는 오늘 `unapplied_fix` 에도
+# `render_gate` 가 그리는 어떤 목록에도 없어 비차단·비가시였다. `GATE_ROWS` 의
+# `escalated_fix` 행(open=True, blocks=True)이 그 결함을 해소하는지 시나리오
+# 단위로 직접 잰다(가시성 락의 코퍼스-도출 단언과는 별도로 — 그쪽은 모든 행에 대해
+# 기계적으로 도는 일반 단언이고, 이 케이스는 한계(c) 라는 구체적 결함 하나를 사람이
+# 읽는 문맥으로 남긴다).
+case_GR_escalated_fix_blocks_approval() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_FIX]"
+  py docreview_state.py fix --state-dir "$d" --id 'bbbb0001#r1.1' --event escalate --reason 'check-intent 거부' >/dev/null
+  local g; g="$(py docreview_state.py gate --state-dir "$d")"
+  assert_eq "$(printf '%s' "$g" | jgets 'd["escalated_fix"], d["approval_ready"]')" \
+    "(['bbbb0001#r1.1'], False)" "GR: escalated fix 는 이제 승인을 막는다(설계 §6.4 한계(c) 해소)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c 'bbbb0001#r1.1')" "1" \
+    "GR: escalated fix 는 게이트 본문에 보인다(한계(c) — 전에는 어떤 목록에도 없었다)"
+  rm -rf "$d"
 }

@@ -13,6 +13,7 @@ frontmatter 의 `docreview:` 트리가 원장, 본문은 사람이 읽는 사건
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import re
 import sys
@@ -272,18 +273,52 @@ PUBLIC_FIELDS = ("id", "lineage", "bucket", "supersedes", "origin", "layer", "ca
                  "state", "promotion", "promoted_from", "immutable", "kind")
 
 
+GateRow = collections.namedtuple("GateRow", "name ledger pred open blocks render")
+
+# ── 상태 축의 정본 ──────────────────────────────────────────────────────────
+# 한 항목이 「열려 있는가(계보·stagnation) · 승인을 막는가 · 게이트에 보이는가」는
+# 이 표 하나가 정한다. 설계 §6.4 「공통 뿌리 — 상태 축의 열거」: 같은 사실을 세 곳이
+# 각자 열거하면 그 열거들이 어긋나고 어긋난 자리가 곧 fail-open 이다. 상태를 늘리는
+# 사람은 이 표에 행을 더하고, 차단 행이면 렌더러 이름을 반드시 채운다 —
+# test_docreview_gate_visibility.sh 가 표에서 코퍼스를 도출하므로 렌더러 없는 차단
+# 행은 그 락에서 즉시 RED 다.
+#
+# `render` 가 None 인 행은 «보이지 않아도 되는» 행이다. 오늘 그런 행은 없다 —
+# 비차단 행도 승인 게이트가 한 번은 보여준다(설계 §8.2). None 을 남겨 두는 것은
+# 미래에 정말로 안 보여도 되는 상태가 생겼을 때의 자리다.
+GATE_ROWS = (
+    GateRow("open_decide", "decides", lambda r: r["state"] == "open", True, True, "decide"),
+    GateRow("adopted", "decides", lambda r: r["state"] == "adopted", True, True, "adopted"),
+    GateRow("blocked_expired", "decides",
+            lambda r: r["state"] == "expired" and not r.get("superseded_by"), True, True, "expired"),
+    GateRow("superseded_expired", "decides",
+            lambda r: r["state"] == "expired" and bool(r.get("superseded_by")), True, False, "superseded"),
+    GateRow("held_decide", "decides", lambda r: r["state"] == "held", False, False, "held_decide"),
+    GateRow("unapplied_fix", "fixes",
+            lambda r: r["state"] in ("pending", "intent_passed"), True, True, "unapplied_fix"),
+    GateRow("escalated_fix", "fixes", lambda r: r["state"] == "escalated", True, True, "escalated_fix"),
+    GateRow("held_fix", "fixes", lambda r: r["state"] == "held", True, False, "held_fix"),
+    GateRow("blocking_ask_open", "asks",
+            lambda r: not r.get("answered") and bool(r.get("blocks")), True, False, "blocking_ask"),
+    GateRow("ask_open", "asks",
+            lambda r: not r.get("answered") and not r.get("blocks") and not r.get("from_decide"),
+            False, False, "ask_open"),
+)
+
+
+def gate_bucket(st, row) -> list:
+    return sorted(i for i, r in st[row.ledger].items() if row.pred(r))
+
+
 def is_open(st, fid) -> bool:
-    f = st["findings"].get(fid)
-    if not f:
+    if fid not in st["findings"]:
         return False
-    d = f.get("disposition")
-    if d == "decide":
-        return st["decides"].get(fid, {}).get("state") in ("open", "adopted", "expired")
-    if d == "fix":
-        return st["fixes"].get(fid, {}).get("state") in ("pending", "intent_passed", "held", "escalated")
-    if d == "ask":
-        a = st["asks"].get(fid, {})
-        return (not a.get("answered")) and bool(a.get("blocks"))
+    for row in GATE_ROWS:
+        if not row.open:
+            continue
+        r = st[row.ledger].get(fid)
+        if r is not None and row.pred(r):
+            return True
     return False
 
 
@@ -603,7 +638,6 @@ def cmd_observe_diff(a) -> int:
 def gate_summary(st) -> dict:
     n = int(st["round"])
     rr = int(st["rereview_count"])
-    dec = st["decides"]
     fx = st["fixes"]
     asks = st["asks"]
     # 만료가 승인을 막는지는 «전방» 포인터 하나가 정한다(설계 §6.4). 역방향으로 세면
@@ -611,26 +645,18 @@ def gate_summary(st) -> dict:
     # defer · 재비판 reject — 이 하나만 와도 차단이 풀린다. 라우터의 자동 계보 연결이
     # 지목 없는 finding 에도 supersedes 를 붙이기 때문이다. superseded_by 를 쓰는 곳은
     # 재상승 루프 하나뿐이라 그 기록은 의무의 증거다. 기록이 없으면 막는다 — fail-closed.
-    g = {
-        "round": n, "rereview_count": rr, "cap_reached": rr >= REREVIEW_CAP,
-        "open_decide": sorted(i for i, d in dec.items() if d["state"] == "open"),
-        "adopted": sorted(i for i, d in dec.items() if d["state"] == "adopted"),
-        "blocked_expired": sorted(i for i, d in dec.items()
-                                  if d["state"] == "expired" and not d.get("superseded_by")),
-        "unapplied_fix": sorted(i for i, f in fx.items() if f["state"] in ("pending", "intent_passed")),
-        "held_fix": sorted(i for i, f in fx.items() if f["state"] == "held"),
-        "asks_open": sorted(i for i, x in asks.items() if not x.get("answered")),
-        "blocking_ask_open": sorted(i for i, x in asks.items() if not x.get("answered") and x.get("blocks")),
-        "defers": sorted(i for i, f in st["findings"].items() if f.get("disposition") == "defer"),
-        "dropped": sorted(i for i, f in fx.items() if f["state"] == "dropped"),
-        "extra_rounds": st["extra_rounds"],
-    }
+    g = {"round": n, "rereview_count": rr, "cap_reached": rr >= REREVIEW_CAP}
+    for row in GATE_ROWS:
+        g[row.name] = gate_bucket(st, row)
+    g["asks_open"] = sorted(i for i, x in asks.items() if not x.get("answered"))
+    g["defers"] = sorted(i for i, f in st["findings"].items() if f.get("disposition") == "defer")
+    g["dropped"] = sorted(i for i, f in fx.items() if f["state"] == "dropped")
+    g["extra_rounds"] = st["extra_rounds"]
     cur = st["rounds"].get(str(n), {})
     prev = st["rounds"].get(str(n - 1), {})
     g["stagnation"] = bool(n >= 2 and cur.get("open_lineages") and
                            cur.get("open_lineages") == prev.get("open_lineages") and int(cur.get("progress", 0)) == 0)
-    g["approval_ready"] = (not g["open_decide"] and not g["adopted"]
-                           and not g["blocked_expired"] and not g["unapplied_fix"])
+    g["approval_ready"] = not any(g[row.name] for row in GATE_ROWS if row.blocks)
     g["round_gate_needed"] = bool(g["open_decide"] or g["blocking_ask_open"])
     g["approval_gate_open"] = g["approval_ready"] or g["cap_reached"] or g["stagnation"]
     g["two_stage"] = g["approval_gate_open"] and not g["approval_ready"]
@@ -642,6 +668,67 @@ def gate_summary(st) -> dict:
                                               "revived", "reraise_unconsumed", "escalated_unconsumed")}
     g["counts"]["user_rejected"] = sum(1 for v in st["rejected_lineages"].values() if v.get("by") == "user")
     return g
+
+
+def _rg_decide(st, g, fid):
+    f = st["findings"][fid]
+    dv = f.get("decision_view") or {}
+    return ["[decide%s] %s — %s" % (" auto" if dv.get("auto") else "", fid, f.get("summary")),
+            "  변경: %s" % dv.get("change", f.get("summary")),
+            "  근거: %s" % dv.get("basis", f.get("evidence") or "—"),
+            "  대안: %s" % " / ".join(dv.get("alternatives") or ["채택", "기각", "보류"]),
+            "  영향: %s" % dv.get("impact", f.get("anchor"))]
+
+
+def _rg_adopted(st, g, fid):
+    return ["[채택·미관측] %s — %s (다음 라운드 diff 가 적용을 관측해야 닫힌다)"
+            % (fid, st["findings"][fid].get("summary"))]
+
+
+def _rg_expired(st, g, fid):
+    d = st["decides"].get(fid) or {}
+    tail = " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
+    return ["[만료·차단] %s — %s (채택 / 기각%s)" % (fid, st["findings"][fid].get("summary"), tail)]
+
+
+def _rg_superseded(st, g, fid):
+    d = st["decides"].get(fid) or {}
+    return ["[만료·승계됨] %s → %s" % (fid, d.get("superseded_by"))]
+
+
+def _rg_held_decide(st, g, fid):
+    return ["[decide 보류] %s — %s (승인 게이트에서 답하거나 기각한다)"
+            % (fid, st["findings"][fid].get("summary"))]
+
+
+def _rg_unapplied_fix(st, g, fid):
+    return ["[미적용 fix] %s — %s (적용 예정 / drop)" % (fid, st["findings"][fid].get("summary"))]
+
+
+def _rg_escalated_fix(st, g, fid):
+    e = [x for x in (st.get("escalated") or []) if x["finding_id"] == fid]
+    why = e[-1].get("reason") if e else "check-intent 거부"
+    return ["[fix 상향 대기] %s — %s (사유: %s)" % (fid, st["findings"][fid].get("summary"), why)]
+
+
+def _rg_held_fix(st, g, fid):
+    return ["[fix 보류] %s — 전제 ask 미응답" % fid]
+
+
+def _rg_blocking_ask(st, g, fid):
+    f = st["findings"][fid]
+    return ["[ask 비차단] %s — %s → 전제인 fix: %s"
+            % (fid, f.get("summary"), ", ".join(f.get("blocks") or []))]
+
+
+def _rg_ask_open(st, g, fid):
+    return ["[ask] %s — %s" % (fid, st["findings"][fid].get("summary"))]
+
+
+GATE_RENDERERS = {"decide": _rg_decide, "adopted": _rg_adopted, "expired": _rg_expired,
+                  "superseded": _rg_superseded, "held_decide": _rg_held_decide,
+                  "unapplied_fix": _rg_unapplied_fix, "escalated_fix": _rg_escalated_fix,
+                  "held_fix": _rg_held_fix, "blocking_ask": _rg_blocking_ask, "ask_open": _rg_ask_open}
 
 
 def render_gate(st, g) -> str:
@@ -656,27 +743,12 @@ def render_gate(st, g) -> str:
     out.append("라운드 %d · 재리뷰 %d/%d%s%s" % (g["round"], g["rereview_count"], REREVIEW_CAP,
                                               " · 상한 도달" if g["cap_reached"] else "",
                                               " · stagnation" if g["stagnation"] else ""))
-    F = st["findings"]
-    for fid in g["open_decide"]:
-        f = F[fid]
-        dv = f.get("decision_view") or {}
-        out.append("[decide%s] %s — %s" % (" auto" if dv.get("auto") else "", fid, f.get("summary")))
-        out.append("  변경: %s" % dv.get("change", f.get("summary")))
-        out.append("  근거: %s" % dv.get("basis", f.get("evidence") or "—"))
-        out.append("  대안: %s" % " / ".join(dv.get("alternatives") or ["채택", "기각", "보류"]))
-        out.append("  영향: %s" % dv.get("impact", f.get("anchor")))
-    for fid in g["blocked_expired"]:
-        f = F[fid]
-        d = st["decides"].get(fid) or {}
-        tail = " — 「채택」은 원복 의무를 관측 없이 종결한다" if d.get("kind") == "post" else ""
-        out.append("[만료·차단] %s — %s (채택 / 기각%s)" % (fid, f.get("summary"), tail))
-    for fid in g["blocking_ask_open"]:
-        f = F[fid]
-        out.append("[ask 비차단] %s — %s → 전제인 fix: %s" % (fid, f.get("summary"), ", ".join(f.get("blocks") or [])))
-    if g["held_fix"]:
-        out.append("보류된 fix(전제 ask 미응답): " + ", ".join(g["held_fix"]))
-    if g["approval_gate_open"] and g["unapplied_fix"]:
-        out.append("미적용 fix(적용 예정 / drop): " + ", ".join(g["unapplied_fix"]))
+    for row in GATE_ROWS:
+        fn = GATE_RENDERERS.get(row.render) if row.render else None
+        if fn is None:
+            continue
+        for fid in g[row.name]:
+            out.extend(fn(st, g, fid))
     c = g["counts"]
     out.append("기각 %d건(재비판) · 사용자 기각 %d · drop %d · bucket 충돌 %d · 계보 지목 불일치 %d · 기각 계보 재상승 %d · 미소비 재상승 예약 %d · 미소비 상향 예약 %d"
                % (c["rejected"], c["user_rejected"], len(g["dropped"]), c["bucket_conflicts"],
@@ -697,6 +769,13 @@ def cmd_gate(a) -> int:
         print(render_gate(st, g))
     else:
         print(json.dumps(g, ensure_ascii=False))
+    return 0
+
+
+def cmd_gate_rows(a) -> int:
+    print(json.dumps([{"name": r.name, "ledger": r.ledger, "open": r.open,
+                       "blocks": r.blocks, "render": r.render} for r in GATE_ROWS],
+                     ensure_ascii=False))
     return 0
 
 
@@ -730,6 +809,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--log-file", required=True); x.set_defaults(fn=cmd_defer)
     x = sd(sp.add_parser("observe-diff")); x.add_argument("--diff", required=True); x.set_defaults(fn=cmd_observe_diff)
     x = sd(sp.add_parser("gate")); x.add_argument("--render", action="store_true"); x.set_defaults(fn=cmd_gate)
+    x = sp.add_parser("gate-rows"); x.set_defaults(fn=cmd_gate_rows)
     return p
 
 
