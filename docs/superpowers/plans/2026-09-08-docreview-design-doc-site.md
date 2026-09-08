@@ -925,9 +925,18 @@ T6 실행 중에 드러난 두 결함이다. 둘 다 **T6 이 만든 것이 아�
 
 파싱이 실패했을 때의 동작은 **오늘과 같아야 한다** — `emit_fallback prompt_build_failed`. 새 실패 모드를 만들지 않는다.
 
-- [ ] **Step 3: 조사만 하고 고치지 않는 것 — 리포트에 사실만**
+- [ ] **Step 3: (철회됨) `docreview_state.py` 의 yaml 가드 — 그런 결함은 없다**
 
-`shared/docreview/scripts/docreview_state.py:21-23` 은 `import yaml` 을 `try` 로 감싸 `yaml = None` 을 두는데, `:87`·`:184`·`:198` 은 `yaml.safe_load`/`safe_dump` 를 가드 없이 부른다. PyYAML 부재 시 ImportError 가 아니라 **AttributeError** 로 죽는다. **확인만 하고 고치지 않는다** — 범위 밖이고, 고치려면 그 세 자리의 degrade 계약을 새로 정해야 한다. 사실과 재현 방법만 리포트에 적는다.
+이 스텝은 원래 *"`docreview_state.py:21-24` 가 `import yaml` 을 try 로 감싸 `yaml = None` 을 두는데
+`:87`·`:184`·`:198` 은 `yaml.safe_load`/`safe_dump` 를 가드 없이 부르므로 PyYAML 부재 시
+AttributeError 로 죽는다"* 를 조사하라고 했다. **그 주장은 틀렸다.** 세 자리 전부 자기 함수의
+머리에 가드가 있다 — `load_profile:81-82`(`raise ProfileError("pyyaml_missing")`) ·
+`load_state:176-177`(`raise RuntimeError("pyyaml_missing")`) · `save_state` 도 같은 모양. PyYAML 이
+없으면 AttributeError 가 아니라 `{"ok": false, "reason": "pyyaml_missing"}` 이 깨끗하게 나온다.
+
+계획 저자가 import 문과 사용 지점만 보고 그 사이의 함수 머리를 읽지 않아 생긴 오독이다.
+이 스텝에서 할 일은 없다. **기록을 남기는 이유**는 이 문단이 지워지면 같은 오독이 다음 사람에게
+「알려진 결함」으로 다시 인용되기 때문이다.
 
 - [ ] **Step 4: `check_wiring.py` 의 링크 skip 을 뺀다 — 확장 전 도출 수를 먼저 잰다**
 
