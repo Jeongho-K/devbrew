@@ -1109,6 +1109,7 @@ Task 6 의 report 가 적은 RED 목록과 대조한다. 새로 생긴 RED 는 b
 **Files:**
 - Modify: `plugins/spec-distill/README.md` · `CHANGELOG.md` · `.claude-plugin/plugin.json`
 - Modify: `plugins/quality-gates/CHANGELOG.md` · `.claude-plugin/plugin.json` (이 PR 이 그 플러그인의 테스트를 고쳤다 — CLAUDE.md 의 bump 요구)
+- Modify: `plugins/plugin-audit/CHANGELOG.md` · `.claude-plugin/plugin.json` — **T7 이 그 플러그인의 러너와 테스트를 고쳤다.** 계획이 이 플러그인을 어디에도 안 적었고 지금 0.9.0 이다(cache key silent stale)
 - Modify: `shared/README.md`(디렉토리 표에 `docreview/` 행)
 - Modify: `docs/philosophy/devbrew-harness-philosophy.md:28,73`(코드 지도의 리뷰 자리 목록)
 
@@ -1129,6 +1130,22 @@ major 인 이유를 한 줄로: **verdict 계약이 깨진다**(`approved`/`need
 
 1. CHANGELOG 의 `### Changed` 에 이 축소를 **한 줄로 명시**한다. 없어진 능력이 릴리스 노트에 없으면 다음 사람이 회귀로 읽는다.
 2. README 에서 `DEVBREW_SPEC_DISTILL_DISABLE_WEB` 이 design-doc 리뷰를 덮는다는 서술이 있으면 고친다 — **끌 대상이 없는 kill switch 를 있다고 적으면 껐다고 믿게만 만든다**(P21).
+
+- [ ] **Step 3b: 집행 없는 kill switch 를 없앤다 (P21)**
+
+`plugins/spec-distill/README.md:231` 이 `DEVBREW_SPEC_DISTILL_SKIP_HANDOFF_CHECK` 를 문서화하는데,
+**그 유일한 집행 지점이 T7 이 지운 agent 였다.** 리뷰어가 전수 확인했다 — 이 변수의 독자가
+`shared/docreview/` 에도, 엔진 스크립트에도, 어느 프로필·skill 에도 없다(살아 있는 히트는 README
+그 줄과 CHANGELOG 이력, 그리고 락 자신뿐).
+
+집행이 0인데 문서화된 스위치는 **껐다고 믿게만 만든다.** 두 갈래뿐이고 둘 중 하나를 고른다:
+① README 의 그 줄을 지운다 — 그리고 **같은 커밋에서** `test_handoff_kill_switch.sh` 의 코퍼스에
+README 를 넣는다(지금은 영구 RED 를 피하려고 빼 뒀고, 그 파일 헤더가 다음 사람에게 넣는 법을
+적어 뒀다). ② 엔진이 그 스위치를 존중하게 만든다 — 그러면 새 surface 라 설계 §9 의 kill switch
+목록도 함께 고쳐야 한다.
+
+①을 권한다: 그 스위치가 끄던 검사(`handoff_incomplete`)는 이제 프로필 rubric 의 항목이고,
+프로필을 고치는 것이 그 자리의 opt-out 이다. **어느 쪽이든 리포트에 근거를 적는다.**
 
 - [ ] **Step 4: 철학 코드 지도**
 
