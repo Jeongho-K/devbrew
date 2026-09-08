@@ -280,8 +280,11 @@ GateRow = collections.namedtuple("GateRow", "name ledger pred open blocks render
 # 이 표 하나가 정한다. 설계 §6.4 「공통 뿌리 — 상태 축의 열거」: 같은 사실을 세 곳이
 # 각자 열거하면 그 열거들이 어긋나고 어긋난 자리가 곧 fail-open 이다. 상태를 늘리는
 # 사람은 이 표에 행을 더하고, 차단 행이면 렌더러 이름을 반드시 채운다 —
-# test_docreview_gate_visibility.sh 가 표에서 코퍼스를 도출하므로 렌더러 없는 차단
-# 행은 그 락에서 즉시 RED 다.
+# test_docreview_gate_visibility.sh 가 「차단 집합 ⊆ 가시성 집합」을 별도 단언으로
+# 재므로(Ruling 26/29 — C1 재발 방지: 가시성 코퍼스 등식 하나만으로는 이 포함관계를
+# 안 잰다, 실측으로 걸렸다) 렌더러 없는 차단 행은 그 락에서 즉시 RED 다. 표 자체의
+# 다섯 열(name·ledger·open·blocks·render) 이 흔들리는 것은 같은 락의 리터럴 증인
+# 표(Ruling 29)가 잡는다.
 #
 # `render` 가 None 인 행은 «보이지 않아도 되는» 행이다. 오늘 그런 행은 없다 —
 # 비차단 행도 승인 게이트가 한 번은 보여준다(설계 §8.2). None 을 남겨 두는 것은
@@ -523,7 +526,12 @@ def cmd_fix(a) -> int:
             fx["state"] = "pending"
     elif ev == "escalate":
         fx["state"] = "escalated"
-        st["escalated"].append({"finding_id": a.id, "reason": a.reason or "check-intent 거부", "round": n})
+        reason = a.reason or "check-intent 거부"
+        # [Fix round 1 — M7/Ruling 30] 원장(`st["escalated"]`)이 아니라 fix 레코드
+        # 자신에도 사유를 남긴다 — 원장은 소비되면 비므로(Task 2) 렌더가 나중 라운드에
+        # 읽을 자리가 없어진다(`_rg_escalated_fix` 참조).
+        fx["escalate_reason"] = reason
+        st["escalated"].append({"finding_id": a.id, "reason": reason, "round": n})
     else:
         return fail("unknown_event", event=ev)
     _refresh_open_lineages(st, n)
@@ -697,7 +705,17 @@ def _rg_superseded(st, g, fid):
 
 
 def _rg_held_decide(st, g, fid):
-    return ["[decide 보류] %s — %s (승인 게이트에서 답하거나 기각한다)"
+    # [Fix round 1 — I3/Ruling 28] 원래 문구("승인 게이트에서 답하거나 기각한다")는
+    # 실측으로 둘 다 거짓이었다 — `ask --answered` 는 이 항목을 안 닫고(hold 가 심은
+    # ask 는 blocks 가 비어 있어 `cmd_ask` 의 unhold 루프가 아무 fix 도 안 건드리고,
+    # decides 레코드는 여전히 state=="held" 로 남는다) `decide --choice reject` 는
+    # `decide_not_open`(§`cmd_decide`, held 는 재결정 대상이 아니다)으로 거부된다.
+    # §8.1 은 「보류」를 decide 를 ask 로 내리는 **사용자 자신의 선택**으로 규정하고
+    # §8.2 는 그것을 승인 게이트의 「남은 ask 목록」에서 보여준다고만 한다 — 되돌리는
+    # 절차는 설계에 없다. 그래서 사실만 적는다: 존재는 렌더되고 승인은 막지 않는다.
+    # 새 전이를 만들지 않는다(룰링 28 — `decide --choice reject` 를 held 에 허용하는
+    # 것은 spec 근거 없는 행동 변경이다).
+    return ["[decide 보류] %s — %s (사용자가 보류했다 — 승인을 막지 않고, 승인 게이트의 남은 ask 목록에 보인다, §8.2)"
             % (fid, st["findings"][fid].get("summary"))]
 
 
@@ -706,9 +724,22 @@ def _rg_unapplied_fix(st, g, fid):
 
 
 def _rg_escalated_fix(st, g, fid):
-    e = [x for x in (st.get("escalated") or []) if x["finding_id"] == fid]
-    why = e[-1].get("reason") if e else "check-intent 거부"
-    return ["[fix 상향 대기] %s — %s (사유: %s)" % (fid, st["findings"][fid].get("summary"), why)]
+    # [Fix round 1 — I2/M7/Ruling 27·30] `st["escalated"]` 는 소비되면 빈다(Task 2,
+    # round>=n 수명) — 그 리스트를 스캔해 사유를 얻던 원래 코드는 소비 뒤 하드코딩
+    # 기본값("check-intent 거부")으로 조용히 대체되어, `anchor_protected` 같은 진짜
+    # 사유가 둘째 라운드부터 거짓 일반화됐다(M7 실측). 사유는 escalate 시점에
+    # `cmd_fix`/`docreview_anchor.escalate()` 가 fix 레코드 자신에 `escalate_reason`
+    # 으로 함께 남긴다(아래 두 자리) — 원장이 아니라 레코드에 있으므로 예약 소비와
+    # 무관하게 남는다. 값이 없으면(도달 불가하지만) 있는 척 지어내지 않고 「사유
+    # 불명」이라 말한다(룰링 30 — 그럴듯한 기본값을 지어내는 것은 모른다고 인정하는
+    # 것보다 나쁘다). `escalated` 는 그대로 차단·가시 유지(룰링 27 — §6.4 한계 (c) 는
+    # 비차단·비가시 둘 다를 결함으로 지목했다, 비차단으로 만드는 것은 수선이 아니다) —
+    # 다만 `cmd_fix --event drop` 이 상태 가드 없이 이미 이 상태에서 동작하므로(AC23
+    # 이 연 탈출구, 새 전이 아님) 렌더가 그 사실을 `_rg_unapplied_fix` 처럼 알려준다.
+    fx = st["fixes"].get(fid) or {}
+    why = fx.get("escalate_reason") or "사유 불명"
+    return ["[fix 상향 대기] %s — %s (사유: %s, drop 하면 이 차단이 풀린다)"
+            % (fid, st["findings"][fid].get("summary"), why)]
 
 
 def _rg_held_fix(st, g, fid):

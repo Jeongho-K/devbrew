@@ -1253,3 +1253,43 @@ case_GR_escalated_fix_blocks_approval() {
     "GR: escalated fix 는 게이트 본문에 보인다(한계(c) — 전에는 어떤 목록에도 없었다)"
   rm -rf "$d"
 }
+
+# [Fix round 1 — I2/Ruling 27] escalated 된 fix 를 벗어나는 프로덕션 전이는 `cmd_fix`
+# 의 `drop`/`intent-pass`/`hold` 뿐이고, 의도된 흐름(escalate → 후속 auto-decide →
+# 채택)은 원본 fix 의 `state` 를 안 건드린다 — 리뷰 실측대로 그대로 두면 한 번 escalate
+# 된 fix 는 `approval_ready` 를 영구히 False 로 묶는다. `drop` 은 상태 가드가 없어
+# (AC23 이 이미 연 탈출구, 이 태스크가 새로 만든 것이 아니다) escalated 에서도 그대로
+# 먹힌다 — 렌더가 그 사실을 실제로 알려주는지와, drop 이 실제로 차단을 푸는지를 함께 잰다.
+case_GR_escalated_fix_drop_clears_block() {
+  local d; d="$(r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"; seed_findings "$d" "[$F_FIX]"
+  py docreview_state.py fix --state-dir "$d" --id 'bbbb0001#r1.1' --event escalate --reason 'check-intent 거부' >/dev/null
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["approval_ready"]')" "False" \
+    "GR: escalate 직후엔 승인이 막혀 있다(선결조건)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c 'drop 하면 이 차단이 풀린다')" "1" \
+    "GR: 렌더가 drop 이 탈출구임을 실제로 알려준다(I2 — unapplied_fix 와 같은 모양으로)"
+  py docreview_state.py fix --state-dir "$d" --id 'bbbb0001#r1.1' --event drop --reason '오탐' >/dev/null
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["escalated_fix"], d["approval_ready"]')" "([], True)" \
+    "GR: drop 은 escalated 상태에서도 상태 가드 없이 동작해 실제로 차단을 푼다(AC23 탈출구, 새 전이 아니다)"
+  rm -rf "$d"
+}
+
+# [Fix round 1 — M7/Ruling 30] `st["escalated"]` 는 소비되면 빈다(Task 2, round>=n
+# 수명) — `_rg_escalated_fix` 가 그 리스트만 스캔해 사유를 얻던 옛 코드는 소비 뒤
+# 하드코딩 기본값("check-intent 거부")으로 조용히 대체돼, 라운드 1 의 진짜 사유
+# (예: anchor_protected)가 라운드 2 부터 거짓 일반화됐다(리뷰 실측). `escalate_reason`
+# 을 fx 레코드 자신에 남기면(cmd_fix·docreview_anchor.escalate 둘 다) 원장 소비와
+# 무관하게 살아남는지를 실제 finalize 경로로 확인한다.
+case_GR_escalated_fix_reason_persists() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local fid; fid="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"
+  py docreview_state.py fix --state-dir "$d" --id "$fid" --event escalate --reason 'anchor_protected' >/dev/null
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c '사유: anchor_protected')" "1" \
+    "GR: 라운드 1 렌더에 진짜 사유가 실린다(선결조건)"
+  next_round "$d" "$FX/design-sample.md" >/dev/null
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --diff "$d/diff2.json" --doc "$FX/design-sample.md" > "$d/fin2.json"
+  assert_eq "$(st_yaml "$d" 'st["escalated"]')" "[]" "GR: finalize 뒤 예약은 소비돼 빈다(원장 쪽 선결조건, M7 이 겨눈 자리)"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" --render | grep -c '사유: anchor_protected')" "1" \
+    "GR: 라운드 2 렌더에도 같은 진짜 사유가 남는다(M7 — fx 레코드의 escalate_reason 이 원장 소비와 무관)"
+  rm -rf "$d"
+}

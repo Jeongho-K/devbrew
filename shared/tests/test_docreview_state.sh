@@ -56,4 +56,6 @@ case_escalated_dropped_fix_not_resurrected
 # 규칙이 깨져도 「양성대조 실패(계측기 고장)」로만 보고된다.
 case_GR_held_decide_cross_ledger
 case_GR_escalated_fix_blocks_approval
+case_GR_escalated_fix_drop_clears_block
+case_GR_escalated_fix_reason_persists
 finish

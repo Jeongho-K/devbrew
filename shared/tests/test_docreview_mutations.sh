@@ -505,4 +505,18 @@ mut 1/1 ask_open_ignores_from_decide case_GR_held_decide_cross_ledger sed_state 
 #    이 태스크가 실제로 고친 결함의 유일한 스위치다.
 mut 1/1 escalated_fix_no_longer_blocks case_GR_escalated_fix_blocks_approval sed_state \
   's/lambda r: r\["state"\] == "escalated", True, True, "escalated_fix"/lambda r: r["state"] == "escalated", True, False, "escalated_fix"/'
+
+# ── Fix round 1 (리뷰 대응) ──────────────────────────────────────────────────
+# ㊶ M7 — `cmd_fix` 의 escalate 분기가 fx 레코드에 `escalate_reason` 을 남기는 줄을
+#    지운다. `st["escalated"]` 소비 뒤(라운드 2, finalize 지남) `_rg_escalated_fix`
+#    가 읽을 자리가 없어져 「사유 불명」으로 떨어진다 — 진짜 사유(anchor_protected)가
+#    둘째 라운드부터 조용히 사라지는 회귀(M7 원 결함)를 그대로 재현한다.
+mut 1/1 escalate_reason_not_carried case_GR_escalated_fix_reason_persists sed_state \
+  's/^        fx\["escalate_reason"\] = reason$/        pass/'
+# ㊷ I2 — `_rg_escalated_fix` 의 렌더 문구에서 「drop 하면 이 차단이 풀린다」 힌트를
+#    지운다. 코드(`cmd_fix` 의 drop 분기, 상태 가드 없음)는 그대로라 탈출구 자체는
+#    여전히 동작하지만, 게이트 본문이 그 사실을 다시 감춘다 — I2 가 지적한 「승인이
+#    다시 도달 가능한가를 렌더가 알려주지 않는다」결함으로 되돌린다.
+mut 1/1 escalated_fix_no_drop_hint case_GR_escalated_fix_drop_clears_block sed_state \
+  's/, drop 하면 이 차단이 풀린다)"$/)"/'
 finish

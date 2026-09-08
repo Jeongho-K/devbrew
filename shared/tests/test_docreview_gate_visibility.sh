@@ -20,8 +20,18 @@
 # 실제로는 막는 행이 표에 `blocks: false` 로 잘못 적혀도 위 차단 단언들이 전부
 # 공허하게 통과한다 — 절반짜리 락이 이빨 있는 척한다.
 #
-# 새 차단 상태가 표에 추가되면 이 락이 그 행의 픽스처(`gv_reach_<이름>`)를 요구하므로
-# (아래 «행 ↔ 픽스처 집합 등식») 렌더를 빠뜨린 채 상태를 늘릴 수 없다.
+# [Fix round 1 — C1/Ruling 26 정정] 이 문단은 원래 "새 차단 상태가 표에 추가되면 이
+# 락이 그 행의 픽스처를 요구하므로 렌더를 빠뜨린 채 상태를 늘릴 수 없다"고 적었는데
+# **거짓이었다** — 등식은 가시성 코퍼스(render != null)만 돈다. `blocks=True,
+# render=None` 인 행을 표에 더하면 그 행은 애초에 가시성 코퍼스 밖이라 등식도 루프도
+# 그 행을 아예 모른다 — 픽스처가 없어도 등식은 계속 통과한다(리뷰 실측: `GateRow(
+# "applied_fix_blocks", "fixes", …, True, True, None)` 을 표에 더하자 이 락을 포함해
+# 스위트 5개 전부 GREEN). 그 결함류(승인은 막는데 게이트 어디에도 안 그려진다)가 바로
+# 이 태스크의 제목 그 자체다. 아래 「차단 ⊆ 가시성」 단언이 그 자리를 실제로 잰다 —
+# 차단 코퍼스의 모든 행이 가시성 코퍼스 안에도 있는지(즉 렌더러를 갖는지)를 직접
+# 확인한다. 표의 다섯 열(name·ledger·open·blocks·render) 자체가 흔들리는 것은 이
+# 등식·포함관계 어느 쪽도 못 잡는다(같은 `gate-rows` 출력에서 기대값과 계산이 함께
+# 움직이므로) — 그건 아래 「독립 증인」(Ruling 29)의 몫이다.
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$REPO_ROOT/shared/tests/assert.sh"
@@ -114,17 +124,30 @@ gv_reach_escalated_fix() {
   echo 'bbbb0001#r1.1'
 }
 
+# [Fix round 1 — I4 정정] 원래 이 둘은 **바이트 단위로 같은 state**(F_FIX+F_ASK)를
+# 지어 「그 행 하나만 살아 있는 state」계약(위 「행별 도달 픽스처」 헤더)을 어겼다 —
+# F_ASK 가 F_FIX 를 blocks 로 지목하므로 심는 순간 held_fix 행과 blocking_ask_open
+# 행이 **항상 함께** 켜졌다. 리뷰 실측: `held_fix` 의 `blocks` 를 F→T 로 뒤집으면
+# RED 가 `blocking_ask_open` 의 양성 짝 이름으로 뜨고(반대도 마찬가지) — 이빨은
+# 있었지만 다음 독자를 엉뚱한 행으로 보냈다. 각자 격리한다.
 gv_reach_held_fix() {
   local d="$1"
   gv_r1 "$d" "$PROF_SD/design-doc.md" "$FX/design-sample.md" || return 1
-  seed_findings "$d" "[$F_FIX,$F_ASK]" || return 1   # F_ASK 가 F_FIX 를 blocks 로 지목 → record_findings 가 fix 를 held 로
+  seed_findings "$d" "[$F_FIX]" || return 1
+  # 전제 ask 없이 저수준 CLI 로 바로 hold — blocking_ask_open 행을 안 켠다.
+  py docreview_state.py fix --state-dir "$d" --id 'bbbb0001#r1.1' --event hold >/dev/null || return 1
   echo 'bbbb0001#r1.1'
 }
 
+# blocks 가 **아무 fix 도 안 심긴 id** 를 가리키는 ask — `record_findings` 의 hold
+# 루프(`st["fixes"].get(b)` → None)가 아무것도 안 held 로 안 만들어 held_fix 행을
+# 안 켠다. blocking_ask_open 의 술어(`not answered and bool(blocks)`)는 대상의
+# 존재를 요구하지 않으므로 이것만으로 충분히 격리된다.
+GV_F_ASK_BLOCKING_ONLY='{"id":"cccc0001#r1.1","lineage":"cccc0001#r1.1","bucket":"cccc0001","origin":"reviewer","layer":2,"category":"ambiguity","anchor":"#12-files-to-modify","edit_scope":"#12-files-to-modify","disposition":"ask","summary":"전제 fix 를 안 심어 격리한다","evidence":null,"blocks":["zzzz0001#r1.1"]}'
 gv_reach_blocking_ask_open() {
   local d="$1"
   gv_r1 "$d" "$PROF_SD/design-doc.md" "$FX/design-sample.md" || return 1
-  seed_findings "$d" "[$F_FIX,$F_ASK]" || return 1
+  seed_findings "$d" "[$GV_F_ASK_BLOCKING_ONLY]" || return 1
   echo 'cccc0001#r1.1'
 }
 
@@ -161,6 +184,52 @@ n_block="$(printf '%s\n' $BLOCKING | grep -c . || true)"
 HAVE="$(declare -F | sed -n 's/^declare -f gv_reach_//p' | sort | tr '\n' ' ')"
 assert_eq "$(printf '%s\n' $RENDERED | sort | tr '\n' ' ')" "$HAVE" \
   "등식: 표의 가시성 행 집합 = 이 락이 도달 픽스처를 가진 행 집합"
+
+# ── 차단 ⊆ 가시성 (C1/Ruling 26) ────────────────────────────────────────────
+# 위 등식은 **가시성** 코퍼스가 픽스처를 다 가졌는지만 잰다 — `blocks=True,
+# render=None` 인 행은 애초에 가시성 코퍼스 밖이라 등식이 그 행을 아예 모른다. 태스크
+# 제목 그 자체(「막는 집합」과 「그리는 집합」의 차이가 공집합)는 이 포함관계로만 재진다
+# — spec §6.4 원문("그 차이가 항상 공집합임을 락으로 걸어야 한다")을 문자 그대로
+# 지킨다. 브리프 원안(차단 코퍼스로 등식)은 이 방향을 부작용으로 얻었다(차단 행이면
+# 전부 등식에도 들어야 했으므로) — 룰링 18 이 등식의 코퍼스를 가시성으로 **교체**하며
+# 이 방향을 같이 버렸다. 두 방향은 배타적이지 않으므로 등식은 그대로 두고 이 방향을
+# 명시적으로 더한다.
+for row in $BLOCKING; do
+  case " $RENDERED " in
+    *" $row "*) ok "포함: 차단 행 $row 는 렌더 대상이다(가시성 코퍼스 안)" ;;
+    *)          no "포함: 차단 행 $row 에 렌더러가 없다 — 막는데 안 그린다(fail-open, C1)" ;;
+  esac
+done
+
+# ── 독립 증인 — 표 자체의 드리프트 (I5/I6, Ruling 29) ───────────────────────
+# 위 도출·등식·포함관계는 전부 `gate-rows` 출력**에서** 기대값을 만든다 — 표의 한
+# 열(`open`·`blocks`)이 잘못 적혀도 기대값과 실제 계산이 **같은 표**에서 함께 나오므로
+# 절대 못 어긋난다. 실측(리뷰): `adopted` 의 `blocks` 를 True→False 로, `superseded_
+# expired` 의 `blocks` 를 False→True 로 뒤집어도 이 파일을 포함한 스위트 전체가
+# GREEN 이었다 — `open` 열은 양방향 다 마찬가지였다. `cases.sh` 의 어떤 행동
+# 케이스도 「비어 있지 않은 adopted」로 approval_ready 를 재지 않는다(T21 은 adopted
+# 가 빈 상태만 잰다). 그래서 다섯 열 전부(name·ledger·open·blocks·render)를
+# **리터럴로 여기 박아 두고** `gate-rows` 출력과 정확히 같은지 잰다 — 도출과 무관한
+# 고정 증인이라 표의 어느 열이 흔들리든(추가·삭제·반전·이름 변경) 이 단언만은 따라
+# 움직이지 않는다. 행을 늘리는 사람은 이 리스트도 손으로 고쳐야 한다 — 그 마찰이
+# Ruling 29 의 의도다. 순서·들여쓰기가 달라도 비교는 `json.dumps(json.loads(...))`
+# 로 정규화한 뒤 문자열로 하므로 공백 차이에 안 흔들린다(단, 리스트 원소 **순서**는
+# 여전히 비교된다 — `GATE_ROWS` 는 순서가 있는 tuple 이고 `gate-rows` 가 그대로 낸다).
+EXPECTED_ROWS='[
+  {"name": "open_decide", "ledger": "decides", "open": true, "blocks": true, "render": "decide"},
+  {"name": "adopted", "ledger": "decides", "open": true, "blocks": true, "render": "adopted"},
+  {"name": "blocked_expired", "ledger": "decides", "open": true, "blocks": true, "render": "expired"},
+  {"name": "superseded_expired", "ledger": "decides", "open": true, "blocks": false, "render": "superseded"},
+  {"name": "held_decide", "ledger": "decides", "open": false, "blocks": false, "render": "held_decide"},
+  {"name": "unapplied_fix", "ledger": "fixes", "open": true, "blocks": true, "render": "unapplied_fix"},
+  {"name": "escalated_fix", "ledger": "fixes", "open": true, "blocks": true, "render": "escalated_fix"},
+  {"name": "held_fix", "ledger": "fixes", "open": true, "blocks": false, "render": "held_fix"},
+  {"name": "blocking_ask_open", "ledger": "asks", "open": true, "blocks": false, "render": "blocking_ask"},
+  {"name": "ask_open", "ledger": "asks", "open": false, "blocks": false, "render": "ask_open"}
+]'
+_canon() { python3 -c 'import json,sys; print(json.dumps(json.loads(sys.stdin.read())))'; }
+assert_eq "$(printf '%s' "$ROWS_JSON" | _canon)" "$(printf '%s' "$EXPECTED_ROWS" | _canon)" \
+  "증인: gate-rows 출력이 이 락에 박아 둔 리터럴 기대 표와 정확히 같다(표 드리프트 감시, Ruling 29)"
 
 # ── 가시성 + 차단/양성 짝 ───────────────────────────────────────────────────
 for row in $RENDERED; do
