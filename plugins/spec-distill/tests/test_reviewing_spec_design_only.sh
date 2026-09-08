@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 # PN2/V8/AC10 — reviewing-spec is design-mode only; spec-mode/re-consensus/Mode B removed;
 # drafting-spec absent from skills/hooks/commands.
+#
+# ── 앵커 재조준 (문서 리뷰 엔진 전환) ────────────────────────────────────────
+# 이 파일의 두 **양의** 단언은 옛 라우팅 표의 두 행(`design | approved | … Human Gate`,
+# `design | needs_revise | … author 회귀`)을 잡고 있었다. 그 표는 verdict 어휘 위에
+# 서 있었는데, 껍데기화로 verdict 자체가 사라졌다 — 라우팅은 이제 `docreview_route.py
+# finalize` 의 처분 회계가 하고 표는 없다. 없어진 문자열을 계속 요구하면 이 락은
+# **거짓 인용을 강제**하는 장치가 된다(삭제된 규칙이 남기는 거짓 인용).
+#
+# 그래서 파일을 지우지 않고 두 양의 단언만 재조준한다. 이 파일의 주제 — *"이 skill 은
+# design 자리 전용인가"* — 는 껍데기에서도 그대로 참이고, 그 주제를 오늘 지탱하는 것은
+# 표가 아니라 **프로필 선택**이다: 이 skill 은 `design-doc.md` 하나만 고르고, 훅이 내는
+# `mode:` 두 값(`design`·`spec`)이 그 하나로 모인다. 그 매핑이 갈라지는 순간 이 skill 은
+# design 전용이 아니게 된다.
+#
+# 아래 **부재** 단언 넷(re-consensus · mode_b_violation · spec-mode 표 행 · drafting-spec)
+# 은 손대지 않는다 — 그것들이 잠그는 개념은 껍데기에서도 여전히 되살아나면 안 된다.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -9,10 +25,20 @@ SKILL="$PLUGIN/skills/reviewing-spec/SKILL.md"
 
 . "$(cd "$(dirname "$0")/../../.." && pwd)/shared/tests/assert.sh"
 
-grep -qE 'design\b.*approved.*Human Gate' "$SKILL" \
-  && ok "design approved → Human Gate row present" || no "design approved row missing"
-grep -qE 'design\b.*needs_revise.*author' "$SKILL" \
-  && ok "design needs_revise → author 회귀 row present" || no "design needs_revise row missing"
+# (1) 이 skill 이 고르는 프로필은 design-doc 하나다.
+grep -qF 'references/docreview-profiles/design-doc.md' "$SKILL" \
+  && ok "design-doc 프로필을 이름으로 고른다" \
+  || no "design-doc 프로필 선택이 사라졌다 — 이 skill 이 어느 자리인지 문서가 말하지 않는다"
+
+# (2) 훅이 내는 `mode:` 두 값이 **그 하나로** 모인다고 적혀 있다. 값 둘을 함께 요구하는
+#     이유: 한쪽만 적으면 다른 값이 왔을 때 무엇을 할지가 껍데기 밖으로 새고, 그것이
+#     이 skill 을 design 전용이 아니게 만드는 정확한 경로다.
+if grep -qE 'design.*spec.*design-doc\.md|`design`.*`spec`' "$SKILL" \
+   && grep -qF 'design-doc.md' "$SKILL"; then
+  ok "mode 매핑: design·spec 두 값이 같은 design-doc 프로필로 모인다"
+else
+  no "mode 매핑 문장이 없다 — 훅의 두 값 중 하나가 다른 프로필로 갈 여지가 생긴다"
+fi
 
 grep -qiE 'reconsensus|re-consensus|\[3\.5\]' "$SKILL" \
   && no "re-consensus gate still present (should be removed)" \

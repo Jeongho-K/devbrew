@@ -1,63 +1,103 @@
 #!/usr/bin/env bash
-# Cross-file invariant: re-review hard cap value must be consistent across
-# SKILL.md body (source of truth), frontmatter description, routing table,
-# README.md ASCII flow, README.md AP16 line, and design-routing test assertions.
+# 재리뷰 상한의 **cross-file 일치** 회귀 락.
 #
-# Catches the v0.3.0-style drift where the cap was bumped in body + CHANGELOG
-# only, leaving the routing table / frontmatter / README / test stale —
-# which silently made cap=5 dead code (the >=3 routing row fired first).
+# 정본은 `shared/docreview/references/reviewing-document.md` 의 `` `rereview_cap: N` ``
+# 한 줄이다. 그 문서가 스스로 *"이 값의 정본은 이 한 줄이다"* 라고 적고 있으므로, 이
+# 락이 하는 일은 그 자기 주장을 **실행 차원에서 참으로 만드는 것**이다 — 다른 어떤
+# 파일도 이 숫자의 출처가 아니다.
 #
-# devbrew Law 3 (Compounding) instantiation: when a future PR bumps the cap
-# again, this test fails until every derived location is updated together.
+# ── 이 락이 대조하는 자리와, 왜 그 자리인가 ─────────────────────────────────
+#  1. `shared/docreview/scripts/docreview_state.py` 의 `REREVIEW_CAP` — **엔진 상수**.
+#     조사 실측(2026-09-08): 오늘 이 상수와 산문 정본은 완전히 분리돼 있고 어떤 락도
+#     둘을 대조하지 않았다. 산문만 고치면 실행은 옛 값으로 계속 돌고, 상수만 고치면
+#     사용자가 읽는 문서가 거짓말을 한다. 둘 중 어느 쪽도 소리를 내지 않는다.
+#  2. `plugins/spec-distill/skills/reviewing-spec/SKILL.md` — design doc 자리의 껍데기.
+#  3. `plugins/spec-distill/README.md` — 흐름도 한 줄 + AP16 불릿 **둘 다**(개수 하한 2).
+#
+# ── 음의 짝 (양의 단언만으로는 통째 삭제를 못 잡는다) ───────────────────────
+# 위 셋은 전부 **존재** 단언이라, 상한 문장을 통째로 지우면 「없으니 어긋날 것도 없다」
+# 로 조용히 통과한다. 그래서 상한 어휘가 등장하는 **모든** 자리를 도출해 그 숫자가
+# 전부 CAP 과 같은지를 함께 잰다(∃ 가 아니라 ∀). 옛 값 `5` 를 이름으로 금지하지
+# 않는다 — 그러면 다음 값이 `7` 일 때 이 락이 다시 침묵한다.
+#
+# ── 이후 PR 이 코퍼스를 넓히는 자리 ─────────────────────────────────────────
+# 문서 리뷰 엔진은 자리 넷을 흡수한다. design doc 자리(이 파일이 오늘 재는 것) 다음은
+# `reviewing-brief` · `critiquing-artifacts` · `framing-requests` 이고, 그 자리들이
+# 엔진으로 전환될 때 **아래 `TARGETS` 배열에 그 SKILL.md 를 한 줄씩 더한다**. 배열
+# 하나만 늘리면 양의 단언과 음의 짝이 동시에 그 파일을 덮는다.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+. "$REPO_ROOT/shared/tests/assert.sh"
+
+REF="$REPO_ROOT/shared/docreview/references/reviewing-document.md"
+ENGINE="$REPO_ROOT/shared/docreview/scripts/docreview_state.py"
 SKILL="$REPO_ROOT/plugins/spec-distill/skills/reviewing-spec/SKILL.md"
 README="$REPO_ROOT/plugins/spec-distill/README.md"
-ROUTING_TEST="$REPO_ROOT/plugins/spec-distill/tests/test_reviewing_spec_design_routing.sh"
 
-. "$(cd "$(dirname "$0")/../../.." && pwd)/shared/tests/assert.sh"
+# 이후 PR 이 늘리는 자리 — 「그 자리의 산문이 상한을 CAP 으로 적었는가」를 재는 대상.
+# (`reviewing-brief` · `critiquing-artifacts` · `framing-requests` 의 SKILL.md 가
+#  엔진으로 전환될 때 여기 한 줄씩.)
+TARGETS=(
+  "$SKILL"
+  "$README"
+)
 
-# Source of truth: SKILL.md body "Hard cap**: `rereview_count >= N`" line.
-CAP="$(grep -oE 'Hard cap\*\*:[[:space:]]*`rereview_count >= [0-9]+`' "$SKILL" | grep -oE '[0-9]+`$' | tr -d '`' | head -1)"
-if [[ -z "${CAP:-}" ]]; then
-  echo "✗ FATAL: source-of-truth pattern not found in $SKILL"
-  echo "  expected line: '**Hard cap**: \`rereview_count >= N\`'"
+# ── 정본 ─────────────────────────────────────────────────────────────────────
+CAP="$(grep -oE '`rereview_cap: [0-9]+`' "$REF" | grep -oE '[0-9]+' | head -1)"
+if [ -z "${CAP:-}" ]; then
+  echo "✗ FATAL: 정본 패턴을 $REF 에서 찾지 못했다 — 기대: \`rereview_cap: N\`"
   exit 1
 fi
-echo "Source-of-truth cap = $CAP (from SKILL.md body)"
+echo "정본 재리뷰 상한 = $CAP (출처: shared/docreview/references/reviewing-document.md)"
 echo
 
-grep -qE "review cap \(max $CAP," "$SKILL" \
-  && ok "SKILL.md frontmatter: 'review cap (max $CAP, ...)'" \
-  || no "SKILL.md frontmatter drift (expected 'max $CAP')"
-
-# v0.12.0: spec-mode rows removed — only design rows carry the cap now.
-grep -qE "\*\*design\*\*.*\| < $CAP \|" "$SKILL" \
-  && ok "SKILL.md routing: design '< $CAP' row" \
-  || no "SKILL.md routing: design '< $CAP' row missing"
-
-grep -qE "\*\*design\*\*.*\| >= $CAP \|" "$SKILL" \
-  && ok "SKILL.md routing: design '>= $CAP' row" \
-  || no "SKILL.md routing: design '>= $CAP' row missing"
-
-grep -qE "auto re-review, max $CAP" "$README" \
-  && ok "README.md ASCII flow: 'auto re-review, max $CAP'" \
-  || no "README.md ASCII flow drift (expected 'auto re-review, max $CAP')"
-
-grep -qE "re-review max $CAP" "$README" \
-  && ok "README.md AP16: 're-review max $CAP'" \
-  || no "README.md AP16 drift (expected 're-review max $CAP')"
-
-# Strip comment lines before matching — a stale comment with the old cap value
-# would otherwise mask a wrong assertion on the next line (codex-1 finding).
-# Only the executable code path counts. Use -F (fixed string) so the literal
-# regex-string "count >?= ?N" in the peer assertion matches without the `?`s
-# being re-interpreted as regex meta-characters.
-if grep -vE '^[[:space:]]*#' "$ROUTING_TEST" | grep -qF "count >?= ?$CAP"; then
-  ok "test_reviewing_spec_design_routing.sh asserts cap $CAP (in non-comment line)"
+# ── 1. 엔진 상수 ─────────────────────────────────────────────────────────────
+if grep -qE "^REREVIEW_CAP = ${CAP}\$" "$ENGINE"; then
+  ok "엔진 상수: docreview_state.py 의 REREVIEW_CAP = $CAP"
 else
-  ACTUAL="$(grep -vE '^[[:space:]]*#' "$ROUTING_TEST" | grep -oE 'count >?= ?[0-9]+' | grep -oE '[0-9]+' | head -1)"
-  no "test_reviewing_spec_design_routing.sh asserts different cap (found: ${ACTUAL:-unknown}, expected: $CAP)"
+  ACT="$(grep -oE '^REREVIEW_CAP = [0-9]+' "$ENGINE" | grep -oE '[0-9]+' | head -1)"
+  no "엔진 상수 drift: docreview_state.py REREVIEW_CAP = ${ACT:-없음} (정본 $CAP) — 산문과 실행이 갈렸다"
+fi
+
+# ── 2·3. 산문 자리 (양의 단언) ───────────────────────────────────────────────
+# README 는 두 자리(흐름도 · AP16)를 갖는다 — 하한을 1 로 두면 한쪽을 지워도 통과한다.
+for f in "${TARGETS[@]}"; do
+  rel="${f#"$REPO_ROOT"/}"
+  case "$rel" in
+    */README.md) want=2 ;;
+    *)           want=1 ;;
+  esac
+  got="$(grep -cE "재리뷰 상한 ${CAP}([^0-9]|\$)" "$f" || true)"
+  if [ "${got:-0}" -ge "$want" ]; then
+    ok "$rel: '재리뷰 상한 $CAP' ${got}건 (하한 ${want})"
+  else
+    no "$rel: '재리뷰 상한 $CAP' 가 ${got:-0}건 — ${want}건 이상이어야 한다 (정본 $CAP 과 어긋났거나 문장이 사라졌다)"
+  fi
+done
+
+# ── 4. 음의 짝 — 상한 어휘가 나오는 **모든** 자리의 숫자가 CAP 과 같은가 ────
+# 어휘 셋: 정본 표기(`rereview_cap: N`) · 엔진 상수(`REREVIEW_CAP = N`) · 산문(`재리뷰 상한 N`).
+# 서로 다른 상한(브리프 리뷰의 `재dispatch 상한 2`, G6 의 `재시도 상한 3`)은 이 어휘에
+# 걸리지 않는다 — 같은 숫자를 쓰더라도 다른 값이므로 코퍼스에 넣지 않는다.
+CAP_RE='rereview_cap: [0-9]+|REREVIEW_CAP = [0-9]+|재리뷰 상한 [0-9]+'
+bad=0
+seen=0
+for f in "$REF" "$ENGINE" "${TARGETS[@]}"; do
+  rel="${f#"$REPO_ROOT"/}"
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    seen=$((seen + 1))
+    n="$(printf '%s' "$hit" | grep -oE '[0-9]+' | tail -1)"
+    if [ "$n" != "$CAP" ]; then
+      bad=$((bad + 1))
+      no "음의 짝: $rel 의 '$hit' 가 정본 $CAP 과 다르다"
+    fi
+  done < <(grep -oE "$CAP_RE" "$f" || true)
+done
+if [ "$seen" -lt 5 ]; then
+  no "음의 짝: 상한 어휘를 ${seen}건밖에 도출하지 못했다 — 코퍼스 넷에서 최소 5건(정본 1 + 엔진 1 + SKILL 1 + README 2)이 나와야 한다. 이 상태에서 'bad=0' 은 증거가 아니다"
+elif [ "$bad" -eq 0 ]; then
+  ok "음의 짝: 상한 어휘 ${seen}건 전부가 정본 $CAP 과 같다 (옛 값 잔존 0)"
 fi
 finish
