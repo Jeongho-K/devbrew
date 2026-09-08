@@ -43,4 +43,13 @@ case_AC22_expired_escape_hatch
 case_AC22_nonexpired_states_still_refused
 case_AC22_post_expiry_render_tail
 case_AC22_stale_pointer_cleared_via_redecide
+# Task 2 재리뷰(F-8/Ruling 23) — escalated 케이스 넷은 지금까지 매트릭스
+# (test_docreview_mutations.sh)에서만 불렸다. 그 규칙이 진짜로 깨지면 매트릭스는
+# 「양성대조 실패(계측기 고장)」로만 보고해, 다음 독자를 규칙이 아니라 계측기로
+# 보낸다. 형제 case_AC21_reraise_accumulates·case_AC21_reraise_dedup 처럼 여기
+# 등록해 행동 락으로도 재게 한다.
+case_escalated_accumulates
+case_escalated_dedup
+case_escalated_unconsumed_counted
+case_escalated_dropped_fix_not_resurrected
 finish

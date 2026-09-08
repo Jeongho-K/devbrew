@@ -361,7 +361,7 @@ def _classify_items(items, st, prof, sections, n, L):
     return final, rejected_items
 
 
-def _auto_decides(a, st, prof, sections, n):
+def _auto_decides(a, st, prof, sections, n, L):
     """사후·이월 auto decide — 얼림 diff(post) · check-intent 거부(pre) · expired 재상승(pre).
 
     `st["escalated"]` 은 아직 자기 차례가 아닌 예약만 남기고, `st["reraise"]` 는 비운다.
@@ -369,7 +369,9 @@ def _auto_decides(a, st, prof, sections, n):
 
     이 함수에 `items` 가 없다는 것이 설계다 — 재상승 후속이 same_as 흡수 · 재비판
     reject · 처분 강제를 지나지 않는다는 불변식이 여기서는 스코프로 보장된다(분해
-    전에는 「이 줄이 그 셋보다 아래에 있다」는 위치로만 보장됐다).
+    전에는 「이 줄이 그 셋보다 아래에 있다」는 위치로만 보장됐다). `L` 은 escalated
+    dedup 흡수 하나만 쓴다(F-2 재리뷰 Ruling 21) — `items` 파이프라인을 통째로 넘기지
+    않으므로 위 불변식은 그대로다.
     """
     extra = []
     if a.diff and Path(a.diff).is_file():
@@ -384,7 +386,7 @@ def _auto_decides(a, st, prof, sections, n):
                           "prev_hash": c.get("old_hash"), "immutable": cls["immutable"], "_source": "diff"})
     prev = st["findings"]
     keep_esc = []
-    esc_seen = set()
+    esc_seen = {}   # finding_id → 이긴 예약의 라운드(먼저 온 것 — Ruling 22, 최신이 아니다)
     esc_unconsumed = 0
     # Task 2 — 형제 재상승(AC21)과 대칭으로 맞춘다. 이전엔 `!= n - 1`(정확히 직전
     # 라운드의 예약만 소비)이라 `finalize` 가 이 루프 전에 조기 반환한 라운드가 하나라도
@@ -396,17 +398,39 @@ def _auto_decides(a, st, prof, sections, n):
         if int(e["round"]) >= n:
             keep_esc.append(e)   # 이번 라운드 이후에 생긴 예약 — 아직 자기 차례가 아니다
             continue
-        f0 = prev.get(e["finding_id"])
+        fid = e["finding_id"]
+        f0 = prev.get(fid)
         if not f0:
             esc_unconsumed += 1   # 대상 finding 부재 — 버리지 않고 센다(공시는 게이트가, 재상승과 같은 규칙)
             continue
-        if e["finding_id"] in esc_seen:
-            continue   # 한 계보에 라운드당 후속 하나(재상승 dedup, cmd_observe_diff 와 같은 규칙)
-        esc_seen.add(e["finding_id"])
+        # F-3 재리뷰(Ruling 20) — 형제 재상승(:428, `if not d0 or d0.get("state") != "expired"`)
+        # 과 같은 모양. `f0` 존재만으로는 이 fix 가 «지금도» escalated 상태인지 모른다 —
+        # 예약이 만들어진 뒤 사용자가 drop 하거나(cmd_fix event=drop, 상태 검사 없이
+        # 무조건 대입) intent-pass 로 재시도했을 수 있다(둘 다 `st["fixes"][fid]["state"]`
+        # 를 escalated 밖으로 옮긴다). 누적(`>= n`)이 이 창을 1 라운드에서 무한대로
+        # 넓혔으므로, 지금 상태가 여전히 "escalated" 인 예약만 후속을 낸다 — 아니면
+        # 사용자가 이미 다른 처분을 내린 것이고 그 처분이 의무를 진다(형제와 같은 이유,
+        # 버려지는 새 항목이 없다).
+        fx0 = st["fixes"].get(fid)
+        if not fx0 or fx0.get("state") != "escalated":
+            continue
+        if fid in esc_seen:
+            # 한 계보에 라운드당 후속 하나(재상승 dedup, cmd_observe_diff 와 같은 규칙).
+            # 흡수이지 소실이 아니다 — `esc_seen` 에 먼저 들어간 예약이 바로 아래서
+            # 이미 후속을 만들었다. F-2 재리뷰(Ruling 21) — CLAUDE.md 「흡수(dedup)…
+            # 계수하되 그 자체로 degrade 는 아니다」를 그대로 따라 `L.absorbed` 로
+            # 센다(면제가 아니다). 승자는 항상 먼저 온 예약이다 — `st["escalated"]` 는
+            # append-only 라 리스트 순서가 곧 escalate 된 순서이므로, 라운드가 다른
+            # 사유 둘이 충돌해도 **먼저** 온 사유가 남는다(최신이 아니다) — 행동
+            # 변경 없음, `case_escalated_dedup` 이 이 사실을 단언으로 못 박는다.
+            L.absorbed("escalated:%s#r%d" % (fid, int(e["round"])),
+                      into="escalated:%s#r%d" % (fid, esc_seen[fid]))
+            continue
+        esc_seen[fid] = int(e["round"])
         extra.append({"f": None, "layer": f0["layer"], "category": f0["category"], "anchor": f0["anchor"],
                       "disposition": "decide", "summary": "check-intent 거부 후 상향: " + (f0.get("summary") or ""),
                       "edit_scope": f0.get("edit_scope") or f0["anchor"], "blocks": [],
-                      "supersedes": e["finding_id"], "evidence": e.get("reason"), "origin": "auto",
+                      "supersedes": fid, "evidence": e.get("reason"), "origin": "auto",
                       "kind": "pre", "immutable": bool(f0.get("immutable")), "_source": "escalated"})
     st["escalated"] = keep_esc
     reraise_unconsumed = 0
@@ -616,7 +640,7 @@ def cmd_finalize(a) -> int:
     same_as = _apply_recritic(items, verdicts, added, L)
     keep_of = _absorb_same_as(items, same_as, L)
     final, rejected_items = _classify_items(items, st, prof, sections, n, L)
-    extra, reraise_unconsumed, escalated_unconsumed = _auto_decides(a, st, prof, sections, n)
+    extra, reraise_unconsumed, escalated_unconsumed = _auto_decides(a, st, prof, sections, n, L)
     final.extend(extra)
     bucket_conflicts, lineage_mismatch, revived = _resolve_ids_and_lineage(st, final, rejected_items, n)
     _remap_blocks(final, keep_of, a.doc)

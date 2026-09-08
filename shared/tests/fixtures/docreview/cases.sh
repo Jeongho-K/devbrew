@@ -1038,8 +1038,11 @@ case_AC21_unconsumed_counted() {
 # 예약이 소비도 계수도 안 되는 결함이 있었기 때문이다(형제 reraise, AC21 이 같은
 # 결함을 먼저 닫았다). 그래서 둘째 단언의 뜻도 뒤집힌다 — 라운드 1 예약은 이제
 # «이월»이 아니라 «이번 라운드에 소비»된다. 케이스 이름도 `case_escalated_accumulates`
-# 로 바꾼다. 시나리오(라운드 1 escalate → 라운드 2 finalize 건너뜀 → 라운드 2
-# escalate → 라운드 3 finalize)는 원본 그대로 둔다 — 뒤집힌 것은 기대값뿐이다.
+# 로 바꾼다. **[F-4 재리뷰 정정]** 원 시나리오의 핵심 골격(라운드 1 escalate → 라운드
+# 2 finalize 건너뜀 → 라운드 2 escalate → 라운드 3 finalize)은 그대로 두지만, 아래
+# 실행 노트(§ 실측)가 밝히듯 그 골격만으로는 뒤집을 대상(「아직 자기 차례가 아닌
+# 예약은 보존된다」)이 한 번도 안 밟혀 — 시나리오에 예약 하나를 **더했다**(라운드
+# 3 에 다시 escalate). 바뀐 것은 기대값만이 아니다 — 시나리오도 최소한으로 늘었다.
 #
 # BEFORE(뒤집기 전 — GREEN 이었던 사실, report 에 그대로 인용):
 #   assert_eq ... "['$fid2']" "escalated 이월: round 불일치(라운드 1 예약)는 이번
@@ -1083,32 +1086,48 @@ case_escalated_accumulates() {
 }
 
 # escalated dedup — 같은 finding_id 가 두 번 예약돼도 후속은 라운드당 하나(재상승
-# dedup, AC21 과 같은 규칙). **도달성 확인(Task 2 브리프 요구, `case_AC21_reraise_dedup`
-# 이 한 번 no_teeth 로 판정됐던 자리와 같은 종류)** — 프로덕션 경로에서 같은
-# finding_id 를 두 번 escalate 할 방법은 없다: 유일한 실제 진입점
-# `docreview_anchor.py cmd_check_intent` 의 `escalate()` 클로저는 그 앞의 가드
-# (`if not fx or fx["state"] not in ("pending", "intent_passed"): return _reject(...)`)
-# 를 반드시 지나야 하고, escalate 가 한 번 일어나면 `fx["state"]` 가 "escalated" 로
-# 바뀌어 그 가드를 다시 못 지난다(코드 어디에도 "escalated" → "pending" 으로 되돌리는
-# 경로가 없다) — check-intent 경유로는 자연 재예약이 불가능하다. 그러나 이 파일의
-# 다른 모든 escalated 케이스(위 `case_escalated_accumulates` 포함)가 이미 쓰는
-# 저수준 CLI(`docreview_state.py fix --event escalate`)는 그 가드를 갖지 않는다 —
-# `cmd_fix` 의 escalate 분기는 현재 상태를 검사하지 않고 매번 그대로 append 한다.
-# 재상승 쪽 dedup(`case_AC21_reraise_dedup`)이 `cmd_decide` 를 완전히 우회하는
-# 전용 픽스처(`st_open_permit.py`)로 "지금 도달 가능하지 않은 defense-in-depth"
-# 상태를 직접 구성해 이빨을 얻은 것과 같은 등급의 도달성이다 — 이쪽은 전용 픽스처
-# 조차 필요 없다, 이미 이 파일이 표준으로 쓰는 저수준 CLI 를 두 번 부르기만 하면
-# 된다. 그래서 케이스를 쓴다(도달 불가능하지 않다).
+# dedup, AC21 과 같은 규칙), 그러나 **같은 라운드의 다른 finding 은 삼키지 않는다**
+# (F-1 재리뷰 — dedup 키는 `finding_id` 다, `round` 가 아니다). **도달성 확인(Task 2
+# 브리프 요구, `case_AC21_reraise_dedup` 이 한 번 no_teeth 로 판정됐던 자리와 같은
+# 종류)** — 유일한 실제 진입점 `docreview_anchor.py cmd_check_intent` 의 `escalate()`
+# 클로저는 그 앞의 가드(`if not fx or fx["state"] not in ("pending", "intent_passed"):
+# return _reject(...)`)를 반드시 지나야 한다. **[F-5 재리뷰 정정]** "escalate 가 한
+# 번 일어나면 다시는 그 가드를 못 지난다"는 예전 서술은 **틀렸다** — `cmd_fix` 의
+# `intent-pass` 분기(`docreview_state.py:467-473`)는 현재 상태를 검사하지 않고
+# `fx["state"] = "intent_passed"` 로 무조건 대입하고, `intent_passed` 는 그 가드의
+# 허용 집합 안이다. 즉 `escalate → intent-pass → escalate` 로 **check-intent 경유의
+# 자연 재예약도 가능하다** — 도달성은 원래 서술보다 더 높다. 그와 별개로 이 파일의
+# 다른 모든 escalated 케이스가 이미 쓰는 저수준 CLI(`docreview_state.py fix --event
+# escalate`)는 애초에 그 가드를 갖지 않는다(현재 상태를 검사하지 않고 매번 그대로
+# append 한다) — 재상승 쪽 dedup(`case_AC21_reraise_dedup`)이 `cmd_decide` 를 완전히
+# 우회하는 전용 픽스처(`st_open_permit.py`)로 도달성을 만든 것과 같은 등급이고,
+# 이쪽은 전용 픽스처조차 필요 없다. 결론은 그대로다(케이스를 쓴다) — 근거만 고쳤다.
 case_escalated_dedup() {
   local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
-  local fid; fid="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"
+  local fid fid_other
+  fid="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"
+  fid_other="$(fsum "$d" '부품 경계' '["id"]')"        # F-1 — 같은 라운드의 다른 finding
   py docreview_state.py fix --state-dir "$d" --id "$fid" --event escalate --reason 'check-intent 거부(1차)' >/dev/null
   py docreview_state.py fix --state-dir "$d" --id "$fid" --event escalate --reason 'check-intent 거부(2차, 같은 finding_id 재예약)' >/dev/null
-  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — 두 예약(round=1) 모두 이번 finalize 대상
+  py docreview_state.py fix --state-dir "$d" --id "$fid_other" --event escalate --reason 'check-intent 거부(같은 라운드, 다른 finding)' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — 세 예약(round=1) 모두 이번 finalize 대상
   py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
   py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  # F-1 — dedup 은 finding_id 로 키잉한다. round 로 키잉하면(리뷰의 M8 변이:
+  # `esc_seen.add(e["finding_id"])` → `esc_seen.add(e["round"])`) 세 예약이 모두
+  # round=1 이라 fid_other 가 fid 에 "같은 라운드"라는 이유만으로 삼켜져 이 단언이
+  # 후속 하나(fid_other 없음)만 보고 RED 가 된다.
+  local expected; expected="$(python3 -c 'import sys; print(sorted(sys.argv[1:]))' "$fid" "$fid_other")"
+  assert_eq "$(jget "$d/fin.json" 'sorted(x["supersedes"] for x in d["findings"] if x.get("supersedes") in ("'"$fid"'", "'"$fid_other"'"))')" \
+    "$expected" "escalated dedup: 같은 라운드의 다른 finding 은 삼켜지지 않고 각자 후속을 낸다(키는 finding_id — round 가 아니다)"
   assert_eq "$(jget "$d/fin.json" 'len([x for x in d["findings"] if x.get("supersedes")=="'"$fid"'"])')" "1" "escalated dedup: 같은 finding_id 가 두 번 예약돼도 후속은 라운드당 하나"
-  assert_eq "$(st_yaml "$d" 'st["escalated"]')" "[]" "escalated dedup: 두 예약 모두 소비되고(하나는 dedup 으로 버려짐) 목록이 빈다"
+  # Ruling 22 — 사유 승자를 못 박는다. `st["escalated"]` 는 append-only 라 리스트
+  # 순서 = escalate 된 순서다. 코드가 esc_seen 을 그 순서대로 채우므로 «먼저» 온
+  # 사유(1차)가 남는다 — 최신(2차)이 아니다. 행동은 안 바꾼다, 드러내기만 한다.
+  assert_eq "$(jget "$d/fin.json" 'next(x["evidence"] for x in d["findings"] if x.get("supersedes")=="'"$fid"'")')" \
+    "check-intent 거부(1차)" "escalated dedup: 중복 예약 중 먼저 온 사유가 남는다(최신이 아니다, Ruling 22)"
+  assert_eq "$(jget "$d/fin.json" 'd["adjudication_absorbed"]')" "1" "escalated dedup: 흡수된 중복 하나가 원장에 계수된다(면제가 아니다, F-2/Ruling 21)"
+  assert_eq "$(st_yaml "$d" 'st["escalated"]')" "[]" "escalated dedup: 예약 모두 소비되고(중복은 흡수) 목록이 빈다"
   rm -rf "$d"
 }
 
@@ -1123,8 +1142,34 @@ case_escalated_unconsumed_counted() {
   next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2 — round=1 예약이 이번 finalize 대상
   py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep2.json"
   py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --doc "$FX/design-sample.md" > "$d/fin.json"
-  assert_eq "$(jget "$d/fin.json" 'd["escalated_unconsumed"]')" "1" "escalated: 대상 finding 이 없는 예약은 버려지지 않고 계수된다"
-  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["counts"]["escalated_unconsumed"]')" "1" "escalated: 그 계수가 게이트에 실린다"
+  # F-7 재리뷰 — 매트릭스 헤더의 요구대로 `.get()` 을 쓴다(값이 사라질 수 있는 변이를
+  # 겨눌 때 엄격 `d["key"]` 인덱싱은 unmeasurable 로 떨어진다). 기대값이 리터럴 "1"
+  # 이라 이 완화는 단언을 약하게 하지 않는다 — 키가 없으면 `.get()` 은 None 을 내고
+  # `None != "1"` 은 여전히 RED 다.
+  assert_eq "$(jget "$d/fin.json" 'd.get("escalated_unconsumed")')" "1" "escalated: 대상 finding 이 없는 예약은 버려지지 않고 계수된다"
+  assert_eq "$(py docreview_state.py gate --state-dir "$d" | jgets 'd["counts"].get("escalated_unconsumed")')" "1" "escalated: 그 계수가 게이트에 실린다"
+  rm -rf "$d"
+}
+
+# F-3 재리뷰(Ruling 20) — 누적(`>= n`)이 escalated 예약의 소비 창을 1 라운드에서
+# 무한대로 넓혔다. `_auto_decides` 의 옛 코드는 `prev.get(finding_id)`(finding 이
+# 아직 존재하는가)만 보고 그 fix 의 «지금» 상태는 안 봤다 — 그래서 사용자가 escalate
+# 된 fix 를 나중 라운드에 `drop`(cmd_fix event=drop, 상태 검사 없이 무조건 대입)해도
+# 옛 예약이 여전히 소비 대상으로 남아 몇 라운드가 지나든 반드시 부활했다(리뷰 실측).
+# 형제 재상승 갈래의 `if not d0 or d0.get("state") != "expired": continue` 와 같은
+# 모양으로 「이 fix 가 지금도 escalated 상태인가」를 검사해 막는다.
+case_escalated_dropped_fix_not_resurrected() {
+  local d; d="$(route_r1 "$PROF_SD/design-doc.md" "$FX/design-sample.md")"
+  local fid; fid="$(fsum "$d" 'AC 가 하나뿐' '["id"]')"
+  py docreview_state.py fix --state-dir "$d" --id "$fid" --event escalate --reason 'check-intent 거부(라운드 1)' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 2
+  py docreview_state.py fix --state-dir "$d" --id "$fid" --event drop --reason '사용자가 라운드 2 에 drop' >/dev/null
+  next_round "$d" "$FX/design-sample.md" >/dev/null   # 라운드 3 — 옛 예약(round=1)이 이번 finalize 대상
+  py docreview_route.py prepare-recritic --state-dir "$d" --critic "$FX/critic-nolayer2.txt" --codex "$FX/codex-failed.yaml" > "$d/prep3.json"
+  py docreview_route.py finalize --state-dir "$d" --recritic "$FX/recritic-missing.txt" --doc "$FX/design-sample.md" > "$d/fin.json"
+  assert_eq "$(jget "$d/fin.json" 'len([x for x in d["findings"] if x.get("supersedes")=="'"$fid"'"])')" "0" \
+    "escalated: drop 된 fix 의 잔존 예약은 decide 로 부활하지 않는다(F-3)"
+  assert_eq "$(st_yaml "$d" 'st["escalated"]')" "[]" "escalated: drop 된 fix 의 잔존 예약도 소비되고(부활 없이) 목록이 빈다"
   rm -rf "$d"
 }
 

@@ -170,19 +170,17 @@ _DR_ESCALATED_TARGET_GONE = (
     "더했다 — `_permit_covers()` 와 같은 이유(위 `_DR_PERMIT_SEARCH`)로 여기 "
     "순회 대상(`escalated` 예약)도 리뷰 대상 finding 이 아니라 스케줄링 레코드다."
 )
-_DR_ESCALATED_DEDUP = (
-    "C6(1) — `if e['finding_id'] in esc_seen: continue`(Task 2 신설, 형제 재상승 "
-    "dedup — `cmd_observe_diff`(docreview_state.py:589-596)의 "
-    "`if r0['finding_id'] in seen: continue` — 와 같은 규칙: 한 계보에 라운드당 "
-    "후속 하나). 이 루프의 원소(`escalated` 예약)는 위 `_DR_ESCALATED_NOT_DUE`· "
-    "`_DR_PERMIT_SEARCH` 가 이미 세운 대로 판정 대상 finding 이 아니라 스케줄링 "
-    "레코드다 — 이 continue 가 버리는 것은 finding 이 아니라 같은 finding_id 를 "
-    "겨눈 «중복 재예약» 하나뿐이고, 그 finding_id 자체는 `esc_seen` 에 먼저 "
-    "들어간 예약이 이미 이번 순회에서 후속(`extra.append`, 바로 다음 문장)을 "
-    "만들어 의무를 이행한다 — 어떤 finding 도 후속 없이 사라지지 않는다. 형제 "
-    "dedup(docreview_state.py)이 이 락의 스캔 밖에(그 파일은 `adjudication` 을 "
-    "import 하지 않는다) 있는 것과 달리 이 자리는 `_auto_decides()` 안이라 "
-    "스캔 대상이지만, 판정 실질(소실 없음)은 같다."
+_DR_ESCALATED_FIX_NOT_LIVE = (
+    "C6(1) — `if not fx0 or fx0.get('state') != 'escalated': continue`(F-2/F-3 "
+    "재리뷰 Ruling 20, 형제 `_DR_RERAISE_ALREADY_DECIDED`(아래, `if not d0 or "
+    "d0.get('state') != 'expired'`)와 같은 모양·같은 이유). `f0` 존재만으로는 이 "
+    "fix 가 «지금도» escalated 상태인지 모른다 — Task 2 의 누적(`>= n`)이 소비 "
+    "창을 1 라운드에서 무한대로 넓혀, 예약이 만들어진 뒤 사용자가 `cmd_fix "
+    "event=drop`(상태 검사 없이 무조건 대입, docreview_state.py:474-475)이나 "
+    "`event=intent-pass`(같은 무조건 대입, :467-473)로 그 fix 를 escalated 밖으로 "
+    "옮겼을 수 있다(F-3 실측: drop 뒤에도 옛 예약이 소비돼 후속을 부활시켰다). "
+    "형제 주석이 이미 결론을 적어 뒀다 — 사용자가 이미 다른 처분을 내렸으면 그 "
+    "처분이 의무를 진다: 버려지는 새 항목이 없다."
 )
 _DR_RERAISE_TARGET_GONE = (
     "C6(1) — `if not f0: reraise_unconsumed += 1; continue`. 이 자리는 "
@@ -422,23 +420,27 @@ EXEMPT = {
      "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
     ("plugins/quality-gates/scripts/docreview_route.py", 335,
      "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
-    # Task 2 — escalated 예약을 재상승(AC21)과 대칭으로 맞추면서 세 줄이 밀리고
-    # (`>= n` 조건 재작성 + `esc_seen`/`esc_unconsumed` 두 줄 신설) 새 dedup
-    # continue 하나가 늘었다. 아래 여섯 키의 줄번호를 현재 위치로 갱신한다
-    # (398/402/404/417/428/468) — 사유는 위 `_DR_*` 상수(둘은 내용도 갱신, 하나는
-    # 신설) 참조.
-    ("plugins/quality-gates/scripts/docreview_route.py", 398,
+    # Task 2 — escalated 예약을 재상승(AC21)과 대칭으로 맞추면서 줄번호가 밀렸다.
+    # F-2/F-3 재리뷰(Ruling 20·21) 가 한 번 더 바꿨다: dedup continue(옛 404)는
+    # `L.absorbed(...)` 를 같은 분기에서 직접 불러 **더 이상 면제가 필요 없다**
+    # (`scan()` 이 그 호출을 disposition 으로 자동 인식해 guarded=True) — 그래서
+    # 아래 목록에서 통째로 빠졌다(EXEMPT_BASELINE 주석 참조). 대신 F-3 이 새
+    # discard 자리(fix 가 지금도 escalated 상태인지 검사)를 하나 늘렸다. 다섯
+    # 키의 줄번호를 현재 위치로 갱신한다(400/405/416[신설]/441/452/492) — 사유는
+    # 위 `_DR_*` 상수 참조.
+    ("plugins/quality-gates/scripts/docreview_route.py", 400,
      "continue in _auto_decides @ if int(e['round']) >= n"): _DR_ESCALATED_NOT_DUE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 402,
+    ("plugins/quality-gates/scripts/docreview_route.py", 405,
      "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 404,
-     "continue in _auto_decides @ if e['finding_id'] in esc_seen"): _DR_ESCALATED_DEDUP,
-    ("plugins/quality-gates/scripts/docreview_route.py", 417,
+    ("plugins/quality-gates/scripts/docreview_route.py", 416,
+     "continue in _auto_decides @ if not fx0 or fx0.get('state') != 'escalated'"):
+        _DR_ESCALATED_FIX_NOT_LIVE,
+    ("plugins/quality-gates/scripts/docreview_route.py", 441,
      "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
-    ("plugins/quality-gates/scripts/docreview_route.py", 428,
+    ("plugins/quality-gates/scripts/docreview_route.py", 452,
      "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
         _DR_RERAISE_ALREADY_DECIDED,
-    ("plugins/quality-gates/scripts/docreview_route.py", 468,
+    ("plugins/quality-gates/scripts/docreview_route.py", 492,
      "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
         _DR_LINEAGE_NOT_RERAISE,
 }
@@ -806,14 +808,26 @@ def uncited_exemptions():
 # 회계됐거나(같은 대입 지점에서 `L.reject`/`L.absorbed` 동시 호출) 판정 대상
 # 자체가 없는(permit/reraise 스케줄링 탐색) 자리들이다.
 #
-# Task 2 — 26 → 27. escalated 예약을 재상승(AC21)과 대칭으로 맞추면서 dedup
-# continue 하나(`if e['finding_id'] in esc_seen`)가 새로 생겼다 — 형제 재상승
-# dedup(docreview_state.py `cmd_observe_diff`)과 같은 규칙이지만 그 형제는
-# `adjudication` 을 import 하지 않는 파일에 있어 이 락의 스캔 밖이고, 이 자리는
-# `_auto_decides()` 안이라 스캔 대상이다(`_DR_ESCALATED_DEDUP` 참조 — 버려지는
-# 것은 판정 대상 finding 이 아니라 같은 finding_id 를 겨눈 중복 예약뿐이라
-# 소실이 없다). 배선을 면제로 갈아 끼운 게 아니라 이 태스크가 새로 만든
-# discard 자리 하나에 정직하게 근거를 단 것이다.
+# Task 2 — 26 → 27 → (F-2/F-3 재리뷰) 그대로 27, 그러나 구성이 갈렸다.
+#
+# 최초 커밋(fc516eb2)은 dedup continue(`if e['finding_id'] in esc_seen`)를
+# `_DR_ESCALATED_DEDUP` 으로 면제해 26→27 을 만들었다. 재리뷰 F-2(Ruling 21)가
+# 그 선택을 뒤집었다 — CLAUDE.md 「흡수(dedup)…계수하되 그 자체로 degrade 는
+# 아니다」는 면제가 아니라 **계수**를 요구한다. dedup 분기가 이제 같은 자리에서
+# `L.absorbed(...)` 를 직접 부르므로(다른 dedup — `_absorb_same_as()` — 와 같은
+# 처분 어휘) `scan()` 이 그 호출을 disposition 으로 자동 인식해 더는 면제가
+# 필요 없다 — 그래서 −1(27→26).
+#
+# 같은 재리뷰의 F-3(Ruling 20)이 별도 결함을 고치며 새 discard 자리를 하나
+# 늘렸다: escalated 후속을 만들기 전에 그 fix 가 «지금도» escalated 상태인지
+# 검사한다(`_DR_ESCALATED_FIX_NOT_LIVE`) — 형제 `_DR_RERAISE_ALREADY_DECIDED`
+# 와 같은 이유로 면제 대상이다(사용자의 다른 처분이 의무를 진다, 소실 없음).
+# 그래서 +1(26→27).
+#
+# 순증가는 0 이지만 두 변경이 우연히 상쇄된 것이지 손대지 않은 것이 아니다 —
+# `docreview_route.py` 몫은 여전히 아홉 자리지만 구성원이 하나 바뀌었다(dedup
+# 나가고 fix-liveness 들어옴). 무엇이 지금 등재돼 있는지는 위 `_DR_*` 상수를
+# 직접 읽어라.
 EXEMPT_BASELINE = 27
 
 

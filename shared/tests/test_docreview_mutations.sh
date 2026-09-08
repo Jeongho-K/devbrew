@@ -24,8 +24,9 @@
 # `save_state` 를 **리포의 `shared/docreview/scripts/`** 에서 import 한다(각 파일의
 # `SCRIPTS_DIR = …parents[3] / "docreview" / "scripts"`). 매트릭스가 변이시키는 것은
 # 임시 사본이므로, 이 헬퍼들이 픽스처를 «심는» 단계는 어떤 변이도 지나지 않는다.
-# 지금은 무해하다 — 이 헬퍼를 쓰는 세 셀(`reraise_no_dedup`·`reraise_loss_uncounted`·
-# `fwd_pointer_not_cleared`)은 전부 **엔진 술어**를 흔들고 그 술어는 사본에서 돈다.
+# 지금은 무해하다 — 이 헬퍼를 쓰는 네 셀(`reraise_no_dedup`·`reraise_loss_uncounted`·
+# `fwd_pointer_not_cleared`·`escalated_loss_uncounted`[Task 2, `st_set_escalated.py`
+# 를 쓴다])은 전부 **엔진 술어**를 흔들고 그 술어는 사본에서 돈다.
 # 그러나 훗날 상태 **직렬화기 자체**(`load_state`/`save_state`)를 겨눈 셀이 생기면,
 # 이 헬퍼를 쓰는 케이스는 그 변이에 구조적으로 눈이 먼다 — 시딩이 pristine 직렬화기로
 # 되기 때문이다. 그런 셀을 세우려면 먼저 헬퍼가 `$SCRIPTS`(사본)를 보게 바꿔야 한다.
@@ -372,7 +373,7 @@ mut 1/1 lineage_two_pass_collapsed case_T14_T15_lineage sed_route \
 #    흡수됨)을 blocks 로 가리키는 실제 흡수-재매핑 경로다.
 mut 1/1 blocks_keep_of_bypassed case_T02_same_as_max sed_route \
   's/r2 = keep_of\.get(r, r)/r2 = r/'
-# ㉙ escalated 이월 제거 — round 불일치(아직 자기 차례가 아닌 예약)를 버려서
+# ㉙ escalated 미도래 예약 소실 — 아직 자기 차례가 아닌 예약(`round >= n`)을 버려서
 #    keep_esc 에 안 남긴다(하향: 「소비되지 않으면 다음으로 넘어간다」가 「소비되지
 #    않으면 사라진다」가 된다). 자연 경로로 이 분기를 밟으려면 finalize 를 건너뛴
 #    라운드가 있어야 한다(AC21 의 reraise 조기-반환과 같은 종류) — 기존 케이스 중
@@ -382,7 +383,10 @@ mut 1/1 blocks_keep_of_bypassed case_T02_same_as_max sed_route \
 # «버리지 않고 보존»하는가)은 조건이 `!= n - 1` 이든 `>= n` 이든 그대로다. sed 대상
 # `keep_esc.append(e)` 도 문자 그대로 살아있다(뒤에 주석만 붙었다) — 케이스 이름만
 # 갱신한다.
-mut 1/1 escalated_mismatch_dropped case_escalated_accumulates sed_route \
+# [F-6 재리뷰 정정] 셀 이름·설명이 옛 `!= n - 1`("불일치") 어휘였다 — `>= n` 아래에서
+# `keep_esc` 가 잡는 것은 "불일치"가 아니라 "아직 자기 차례가 아님"(round ≥ n)이다.
+# 이름·설명을 그 어휘로 고친다. sed 프로그램·판정 대상·churn 은 무변경.
+mut 1/1 escalated_not_due_dropped case_escalated_accumulates sed_route \
   's/keep_esc\.append(e)/pass/'
 # ㉚ bucket 충돌 계수 문턱을 1→2 로 올린다 — 정확히 둘이 충돌하는 실측 사례(T13)의
 #    공시가 0 으로 죽는다(하향: 진짜 충돌인데 안 보인다). `v > 1` 은 파일에 유일.
@@ -424,7 +428,7 @@ s/^                L\.coerced("same_as", y, None)$/                pass/'
 
 # ── escalated 예약 누적·dedup·미소비 계수 (Task 2) — 재상승(AC21, 위 ⑬⑭⑮)과 같은
 # 규칙을 escalated 예약에도 적용한다. 번호는 파일 끝에 이어 붙인다(당겨 채우지
-# 않는다, 위 ⑬ 앞 주석의 관례) — ㉙(escalated_mismatch_dropped)이 겨누는 자리(아직
+# 않는다, 위 ⑬ 앞 주석의 관례) — ㉙(escalated_not_due_dropped)이 겨누는 자리(아직
 # 자기 차례가 아닌 예약을 보존하는가)는 이 태스크로도 안 바뀌어 그 자리 그대로
 # 둔다(케이스 이름만 `case_escalated_accumulates` 로 갱신, 위 참조).
 # ㉝ escalated 축적 조건을 옛 규칙(`!= n - 1`)으로 되돌린다 — Task 2 의 핵심 수정을
@@ -436,11 +440,30 @@ mut 1/1 escalated_prev_round_only case_escalated_accumulates sed_route \
 # ㉞ escalated dedup(`esc_seen`) 제거 — 같은 finding_id 가 두 번 예약되면 후속도
 #    두 번 생긴다(하향: 라운드당 하나여야 할 후속이 중복된다). 형제 ⑭
 #    (reraise_no_dedup)와 같은 종류·같은 기법(가드를 `if False:` 로 눌러 매번
-#    통과시킨다).
+#    통과시킨다). [F-2/F-3 재리뷰 재앵커] 상태-생존 검사(F-3, Ruling 20)가 이
+#    가드 위에 끼어들며 그 술어 자체는 문자 그대로 살아있다(`fid` 로 변수화됐을
+#    뿐 — 재리뷰 전엔 `e["finding_id"]` 였다).
 mut 1/1 escalated_no_dedup case_escalated_dedup sed_route \
-  's/^        if e\["finding_id"\] in esc_seen:$/        if False:/'
-# ㉟ escalated 미소비 계수를 다시 조용히 버린다 — 계수가 0 으로 굳는다(형제 ⑮
+  's/^        if fid in esc_seen:$/        if False:/'
+# ㊱ escalated dedup 을 finding_id 대신 round 로 키잉한다(F-1, 리뷰의 M8 재현) —
+#    같은 라운드의 «다른» finding 이 dedup 에 삼켜져 후속 없이 사라진다(하향:
+#    dedup 의 키 축이 뒤바뀐다). 세 자리를 함께 바꿔야 내적 일관성이 깨지지
+#    않는다(`esc_seen` 이 dict — fid 키 하나만 바꾸면 `esc_seen[fid]` 참조가
+#    KeyError 로 크래시해 unmeasurable 로 떨어진다, 수동 확인) — 판정 자리
+#    (`if fid in esc_seen`) · L.absorbed 의 `into=` 조회(`esc_seen[fid]`) · 대입
+#    자리(`esc_seen[fid] = ...`) 셋 다 `int(e["round"])` 로 통일해야 크래시 없이
+#    "라운드로 키잉" 그 자체만 겨눈다.
+mut 3/3 escalated_dedup_keyed_by_round case_escalated_dedup sed_route \
+  's/if fid in esc_seen:/if int(e["round"]) in esc_seen:/
+s/esc_seen\[fid\]))/esc_seen[int(e["round"])]))/
+s/esc_seen\[fid\] = int(e\["round"\])/esc_seen[int(e["round"])] = int(e["round"])/'
+# ㊲ escalated 미소비 계수를 다시 조용히 버린다 — 계수가 0 으로 굳는다(형제 ⑮
 #    reraise_loss_uncounted 와 같은 종류·같은 기법).
 mut 1/1 escalated_loss_uncounted case_escalated_unconsumed_counted sed_route \
   's/^            esc_unconsumed += 1.*$/            pass/'
+# ㊳ F-3 — fix 가 «지금도» escalated 상태인지 보는 검사를 지운다(Ruling 20). drop
+#    된 fix 의 잔존 예약이 소비 창(누적 이후 무한대)에서 다시 decide 로 부활한다
+#    (하향: 사용자가 이미 처분한 fix 가 다시 승인을 막는다).
+mut 1/1 escalated_fix_liveness_removed case_escalated_dropped_fix_not_resurrected sed_route \
+  's/if not fx0 or fx0\.get("state") != "escalated":/if False:/'
 finish
