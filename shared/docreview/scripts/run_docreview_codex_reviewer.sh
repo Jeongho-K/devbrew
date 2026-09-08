@@ -95,16 +95,38 @@ STDERR_FILE="$SCRATCH/codex.stderr"
 if ! python3 - "$PROFILE" "$DOC" "$PLUGIN_ROOT/scripts/prompt-preamble.md" "$WEB_META_FILE" \
        > "$PROMPT_FILE" <<'PY'
 import pathlib, re, sys
-import yaml
 
 prof_path, doc_path, preamble_path, meta_path = sys.argv[1:5]
 
 t = pathlib.Path(prof_path).read_text(encoding="utf-8")
 m = re.match(r"^---\n(.*?)\n---\n", t, re.DOTALL)
-fm = (yaml.safe_load(m.group(1)) if m else None) or {}
-lr = fm.get("layer_rubric") or {}
-ad = fm.get("allowed_dispositions") or []
-web = fm.get("web") is True
+fm_text = m.group(1) if m else ""
+
+# PyYAML 없이 stdlib 만으로 — 형제 러너 셋(build_brief_codex_prompt.py ·
+# build_seed_codex_prompt.py · build_spec_codex_prompt.py)이 third-party 모듈을
+# 안 쓰는 것과 같은 이유다: 이 러너는 `HOME` 이 격리되는 하니스(예: codex 인증
+# 격리)에서 site-packages 의 PyYAML 에 닿지 못해 죽는다(실측 — 이 파일이 그
+# 하니스에서 유일하게 third-party import 를 했다). 필요한 것은 프로필
+# frontmatter 의 셋뿐이고 넷 다 한 줄짜리 flow-list/불리언이므로(design-doc·
+# brief·seed·generic 프로필 실측 — 참고: `docreview_state.py:load_profile()` 은
+# 이 넷을 훨씬 엄격하게 검증하지만 그건 정본 스키마 게이트이지 이 러너가
+# 다시 구현할 대상이 아니다) 새 YAML 파서를 발명하지 않고 그 모양만 좁게 뽑는다.
+def _flow_list(key, text):
+    # `layer1`·`layer2` 는 `layer_rubric:` 아래 2칸 들여쓰기다 — `allowed_
+    # dispositions` 는 최상위(들여쓰기 없음). 둘 다 받으려면 줄 시작의 임의
+    # 공백을 허용해야 한다(`^\s*`) — 앵커를 열 칸 고정으로 두면 한쪽이 깨진다.
+    mm = re.search(r"(?m)^\s*" + re.escape(key) + r":\s*\[(.*?)\]\s*$", text)
+    if not mm:
+        return []
+    inner = mm.group(1).strip()
+    if not inner:
+        return []
+    return [x.strip().strip("'\"") for x in inner.split(",") if x.strip()]
+
+lr_layer1 = _flow_list("layer1", fm_text)
+lr_layer2 = _flow_list("layer2", fm_text)
+ad = _flow_list("allowed_dispositions", fm_text)
+web = re.search(r"(?m)^web:\s*true\s*$", fm_text) is not None
 pathlib.Path(meta_path).write_text("web: %s\n" % ("true" if web else "false"), encoding="utf-8")
 
 pre = ""
@@ -120,8 +142,8 @@ doc = pathlib.Path(doc_path).read_text(encoding="utf-8")
 print("You are an independent document reviewer in a read-only sandbox. Do NOT modify files.")
 print("\nReview the document in two layers.")
 print("Layer 1 (big-picture coherence) — categories: "
-      + ", ".join(str(x) for x in lr.get("layer1", [])))
-l2 = lr.get("layer2") or ["(none — skip layer 2)"]
+      + ", ".join(str(x) for x in lr_layer1))
+l2 = lr_layer2 or ["(none — skip layer 2)"]
 print("Layer 2 (detail completeness) — categories: " + ", ".join(str(x) for x in l2))
 print("For each finding assign a disposition from: " + ", ".join(str(x) for x in ad))
 print("  decide = user must decide · ask = ask the user · fix = author edits · drop = not worth raising"

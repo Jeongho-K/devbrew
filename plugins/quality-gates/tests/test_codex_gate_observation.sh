@@ -60,6 +60,16 @@ obs_setup "$SCRATCH"
 UNGATED_run_codex_reviewer_sh='quality-pipeline/SKILL.md 이 산문 게이트 — 이 사이클 범위 밖 (설계 §10 미해결 1)'
 UNGATED_run_artifact_codex_reviewer_sh='critiquing-artifacts/SKILL.md 이 산문 게이트 — 이 사이클 범위 밖 (설계 §10 미해결 1)'
 UNGATED_test_codex_json_extraction_sh='수동 spike — 어떤 SKILL도 부르지 않는다'
+# reviewing-spec/SKILL.md 가 문서 리뷰 엔진의 껍데기로 바뀌면서(run_docreview_codex_
+# reviewer.sh 로 게이트가 옮겨감) 옛 `codex-gate:begin runner=run_spec_codex_reviewer.sh`
+# 마커가 사라졌다 — 러너 파일 자체는 아직 있어 위 ratchet이 "게이트도 없고 원장에도
+# 없다"로 RED를 낸다. **삭제로 닫는다** — 이 파일(agents/spec-reviewer.md·build_spec_
+# codex_prompt.py 와 함께 옛 verdict 파이프라인)은 T7 이 지운다(계획 File Structure
+# 표 · task-6-report.md §4-5). 등재는 그 사이 창을 메우는 임시 조치이지 carve-out이
+# 아니다 — T7 이 파일을 지우면 후보 목록에서 빠져 이 줄도 죽은 코드가 되고, 그때 이
+# 줄을 함께 지운다(다음 사람이 손으로 지울 것 — 위 run_docreview_codex_reviewer.sh
+# 등재-삭제 사이클과 같은 패턴).
+UNGATED_run_spec_codex_reviewer_sh='옛 verdict 파이프라인 잔존 — T7 이 파일을 지우면 해소 (계획 File Structure 표, task-6-report.md §4-5)'
 # `run_docreview_codex_reviewer.sh`의 등재는 여기서 **지웠다**(2026-09-08). 등재 사유는
 # "호출자 0 — 진입 skill이 아직 이 러너를 안 부른다"였는데, `reviewing-spec`이 문서 리뷰
 # 엔진의 껍데기가 되면서 그 skill의 SKILL.md가 `codex-gate:begin runner=run_docreview_

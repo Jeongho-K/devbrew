@@ -97,6 +97,95 @@ _T5_MAIN_VALIDATION_LOOP_SUCCESS = (
     "처분 개념이 없다."
 )
 
+# T6b — `docreview_route.py` 가 이 락의 모집단에 처음 들어오면서(check_wiring.py
+# 심볼릭 링크 skip 제거, Ruling 8) 드러난 아홉 자리. 파일이 spec-distill·
+# quality-gates 두 호스트에 같은 내용의 심볼릭 링크로 배포되므로(설계 §12) 아홉
+# 자리가 «호스트마다» 별도로 스캔돼 열여덟 키가 된다 — 같은 소스의 두 배포
+# 지점이라 사유는 호스트에 무관하게 하나씩만 쓴다.
+_DR_PERMIT_SEARCH = (
+    "C6(1) — `_permit_covers()` 는 `st[\"permits\"]` 를 도는 존재검사 헬퍼다 "
+    "(리뷰 대상 finding 이 아니라 permit 레코드를 순회한다). 일치하는 permit 을 "
+    "찾으면 `return True` 로 끊고, 못 찾으면 루프가 끝까지 돌아 `return False` "
+    "로 떨어진다 — 어느 쪽도 판정 대상 항목을 버리지 않는다. review-dispatch.py "
+    "의 `select_dispatch_target()` 선택 루프(같은 파일 위 `_T5_SELECT_LOOP`)와 "
+    "같은 범주: 처분을 낼 대상 자체가 없는 탐색 루프다."
+)
+_DR_ABSORB_GROUP_DEAD = (
+    "C6(1) — `_absorb_same_as()` 의 그룹 순회. `live`(그룹 안에서 아직 "
+    "`_rejected` 가 아닌 멤버)가 비면 대표를 고를 대상이 없어 `continue` 하지만, "
+    "그 그룹의 멤버는 전부 이미 `_rejected` 이고 그 표시는 `_apply_recritic()` "
+    "에서 `it[\"_rejected\"] = ...` 와 **같은 자리에서** `L.reject(f, ...)` 가 "
+    "함께 불려 이미 회계됐다(:229-230) — 이 continue 는 이미 처분된 항목을 "
+    "대표-선정에서만 제외할 뿐 새로 버리는 항목이 없다."
+)
+_DR_ABSORBED_ALREADY = (
+    "C6(1) — `_classify_items()` 의 `if it.get('_absorbed_into'): continue`. "
+    "`_absorbed_into` 는 `_absorb_same_as()` 가 대표를 정할 때 **같은 자리에서** "
+    "`L.absorbed(m, into=keep)` 와 함께 대입된다(:316-317) — 이 continue 시점엔 "
+    "이미 회계가 끝난 항목이다."
+)
+_DR_REJECTED_ALREADY = (
+    "C6(1) — `_classify_items()` 의 `if it.get('_rejected'): continue`. "
+    "`_rejected` 는 `_apply_recritic()` 에서 `L.reject(f, ...)` 와 같은 자리에서 "
+    "대입된다(:229-230) — 이미 회계된 항목이고, 이 continue **직전** 세 줄이 "
+    "그 항목을 `rejected_items` 에 담아 반환값에 실어(:332-334) 파이프라인에서도 "
+    "사라지지 않는다(review-dispatch.py 의 `capped.append` 선행 대입과 같은 "
+    "모양 — continue 이전에 보존이 먼저 실행된다)."
+)
+_DR_ESCALATED_NOT_DUE = (
+    "C6(1) — `_auto_decides()` 의 escalated 예약 순회. 아직 자기 라운드가 아닌 "
+    "예약(`int(e['round']) != n - 1`)은 `continue` **직전** `keep_esc.append(e)` "
+    "로 이미 보존돼(:388-389) `st['escalated'] = keep_esc` 로 다음 라운드까지 "
+    "살아남는다 — review-dispatch.py 의 `_T5_SELECT_LOOP`(discover() 가 매 Stop "
+    "재스캔) 와 같은 범주: 이번 라운드에 못 골랐다고 사라지는 게 아니라 다음 "
+    "라운드의 같은 순회에 다시 나타난다."
+)
+_DR_ESCALATED_TARGET_GONE = (
+    "C6(1) — 도달 불가능한 방어. `f0 = prev.get(e['finding_id'])`(`prev = "
+    "st['findings']`) 가 비면 continue 하는데, `st['findings']` 는 "
+    "`record_findings()` 에서만 채워지고(docreview_state.py) 지우는 코드 경로가 "
+    "없다 — 대입만 있고 삭제가 없다(설계 §6.4, 상태는 여섯으로 닫혀 전이만 "
+    "한다). `escalated` 예약은 `docreview_state.py:491` 의 `cmd_fix` 경로에서만 "
+    "생기고 그 경로는 이미 `st['decides']`/`st['fixes']` 에 등재된 finding_id 만 "
+    "받는다 — 그 finding_id 는 애초에 `record_findings()` 가 `st['findings']` 에도 "
+    "함께 적어 뒀다(같은 호출의 같은 루프). 즉 escalated 로 예약될 수 있는 "
+    "finding_id 는 전부 이미 `st['findings']` 에 있고 지워지지 않으므로 `f0` "
+    "부재는 지금 도달 불가다 — 형제(:405, `reraise` 의 같은 모양 가드)의 "
+    "`d0`/`state` 검사에 이미 적힌 것과 같은 결론(\"지금은 도달 불가라 계수하지 "
+    "않는다\")을 `f0` 쪽에도 그대로 적용한다."
+)
+_DR_RERAISE_TARGET_GONE = (
+    "C6(1) — `if not f0: reraise_unconsumed += 1; continue`. 이 자리는 "
+    "`reraise_unconsumed` 를 **직접 증가**시켜 셈을 남기지만(주석 원문: \"대상 "
+    "finding 부재 — 버리지 않고 센다\"), 그 카운터는 `Ledger` 의 처분 어휘"
+    "(accept/reject/hold/absorbed/coerced/source_failed/uncountable/suppressed) "
+    "가 아니라 route 자체의 별도 advisory 채널이다 — `stats['reraise_unconsumed']` "
+    "가 `_build_report()` 를 거쳐 출력 JSON 의 `reraise_unconsumed` 필드로 "
+    "그대로 공시된다(:566 `out = _build_report(...)`, `_build_report()` "
+    "본문의 같은 이름 필드). CLAUDE.md 의 요구(\"판정기가 항목을 버리면 "
+    "센다\")를 만족하는 자리이지 Ledger 소비 대상이 아니다 — `_permit_covers()` "
+    "와 같은 이유(위 `_DR_PERMIT_SEARCH`)로 여기 순회 대상(`reraise` 예약)도 "
+    "리뷰 대상 finding 이 아니라 스케줄링 레코드다."
+)
+_DR_RERAISE_ALREADY_DECIDED = (
+    "C6(1) — `if not d0 or d0.get('state') != 'expired': continue`. 코드 "
+    "자신의 주석이 이미 결론을 적어 뒀다: \"사용자가 이미 재결정했다 — "
+    "의무는 그 결정이 진다.\" `state != 'expired'` 는 그 finding 의 `decides` "
+    "레코드가 이미 다른 상태(adopted·rejected·held·applied)로 전이됐다는 "
+    "뜻이고, 그 전이 자체가 그 finding 의 최종 처분이다 — 재상승 후속을 또"
+    "내면 이미 끝난 결정 위에 유령 항목을 만드는 쪽이 오류다. 버려지는 새 "
+    "항목이 없다."
+)
+_DR_LINEAGE_NOT_RERAISE = (
+    "C6(1) — `_resolve_ids_and_lineage()` 의 전방 포인터 루프"
+    "(`if it.get('_source') != 'reraise'): continue`). 이 시점의 `it` 는 이미 "
+    "직전 루프(:446-451)에서 id·bucket 을 배정받아 처분이 끝난 항목이다 — 이 "
+    "두 번째 루프는 `_source == 'reraise'` 인 항목에만 적용되는 **추가** "
+    "부기(만료된 `decides` 레코드에 `superseded_by` 전방 포인터를 단다)이고, "
+    "그 조건에 안 맞는 항목은 이 부기가 필요 없을 뿐 그 항목 자체가 버려지는 "
+    "것이 아니다."
+)
+
 EXEMPT = {
     # ("plugins/.../foo.py", 146): "C6(1) 제자리 변형 루프 — 버려지는 항목이 없다",
     # Task 10 이 파일 상단에 `from render_disposition import disposition_lines`
@@ -285,6 +374,51 @@ EXEMPT = {
         "는 `cur = {}` 로만 생성돼 dict 항목 대입만 받는다 — 비-dict 원소를 "
         "만드는 경로가 코드에 없다(확인 완료). 배선하면 죽은 코드다(Task 10 "
         "의 `phase_key` 와 같은 함정).",
+
+    # T6b — docreview_route.py 아홉 자리, 두 호스트(spec-distill·quality-gates)
+    # 배포 지점마다 하나씩. 사유는 위 `_DR_*` 상수 참조(호스트 무관, 같은 소스).
+    ("plugins/spec-distill/scripts/docreview_route.py", 96,
+     "return in _permit_covers @ if int(p['round']) == n and anchor in p['apply_anchors']"):
+        _DR_PERMIT_SEARCH,
+    ("plugins/quality-gates/scripts/docreview_route.py", 96,
+     "return in _permit_covers @ if int(p['round']) == n and anchor in p['apply_anchors']"):
+        _DR_PERMIT_SEARCH,
+    ("plugins/spec-distill/scripts/docreview_route.py", 311,
+     "continue in _absorb_same_as @ if not live"): _DR_ABSORB_GROUP_DEAD,
+    ("plugins/quality-gates/scripts/docreview_route.py", 311,
+     "continue in _absorb_same_as @ if not live"): _DR_ABSORB_GROUP_DEAD,
+    ("plugins/spec-distill/scripts/docreview_route.py", 330,
+     "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
+    ("plugins/quality-gates/scripts/docreview_route.py", 330,
+     "continue in _classify_items @ if it.get('_absorbed_into')"): _DR_ABSORBED_ALREADY,
+    ("plugins/spec-distill/scripts/docreview_route.py", 335,
+     "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
+    ("plugins/quality-gates/scripts/docreview_route.py", 335,
+     "continue in _classify_items @ if it.get('_rejected')"): _DR_REJECTED_ALREADY,
+    ("plugins/spec-distill/scripts/docreview_route.py", 390,
+     "continue in _auto_decides @ if int(e['round']) != n - 1"): _DR_ESCALATED_NOT_DUE,
+    ("plugins/quality-gates/scripts/docreview_route.py", 390,
+     "continue in _auto_decides @ if int(e['round']) != n - 1"): _DR_ESCALATED_NOT_DUE,
+    ("plugins/spec-distill/scripts/docreview_route.py", 393,
+     "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
+    ("plugins/quality-gates/scripts/docreview_route.py", 393,
+     "continue in _auto_decides @ if not f0"): _DR_ESCALATED_TARGET_GONE,
+    ("plugins/spec-distill/scripts/docreview_route.py", 405,
+     "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
+    ("plugins/quality-gates/scripts/docreview_route.py", 405,
+     "continue in _auto_decides @ if not f0"): _DR_RERAISE_TARGET_GONE,
+    ("plugins/spec-distill/scripts/docreview_route.py", 416,
+     "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
+        _DR_RERAISE_ALREADY_DECIDED,
+    ("plugins/quality-gates/scripts/docreview_route.py", 416,
+     "continue in _auto_decides @ if not d0 or d0.get('state') != 'expired'"):
+        _DR_RERAISE_ALREADY_DECIDED,
+    ("plugins/spec-distill/scripts/docreview_route.py", 456,
+     "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
+        _DR_LINEAGE_NOT_RERAISE,
+    ("plugins/quality-gates/scripts/docreview_route.py", 456,
+     "continue in _resolve_ids_and_lineage @ if it.get('_source') != 'reraise'"):
+        _DR_LINEAGE_NOT_RERAISE,
 }
 
 # Task 11 수정 라운드 1 — `derive_consumers()` 의 import·앵커 대칭 가정이
@@ -315,6 +449,56 @@ TERMINAL_CONSUMERS = {
         "선언할 dispatch 자리가 없다 — Stop 이벤트가 훅을 직접 실행하지, "
         "markdown 이 subagent 로 dispatch 하는 형태가 아니다. 대응물이 "
         "원리적으로 없다.",
+    # T6b — reviewing-spec 껍데기화(Task 6)가 옛 spec-reviewer 참조를 끊으면서
+    # 이 파일이 ANCHOR 를 잃었다(Ruling 9). `merge_brief_review.py:37` 이 여전히
+    # `codex_degraded_from`·`derive_codex_verdict`·`parse_codex_yaml` 셋을 이
+    # 파일에서 재사용 import 한다(try 로 감싼 degrade 경로라 지우면 그 사용처가
+    # 조용히 축소된다) — 그래서 이 파일은 PR 3(브리프 리뷰 자리로의 전환)까지
+    # 산다. 최소 조치로 두 후보를 견줬다: ① `reviewing-brief/SKILL.md` 의 기존
+    # `consumer=merge_brief_review.py` 처분 줄에 이 파일도 얹기 — 기각한다.
+    # `_ANCHOR_RE` 는 처분 줄 하나당 `consumer=` 하나만 잡고(정규식이 `\S+` 까지만
+    # 먹는다), `test_dispatch_disposition.sh` 축 A①(앵커 수==dispatch 수, 실측
+    # 22==22)·축 A②(각 dispatch 아래 창에 자기 앵커가 정확히 하나)가 앵커:dispatch
+    # 1:1 을 이미 강제한다 — 기존 dispatch 옆에 두 번째 앵커를 얹으면 그 dispatch
+    # 가 앵커 2개를 갖게 돼 축 A② 가 깨지고, 앵커만 늘리면 축 A① 이 깨진다. 이
+    # 파일을 위해 «새 Agent() dispatch 자리»를 만드는 것은 허구다(CLAUDE.md —
+    # 없는 자리를 만들어 붙이면 그건 허구). ② TERMINAL_CONSUMERS 등재 — 채택.
+    # C6(2, 측정된 이유): 이 파일은 이제 어떤 skill/command/agent 도 subagent
+    # dispatch 결과를 이 파일에 판정시키지 않는다(옛 dispatch 자리가 사라졌다) —
+    # 순수 재사용 라이브러리로 변했다. review-dispatch.py 처럼 «원리적으로»
+    # 앵커가 불가능한 것은 아니지만(재도입되면 앵커가 다시 생길 수 있다), «지금»
+    # 은 대응하는 dispatch 자리가 없고 만들 근거도 없다는 점에서 결론(앵커 없음)
+    # 은 같다.
+    "plugins/spec-distill/scripts/merge_review.py":
+        "C6(2) — Ruling 9(T6b). reviewing-spec 껍데기화가 옛 spec-reviewer "
+        "dispatch 참조를 끊어 이 파일이 ANCHOR 를 잃었다. `merge_brief_review.py:37` "
+        "이 여전히 이 파일에서 세 함수를 재사용 import 하므로(try-wrapped degrade "
+        "경로) 파일은 PR 3 까지 산다(계획 File Structure 표). 기존 "
+        "`reviewing-brief/SKILL.md` 의 `consumer=merge_brief_review.py` 처분 "
+        "줄에 이 파일을 얹는 대안을 검토했으나 기각했다 — `test_dispatch_"
+        "disposition.sh` 축 A①/A② 가 앵커:dispatch 1:1 을 이미 강제해서(실측 "
+        "22==22) 기존 dispatch 옆에 두 번째 앵커를 얹으면 그 비율이 깨지고, 이 "
+        "파일만을 위한 새 Agent() dispatch 자리를 만드는 것은 허구다. 지금은 "
+        "어떤 skill 도 이 파일에 subagent 판정을 맡기지 않는다 — 대응하는 "
+        "dispatch 자리가 없다.",
+    # T6b — check_wiring.py 의 IMPORT 도출에서 심볼릭 링크 skip 을 뺐다(Ruling 8).
+    # 그 전에는 이 파일이 by_import·by_anchor 어느 쪽에도 없어(둘 다 링크를 걸러
+    # 냈거나 애초에 앵커가 없어) union 자체에 없었다 — 이번 확장이 처음으로
+    # 드러낸 자리다. `plugins/spec-distill/scripts/docreview_route.py` 는
+    # reviewing-spec/SKILL.md 가 `consumer=` 로 지목하지만, 같은 엔진의
+    # quality-gates 배포 지점(`plugins/quality-gates/scripts/docreview_route.py`,
+    # 같은 대상을 가리키는 별도 심볼릭 링크)은 아직 어떤 quality-gates skill 도
+    # dispatch 하지 않는다 — 이 PR(T6b)이 wiring 하는 host 는 spec-distill
+    # 하나뿐이고(brief Files 목록), quality-gates 쪽 진입 skill 변경은 범위 밖이다.
+    "plugins/quality-gates/scripts/docreview_route.py":
+        "C6(2) — T6b, check_wiring.py 심볼릭 링크 skip 제거(Ruling 8)가 처음 "
+        "드러낸 자리. 같은 엔진 파일이 spec-distill 쪽엔 앵커가 있다"
+        "(`reviewing-spec/SKILL.md` 의 `consumer=plugins/spec-distill/scripts/"
+        "docreview_route.py`) — quality-gates 쪽은 아직 어떤 skill 도 이 엔진을 "
+        "dispatch 하지 않는다(호스트가 아직 안 wiring됐다). 심볼릭 링크 배포는 "
+        "두 호스트 모두에 미리 나가 있지만(설계 §12), quality-gates 진입 skill "
+        "변경은 이 PR 의 Files 목록 밖이다 — 그 host 가 wiring 되면 이 등재는 "
+        "지우고 실제 앵커로 바꿀 것.",
 }
 
 
@@ -530,7 +714,16 @@ def uncited_exemptions():
 # — 배선을 면제로 갈아 끼우는 우회가 조용하지 않게(최종 리뷰 A/m2). `note` 로만
 # 내던 값에 기계 단언을 붙인다. 줄이는 것은 자유, 늘리려면 이 수를 올리는
 # 커밋이 이유를 함께 적어야 한다.
-EXEMPT_BASELINE = 17
+#
+# T6b — 17 → 35. `docreview_route.py` 가 심볼릭 링크 skip 제거(Ruling 8)로 이
+# 락의 모집단에 처음 들어오면서 아홉 자리가 드러났고, 그 파일이 spec-distill·
+# quality-gates 두 호스트에 같은 내용의 심볼릭 링크로 배포되므로(설계 §12) 아홉
+# 자리가 호스트마다 따로 스캔돼 열여덟(9×2)이 늘었다(17+18=35). 각 자리의 근거는
+# 위 `_DR_*` 상수 — 배선을 면제로 «갈아 끼운» 것이 아니라 실제로 이미 다른
+# 자리에서 회계됐거나(같은 대입 지점에서 `L.reject`/`L.absorbed` 동시 호출) 판정
+# 대상 자체가 없는(permit/reraise 스케줄링 탐색) 자리들이다 — 새로 생긴 진짜
+# 인구다.
+EXEMPT_BASELINE = 35
 
 
 def derive_consumers(repo_root):
@@ -548,7 +741,17 @@ def derive_consumers(repo_root):
 
     for pat in ("plugins/*/scripts/*.py", "plugins/*/hooks/*.py"):
         for f in repo.glob(pat):
-            if f.is_symlink() or not f.is_file():
+            # 심볼릭 링크로 배포된 스크립트도 IMPORT 모집단이다. `is_file()` 은
+            # 링크를 따라가므로 대상이 실재 파일이면 여기 든다 — 링크만 걸러내면
+            # (예전의 `f.is_symlink() or`) ANCHOR 도출(아래, `(repo / cand).is_file()`
+            # 로 링크를 그대로 받는다)과 비대칭이 생겨, 심볼릭 링크로 배포된 엔진
+            # 스크립트를 `consumer=` 로 지목하는 순간 구조적으로 ANCHOR ⊆ IMPORT 를
+            # 어긴다. 같은 결함을 `plugins/quality-gates/tests/lib/
+            # extract_codex_invocations.py` 가 이미 한 번 고쳤다(2026-09-08 이전,
+            # 그 파일의 `is_symlink()` skip 제거 주석 참조) — 도구만 바꿔 재발한
+            # 것이므로 같은 방식으로 고친다. `is_file()` 은 대상이 없는 깨진 링크는
+            # 여전히 걸러낸다(끊어진 링크를 읽으려 들면 죽는다).
+            if not f.is_file():
                 continue
             if _IMPORT_RE.search(f.read_text(encoding="utf-8")):
                 by_import.add(str(f.relative_to(repo)))

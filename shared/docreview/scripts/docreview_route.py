@@ -558,8 +558,14 @@ def _build_report(L, st, n, final, rejected_items, degrade, stats):
         "revived": stats["revived"], "degrade": degrade, "advisory": adv, "blocks": L.blocks(),
         "reraise_unconsumed": stats["reraise_unconsumed"],
     }
-    for k, v in report["counts"].items():
-        out["adjudication_" + k] = v
+    # 키를 «이름으로» 편다 — `render_disposition.disposition_report()` 의 같은
+    # 결정과 같은 이유다(그 파일 :54-56): `report["counts"]` 를 `.items()` 로
+    # 통째로 넘기면 카운트 이름이 이 파일에 문자열로 한 번도 안 나타나서,
+    # 어휘가 늘어도 이 소비자는 조용하다 — `tools/adjudication/check_consumed.py`
+    # 가 막으려는 바로 그 침묵이다(L2, 리터럴 첨자·튜플 원소만 소비로 센다).
+    for k in ("accepted", "rejected", "held", "absorbed", "coerced",
+              "sources_failed", "suppressed"):
+        out["adjudication_" + k] = report["counts"][k]
     out["adjudication_unknown_counts"] = report["unknown_counts"]
     out["adjudication_degraded"] = report["degraded"]
     out["adjudication_held_by_class"] = L.held_by_class()

@@ -174,7 +174,7 @@ done
 
 note "── 컴프리헨션 회귀 축 — 요구가 아니라 baseline"
 comp="$(printf '%s\n' "$SCAN" | sed -n 's/^comprehensions=//p')"
-COMP_BASELINE=39   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_review.py
+COMP_BASELINE=75   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_review.py
                    # `merged["report"]["counts"]`를 만드는 `{k: 0 for k in
                    # _MERGED_COUNT_KEYS}`. 항목을 버리는 자리가 아니라 값 0
                    # 으로 카운터를 초기화하는 자리라 처분 호출이 필요 없다.
@@ -207,6 +207,20 @@ COMP_BASELINE=39   # Task 1 F5 census 28 + Task 10 이 1 늘림(29) — merge_re
                    # 같은 S 에 온 라벨들을 모아 어휘 밖 값을 «골라내» 바로 다음 줄에서
                    # `hold()` 로 계수한다 — 컴프리헨션이 없으면 그 항목이 조용히
                    # 사라지던 자리를 소리 나게 만든 것이다.
+                   # T6b 가 36 늘림(39→75) — check_wiring.py 의 심볼릭 링크 skip
+                   # 제거(Ruling 8)로 ㉮ 에 처음 들어온 `docreview_route.py` 가
+                   # `ast` 실측 컴프리헨션 18개를 갖고, 그 파일이 spec-distill·
+                   # quality-gates 두 호스트에 같은 내용의 심볼릭 링크로 배포돼
+                   # (설계 §12) 18×2=36 으로 늘었다. 18개 전수(`ast.walk` 로 직접
+                   # 열거·확인) 중 어느 것도 판정 대상을 조용히 골라내는 필터가
+                   # 아니다 — 전부 (a) 무필터 매핑/투영(:152·:272·:460·:553·:598·
+                   # :45·:47·:157·:162), (b) 이미 다른 자리에서 회계된 값 위의
+                   # 재필터(:309 `live` — `_rejected` 는 `_apply_recritic()` 의
+                   # `L.reject()` 와 같은 자리에서 이미 대입됨, 위 `_DR_ABSORB_
+                   # GROUP_DEAD` 참조), 또는 (c) `final`/`prev` 전체를 보존한 채
+                   # 특정 보고 필드용으로 부분집합을 뽑는 소진적 파티션(:519·:532·
+                   # :554·:555·:556·:487·:341 — 원본 리스트에서 항목을 빼지 않고
+                   # 다른 필드로 다시 투영할 뿐이다)이다.
 if [ "${comp:-0}" -le "$COMP_BASELINE" ] 2>/dev/null; then
   ok "컴프리헨션 내포 $comp <= baseline $COMP_BASELINE"
 else
