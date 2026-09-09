@@ -43,6 +43,28 @@ TARGETS=(
   "$README"
 )
 
+# ── ∀ 전용 코퍼스 — 「이 자리가 숫자를 **되찾으면** 소리를 낸다」 ────────────
+# design doc 자리의 전환이 상한 인용을 재조준하며 손댄 파일들이다. 지금 이 둘은 상한
+# 숫자를 하나도 적지 않는 것이 옳은 상태이므로 위 `TARGETS`(양의 하한 ≥1)에는 넣지
+# 않는다 — 넣으면 「없으니 RED」가 되어 옳은 상태를 벌한다. 넣어야 하는 것은 **음의
+# 짝뿐**이다: 어느 저자가 여기에 숫자를 다시 적으면 그것이 정본 밖의 두 번째 출처가
+# 되는데, 넓히기 전의 이 락은 그 자리를 **아예 보지 않았다**.
+NEG_ONLY=(
+  "$REPO_ROOT/plugins/spec-distill/references/proceed-gate.md"
+  "$REPO_ROOT/plugins/spec-distill/skills/conducting-interview/references/finishing.md"
+)
+
+# ── ∀ 줄-스코프 코퍼스 ──────────────────────────────────────────────────────
+# `reviewing-brief/SKILL.md` 도 같은 전환이 손댄 자리다(`cap 5` → 숫자 없는 서술).
+# 그런데 **파일 통째로는 코퍼스에 넣을 수 없다** — 이 파일에는 *다른* 상한(브리프
+# critic 의 재dispatch 상한)이 `재리뷰 상한 2` 라는 **같은 어휘**로 적혀 있고 오늘
+# 값이 우연히 같다. 통째로 넣으면 문서 리뷰 엔진의 상한이 바뀌는 날 무관한 브리프
+# 상한이 RED 를 내며, 이 락이 독립된 두 값을 묶어 버린다(위 「서로 다른 상한은
+# 코퍼스에 넣지 않는다」). 그래서 **docreview 자리를 인용하는 줄만** 잘라 그 줄에
+# 대해서만 ∀ 를 건다. 자르는 술어가 깨지면 코퍼스가 조용히 비므로 하한 1 을 둔다.
+NEG_SCOPED_FILE="$REPO_ROOT/plugins/spec-distill/skills/reviewing-brief/SKILL.md"
+NEG_SCOPED_RE='reviewing-spec'
+
 # ── 정본 ─────────────────────────────────────────────────────────────────────
 CAP="$(grep -oE '`rereview_cap: [0-9]+`' "$REF" | grep -oE '[0-9]+' | head -1)"
 if [ -z "${CAP:-}" ]; then
@@ -91,8 +113,8 @@ done
 CAP_RE='rereview_cap: [0-9]+|REREVIEW_CAP = [0-9]+|재리뷰 상한 [0-9]+|re-?review[^0-9]{0,12}(max|cap)[^0-9]{0,4}[0-9]+'
 bad=0
 seen=0
-for f in "$REF" "$ENGINE" "${TARGETS[@]}"; do
-  rel="${f#"$REPO_ROOT"/}"
+scan_text() {   # scan_text <표시경로> <검사할 텍스트>
+  local rel="$1" hit n
   while IFS= read -r hit; do
     [ -n "$hit" ] || continue
     seen=$((seen + 1))
@@ -101,8 +123,33 @@ for f in "$REF" "$ENGINE" "${TARGETS[@]}"; do
       bad=$((bad + 1))
       no "음의 짝: $rel 의 '$hit' 가 정본 $CAP 과 다르다"
     fi
-  done < <(grep -oE "$CAP_RE" "$f" || true)
+  done < <(printf '%s\n' "$2" | grep -oE "$CAP_RE" || true)
+}
+for f in "$REF" "$ENGINE" "${TARGETS[@]}" "${NEG_ONLY[@]}"; do
+  rel="${f#"$REPO_ROOT"/}"
+  # 코퍼스 실재 — 없는 파일에 대한 `grep`(rc 2)은 `|| true` 가 삼켜 그 자리가 **조용히**
+  # 코퍼스에서 빠진다. 이름이 바뀌었거나 삭제된 자리는 「어긋난 것이 없다」가 아니라
+  # 「보지 못했다」이고, 넓힌 코퍼스일수록 그 침묵이 커진다.
+  if [ ! -r "$f" ]; then
+    no "코퍼스 실재: $rel 를 읽을 수 없다 — 이 자리는 이번 판정에서 통째로 빠졌다(조용한 축소 금지)"
+    continue
+  fi
+  scan_text "$rel" "$(cat "$f")"
 done
+# 줄-스코프 자리 — 위 헤더의 `NEG_SCOPED_*`.
+scoped_rel="${NEG_SCOPED_FILE#"$REPO_ROOT"/}"
+if [ ! -r "$NEG_SCOPED_FILE" ]; then
+  no "코퍼스 실재: $scoped_rel 를 읽을 수 없다 — 줄-스코프 자리가 통째로 빠졌다"
+else
+  scoped_lines="$(grep -E "$NEG_SCOPED_RE" "$NEG_SCOPED_FILE" || true)"
+  n_scoped="$(printf '%s\n' "$scoped_lines" | grep -c . || true)"
+  if [ "${n_scoped:-0}" -lt 1 ]; then
+    no "코퍼스 비공허: $scoped_rel 에서 '$NEG_SCOPED_RE' 줄을 하나도 못 잘랐다 — 자르는 술어가 깨졌고 이 자리의 ∀ 는 공허하다"
+  else
+    ok "코퍼스 비공허: $scoped_rel 의 docreview 인용 ${n_scoped}줄을 잘라 ∀ 대상으로 삼았다 (하한 1)"
+    scan_text "$scoped_rel(docreview 인용 줄)" "$scoped_lines"
+  fi
+fi
 if [ "$seen" -lt 5 ]; then
   no "음의 짝: 상한 어휘를 ${seen}건밖에 도출하지 못했다 — 코퍼스 넷에서 최소 5건(정본 1 + 엔진 1 + SKILL 1 + README 2)이 나와야 한다. 이 상태에서 'bad=0' 은 증거가 아니다"
 elif [ "$bad" -eq 0 ]; then
