@@ -49,9 +49,23 @@ TARGETS=(
 # 않는다 — 넣으면 「없으니 RED」가 되어 옳은 상태를 벌한다. 넣어야 하는 것은 **음의
 # 짝뿐**이다: 어느 저자가 여기에 숫자를 다시 적으면 그것이 정본 밖의 두 번째 출처가
 # 되는데, 넓히기 전의 이 락은 그 자리를 **아예 보지 않았다**.
+#
+# `docs/philosophy/devbrew-harness-philosophy.md` 는 다른 경로로 여기 들어왔다. 그 문서의
+# P18 코드 지도가 상한을 **옛 값으로** 계속 적고 있었고 — 이 락이 그 값을 바꾼 릴리스에서
+# — 아무것도 발화하지 않았다. 원인은 하나다: 그 파일이 이 코퍼스 밖이었다. 인용만 고치고
+# 코퍼스를 안 넓히면 다음 값 변경 때 같은 자리가 같은 방식으로 다시 빠져나간다.
+# **넣기 전에 M4 의 위험(같은 어휘를 쓰는 «다른» 상한)을 점검했다**: 이 파일에서 아래
+# `CAP_RE` 가 매치하는 자리는 그 P18 줄 하나뿐이고, 나머지 상한 언급(P18 본문의
+# 「max-iteration cap」, 「qg Review fix-loop」)에는 **숫자가 없다.** 그래서
+# `reviewing-brief/SKILL.md` 와 달리 줄-스코프가 필요 없고 파일 통째로 넣는다.
+# **다만 미래 위험 하나를 이름 붙여 둔다** — 그 P18 줄은 이 상한 바로 옆에 「qg Review
+# fix-loop」를 나란히 적는다. 누가 그 qg 상한을 **숫자로** 적으면 이 락이 무관한 값에 대해
+# RED 를 낸다. 그때의 처방은 이 항목을 빼는 것이 아니라 `reviewing-brief` 와 같은 줄-스코프로
+# 좁히는 것이다.
 NEG_ONLY=(
   "$REPO_ROOT/plugins/spec-distill/references/proceed-gate.md"
   "$REPO_ROOT/plugins/spec-distill/skills/conducting-interview/references/finishing.md"
+  "$REPO_ROOT/docs/philosophy/devbrew-harness-philosophy.md"
 )
 
 # ── ∀ 줄-스코프 코퍼스 ──────────────────────────────────────────────────────
