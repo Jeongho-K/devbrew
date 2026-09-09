@@ -82,4 +82,44 @@ grep -q 'user_sourced_items' <<<"$pi_block" \
     && grep -qF '8섹션' "$README"; } \
   && ok "v0.23.0: README 서두가 payload+audit 2파일 쌍을 설명" \
   || no "README 서두가 산출물을 2파일 쌍으로 설명하지 않는다"
+
+# ── 삭제된 술어의 부재 + 그 양성 짝 (whole-branch 리뷰 I2) ────────────────────
+# 위 스윕들은 전부 「이 키워드가 **있는가**」만 묻는다. 그래서 문서 리뷰 엔진 전환이
+# 옛 stagnation 술어의 생산자와 소비자를 design doc 자리에서 통째로 걷어낸 뒤에도, 그
+# 술어를 현재형으로 서술하는 README 줄이 그대로 살아남아 이 스위트를 통과했다 —
+# 이 파일에 부재를 묻는 단언이 하나도 없었기 때문이다. 제거된 구성물이 표면에 남으면
+# 그것은 오탈자가 아니라 **거짓 인용**이고, 다음 세션이 그 줄을 근거로 삼는다.
+#
+# **부재 단언에는 짝이 필요하다.** 「옛 이름이 없다」만 걸면 그 줄을 통째로 지워도
+# 통과한다(부재는 대상을 삭제하면 언제나 참이다) — 모양만 있고 이빨은 없는 락이 된다.
+# 그래서 같은 자리에서 「**지금** 술어를 이름으로 대는가」를 함께 잰다. 둘이 한 쌍이고,
+# 한쪽만으로는 어느 방향도 못 잡는다:
+#   · 옛 이름을 되살리면 → 부재 단언이 RED
+#   · 지금 술어의 서술을 지우면 → 양성 짝이 RED
+# 부재는 README **전체**에서 잰다(어느 절로 옮겨도 거짓 인용은 거짓 인용이다). 양성
+# 짝은 그 술어가 사는 절로 좁힌다 — file-wide 면 다른 절의 우연한 언급이 만족시킨다.
+absorb_block="$(awk '/^### Principles 흡수/{f=1;print;next} f && /^#/{f=0} f' "$README")"
+if [[ -z "$absorb_block" ]]; then
+  no "P18: 'Principles 흡수' 절을 못 찾았다 — 구조 앵커 파손(조용한 통과 금지)"
+else
+  ok "P18: 'Principles 흡수' 절 추출 ($(printf '%s\n' "$absorb_block" | wc -l | tr -d ' ')줄)"
+  ABSORB_TMP="$(mktemp -t readme-absorb-XXXXXX)"
+  printf '%s\n' "$absorb_block" > "$ABSORB_TMP"
+  # 부재 — 엔진이 대체한 옛 술어의 두 카운터. 이 브랜치 이후 design doc 자리에는
+  # 생산자도 소비자도 없다(구현은 brief 자리가 아직 쓰는 merge_review.py 하나뿐이고,
+  # 이 플러그인 README 가 서술하는 자리에는 도달하지 않는다).
+  if grep -qE 'raised_count|dismissed_by_user' "$README"; then
+    no "P18/부재: 옛 stagnation 술어의 카운터 이름이 README 에 남아 있다 — 생산자도 소비자도 없는 술어를 현재형으로 서술한다(거짓 인용)"
+  else
+    ok "P18/부재: 옛 stagnation 술어의 카운터 이름이 README 에 없다"
+  fi
+  # 양성 짝 — 지금 술어를 실제 식별자로 댄다. 이게 없으면 위 부재 단언은 P18 줄을
+  # 통째로 지우는 것만으로 만족된다.
+  if grep -qF 'open_lineages' "$ABSORB_TMP" && grep -qF 'gate_summary' "$ABSORB_TMP"; then
+    ok "P18/양성 짝: 지금 stagnation 술어(열린 계보 open_lineages · gate_summary)를 이름으로 댄다"
+  else
+    no "P18/양성 짝: 'Principles 흡수' 절이 지금 stagnation 술어를 이름으로 대지 않는다 — 부재 단언이 대상 삭제만으로 만족된다"
+  fi
+  rm -f "$ABSORB_TMP"
+fi
 finish
