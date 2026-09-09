@@ -72,6 +72,18 @@ SD="${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}"
 # 오지 않는다 — `SD=` 를 펜스마다 다시 세우는 것과 같은 이유다. 어느 모드가 어느 프로필로
 # 가는가(매핑)는 그 절 하나에만 있고, 여기 있는 것은 그 결과값의 재도출뿐이다.
 PROFILE="${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/references/docreview-profiles/design-doc.md"
+# 러너의 네 인자 중 둘은 이 펜스가 대입하지 않았었다. 같은 이유(새 셸)로 여기서 함께
+# 세운다 — `$CODEX_YAML` 은 세션의 **순수 함수**라 어느 셸에서 다시 도출해도 같은 파일을
+# 가리킨다(`## 입력` 의 `$STATE_DIR` 과 같은 자리다. `mktemp` 은 `$$` 와 같은 결함이다 —
+# 다음 호출이 그 파일을 재발견하지 못한다). 이미 값이 있으면 그것을 쓴다: `## 입력` 을
+# 이 펜스 앞에 이어 붙여 한 호출로 도는 것이 정상 경로이고, 그때 두 번 도출하지 않는다.
+if [ -z "${CODEX_YAML:-}" ]; then
+  harness_sid="${harness_sid:-$(python3 "$SD/scripts/state_path.py" session-id)}"
+  ROOT="${ROOT:-$(python3 "$SD/scripts/state_path.py" state-root)}"
+  if [ -n "$harness_sid" ] && mkdir -p "$ROOT/$harness_sid" 2>/dev/null; then
+    CODEX_YAML="$ROOT/$harness_sid/docreview-codex.yaml"
+  fi
+fi
 DETECT_OUT="$(bash "$SD/scripts/detect_codex.sh")"
 codex_avail="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^codex_available: //p')"
 skip_reason="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^skip_reason: //p')"
@@ -79,11 +91,21 @@ skip_reason="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^skip_reason: //p')"
 # codex_available: 줄을 낸다(false 여도). 그 줄이 없으면 감지기 자체가 안 돈 것이다 —
 # skip_reason: unknown 으로 뭉개지 않는다.
 if [[ -z "$codex_avail" ]]; then skip_reason="detector_not_runnable"; fi
+# `$spec_path` 는 훅 mandate 의 슬롯(`## 입력`)이라 디스크에서 도출되지 않는다 — 값이
+# 없으면 여기서 **소리를 내고 멈춘다.** 빈 채로 러너에 넘기면 러너가 usage 로 rc 2 에
+# 죽는데, 그 rc 는 아래 잔존물 제거의 옛 조건(rc 3)이 보지 않는 값이라 직전 라운드 YAML 이
+# 그대로 남아 이번 라운드 판정으로 읽힌다. 처방은 「앞에 이어 붙여라」다 — 별개 호출로 다시
+# 돌려도 같은 빈 상태가 재생산된다.
+if [[ -z "${spec_path:-}" || -z "${CODEX_YAML:-}" ]]; then
+  echo "[spec-distill] codex 게이트 입력 부재 — spec_path='${spec_path:-}' CODEX_YAML='${CODEX_YAML:-}'. 「## 입력」 블록을 이 펜스 앞에 이어 붙여 같은 Bash 호출 안에서 함께 돌리고, spec_path 에는 dispatch mandate 의 'spec path:' 슬롯 값을 대입해라. 이 라운드의 codex 축은 없이 간다." >&2
+  codex_avail=""; skip_reason="gate_inputs_missing"
+fi
 if [[ "$codex_avail" == "true" ]]; then
   bash "$SD/scripts/run_docreview_codex_reviewer.sh" "$PROFILE" "$spec_path" "$(pwd)" "$CODEX_YAML"; runner_rc=$?
-  # 러너는 산출물을 **쓰지 못하면** exit 3 으로 죽는다. 그 경우 직전 라운드 YAML 이 그대로
-  # 남아 이번 라운드 판정으로 읽히므로 잔존물을 제거한다.
-  if [[ "$runner_rc" -eq 3 ]]; then rm -f "$CODEX_YAML"; fi
+  # 러너가 **산출물을 쓰지 못한** 종료는 전부 잔존물 제거 대상이다 — rc 3(쓰기 불가)만이
+  # 아니라 rc 2(인자 부족)도 그렇다. 그때 직전 라운드 YAML 이 그대로 남아 이번 라운드
+  # 판정으로 읽힌다. rc 0 만이 「이번 실행이 그 파일을 썼다」이므로 그 하나만 남긴다.
+  if [[ "$runner_rc" -ne 0 ]]; then rm -f "$CODEX_YAML"; fi
 else
   echo "[spec-distill] codex co-review SKIPPED (reason: ${skip_reason:-unknown}) — Claude-only, 이 리뷰에는 모델 다양성이 없었다 (degraded)." >&2
 fi
@@ -227,8 +249,9 @@ Read ${CLAUDE_PLUGIN_ROOT:-./plugins/spec-distill}/references/proceed-gate.md
 - `fin.json` 의 `advisory[]` — codex 부재 · critic 층 2 부재 · recritic 부재 · 처분 회계의 degrade
   사유가 전부 이 한 채널로 온다.
 - `fin.json` 의 `blocks` — **막는 것**만 여기 온다: critic 사망(주 판정자) · 항목 소실 · 셀 수 없음.
-- `docreview_state.py gate --render` 의 **첫 줄** — 라운드 번호 · 재리뷰 카운트 · 그 라운드의 degrade
-  요약.
+- `docreview_state.py gate --render` 의 **첫 줄** — 그 라운드의 degrade 한 줄이다. codex 가 없었으면
+  그 사실과 사유가, 아니면 `advisory[]` 요약이, 둘 다 비면 `degrade 없음` 이 온다. 라운드 번호와
+  재리뷰 카운트는 **둘째 줄**이다(상한 도달·stagnation 도 그 줄에 붙는다).
 
 게이트를 띄우기 **직전에** 이 셋을 읽어 하나도 빠뜨리지 않고 프로즈로 내고, 승인 게이트 질문
 텍스트의 `degrade:` 슬롯에도 싣는다. 셋 다 비었을 때만 `degrade 없음` 이다 — 그 문구는 **채널을

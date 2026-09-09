@@ -19,6 +19,8 @@ major인 이유: **design doc 자리(`reviewing-spec`)의 verdict 계약이 깨�
 
 ### Fixed
 
+- **`reviewing-spec` 의 codex 게이트 펜스가 그대로는 돌지 않았다 (whole-branch 리뷰 I1).** 펜스가 러너에 넘기는 네 인자 중 `$spec_path`·`$CODEX_YAML` 둘이 그 파일 어디에서도 대입되지 않았다 — Bash 도구는 호출마다 새 셸이라 앞 펜스의 값이 오지 않는데, 펜스는 `SD`·`PROFILE` 만 다시 세우고 멈춰 있었다. 빈 산출물 경로를 받은 러너는 usage 로 **rc 2** 에 죽고, 펜스의 유일한 rc 처리(rc 3 → `rm -f`)가 그 값을 안 봐서 stale 방지가 발화하지 않았다 — 직전 라운드 YAML 이 이번 라운드 판정으로 읽히는 자리다. 셋을 고쳤다: (a) `$CODEX_YAML` 을 세션의 순수 함수로 펜스 «안»에서 도출(값이 이미 있으면 그것을 쓴다), (b) `$spec_path`(훅 mandate 슬롯이라 디스크에서 도출되지 않는다)나 산출물 경로가 비면 형제 `framing-requests` 와 같은 모양의 입력-부재 분기가 `skip_reason=gate_inputs_missing` 으로 **소리를 내고** codex 축을 건너뛴다, (c) 잔존물 제거 조건을 `rc == 3` 에서 `rc != 0` 으로 넓혀 「러너가 이번 실행에서 그 파일을 쓰지 못한」 모든 종료를 덮는다. 펜스 본문을 잘라 cold shell 에서 실행해 검증했다(수정 전: 빈 인자 → rc 2 · 잔존물 잔류. 수정 후: 입력 부재 → 러너 미호출 + 공시 / 입력 있음 → 산출물 경로 도출 + codex 1회).
+- **`reviewing-spec` 의 degrade 채널 서술이 게이트 첫 줄의 내용을 잘못 적었다 (리뷰 M1).** `render_gate` 의 첫 줄은 degrade 공시 하나이고 라운드 번호·재리뷰 카운트는 둘째 줄이다. AC8 의 문자 그대로의 대상이 그 첫 줄이라, 서술이 그 자리에서 틀리면 다음 독자가 대조할 것이 없다.
 - **엔진 러너의 PyYAML 의존 제거 · 배선 락의 심볼릭 링크 맹점 (Task 6b).** `run_docreview_codex_reviewer.sh` 의 프로필 파서가 stdlib 만으로 `layer_rubric`·`allowed_dispositions`·`web` 을 읽고, `check_wiring.py` 류의 배선 락이 심볼릭 링크로 배포된 엔진 스크립트를 실제로 검사한다.
 
 ## [0.58.0] — 2026-09-08
