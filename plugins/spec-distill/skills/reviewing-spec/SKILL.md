@@ -84,6 +84,23 @@ if [ -z "${CODEX_YAML:-}" ]; then
     CODEX_YAML="$ROOT/$harness_sid/docreview-codex.yaml"
   fi
 fi
+# ── 잔존물 제거는 **여기**다 — 가용성 판정보다 «앞». ─────────────────────────
+# 이 경로는 세션의 순수 함수라 라운드마다 같은 파일이다. 직전 라운드가 성공했으면 그
+# YAML 은 `codex_failed: false` 를 달고 있고, 5단계 `prepare-recritic` 은 그 마커 하나로
+# 이 파일을 **이번 라운드의 판정**으로 읽는다 — 직전 라운드의 finding 을 이번 것으로
+# 삼키고 `codex_absent: false`, degrade 없음으로 보고한다.
+# 위험한 자리는 **codex 를 건너뛴 라운드**다: kill switch·미설치·감지기 부재·게이트 입력
+# 부재 — 넷 다 아래 `if` 의 참 분기에 들어가지 않으므로, 그 안에만 제거가 있으면 넷 다
+# 잔존물을 그대로 남긴다. 그 결과가 「사용자가 codex 를 껐는데 모델 다양성 정상으로
+# 보고되는 라운드」다. 끈 것이 꺼진 것으로 보이지 않는 switch 는 없는 것보다 나쁘다(P21 —
+# kill switch 는 보안 컨트롤이다).
+# **판별자는 파일의 내용이 아니라 시점이다.** 직전 라운드의 산출물과 이번 라운드의 정직한
+# 실패 기록은 스키마도 마커도 같아서 내용으로는 못 가른다(둘 다 이 러너가 쓴 같은 형식이고,
+# 어느 필드도 라운드를 담지 않는다). 진입에서 지우면 그 뒤 그 자리에 있는 것은 **이 실행이
+# 쓴 것**뿐이다 — 러너가 `trap … EXIT`·`emit_fallback` 으로 남기는 이번 라운드의 degrade
+# 기록(`codex_failed: true` + 실제 사유)은 이 지움 **뒤에** 쓰이므로 살아남아 하류에 사유를
+# 그대로 전한다. 이 줄을 아래 분기 안으로 옮기면 그 보장이 깨진다.
+[ -n "${CODEX_YAML:-}" ] && rm -f "$CODEX_YAML"
 DETECT_OUT="$(bash "$SD/scripts/detect_codex.sh")"
 codex_avail="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^codex_available: //p')"
 skip_reason="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^skip_reason: //p')"
@@ -102,9 +119,11 @@ if [[ -z "${spec_path:-}" || -z "${CODEX_YAML:-}" ]]; then
 fi
 if [[ "$codex_avail" == "true" ]]; then
   bash "$SD/scripts/run_docreview_codex_reviewer.sh" "$PROFILE" "$spec_path" "$(pwd)" "$CODEX_YAML"; runner_rc=$?
-  # 러너가 **산출물을 쓰지 못한** 종료는 전부 잔존물 제거 대상이다 — rc 3(쓰기 불가)만이
-  # 아니라 rc 2(인자 부족)도 그렇다. 그때 직전 라운드 YAML 이 그대로 남아 이번 라운드
-  # 판정으로 읽힌다. rc 0 만이 「이번 실행이 그 파일을 썼다」이므로 그 하나만 남긴다.
+  # 위 진입 제거의 **둘째 방어선**이다. 러너가 산출물을 쓰지 못한 종료(rc 2 인자 부족 ·
+  # rc 3 쓰기 불가)에서 남을 수 있는 0바이트 껍데기를 걷어낸다. 이 조건이 정직한 기록을
+  # 지우지 않는다는 것은 러너의 종료 지점 전수로 확인된다 — 기록을 남기는 경로
+  # (`emit_fallback` · `runner_common_unloadable` · `yaml_conversion_failed` · EXIT 트랩의
+  # `_degrade_if_empty` · 정상)는 **전부 exit 0** 이고, non-zero 는 아무것도 쓰지 못한 둘뿐이다.
   if [[ "$runner_rc" -ne 0 ]]; then rm -f "$CODEX_YAML"; fi
 else
   echo "[spec-distill] codex co-review SKIPPED (reason: ${skip_reason:-unknown}) — Claude-only, 이 리뷰에는 모델 다양성이 없었다 (degraded)." >&2
