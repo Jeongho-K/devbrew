@@ -231,6 +231,60 @@ _canon() { python3 -c 'import json,sys; print(json.dumps(json.loads(sys.stdin.re
 assert_eq "$(printf '%s' "$ROWS_JSON" | _canon)" "$(printf '%s' "$EXPECTED_ROWS" | _canon)" \
   "증인: gate-rows 출력이 이 락에 박아 둔 리터럴 기대 표와 정확히 같다(표 드리프트 감시, Ruling 29)"
 
+# ── 열림 축의 «행동» 락 (M3) ────────────────────────────────────────────────
+# 바로 위 증인은 `open` 열이 **적힌 대로인가**만 잰다 — 구조 대 구조다. 그 열이
+# 무엇을 **하는가**는 이 파일의 어느 단언도 재지 않았고, 그래서 어느 행의 `open` 을
+# 어느 방향으로 뒤집어도 스위트 전체가 GREEN 이었다(리뷰 실측). 증인 하나만 남으면
+# 이 열의 유일한 방어선이 «표를 손으로 고치는 사람이 실수하지 않는 것»이 되는데, 그
+# 표의 헤더는 행이 바뀌면 손으로 고치라고 **명시적으로 지시한다** — 지시받은 손질이
+# 곧 방어선의 해제가 된다.
+#
+# `open` 은 `is_open` → `_refresh_open_lineages` → 라운드 원장의 「열린 계보」로
+# 흐르고, 그 집합이 설계 §8.4 stagnation 술어의 **입력**이다(집합이 직전 라운드와
+# 같고 진행 0 이면 승인 게이트가 즉시 열린다). 조용한 반전은 정체 감지를 바꾼다.
+#
+# 두 단언을 건다. 서로 **못 보는 것이 다르다**:
+#
+#  (A) **차단 ⟹ 열림.** 기대값을 `blocks` 열에서 **도출**한다 — `open` 열도, 위
+#      증인 표도 읽지 않는다. 근거는 §8.4 의 「기각된 계보는 열린 집합에서 빠진다」다:
+#      집합에서 빠지는 것은 **닫힌** 것이고, 승인을 막고 있는 항목은 닫히지 않았다.
+#      그래서 `open` 을 뒤집고 증인 표까지 손으로 맞춰 GREEN 으로 되돌려도 이 단언은
+#      그대로 RED 다. 대신 비차단 행(다섯)은 이 단언의 사정거리 밖이다.
+#  (B) **행동 기대표.** 렌더되는 **모든** 행의 기대 «행동»을 리터럴로 박아 (A) 의
+#      사정거리 밖인 비차단 행의 반전을 양방향으로 잡는다. 증인 표와 축이 다르다 —
+#      저것은 표의 글자를, 이것은 그 글자가 만든 **원장 값**을 잰다. 행이 늘면 아래
+#      등식이 이 표의 미기재를 RED 로 낸다(열거가 아니라 등식이라 조용히 못 빠진다).
+_open_probe() {   # _open_probe <state-dir> <fid> → open | closed
+  # 재구현하지 않는다 — production 의 `_refresh_open_lineages` 를 그대로 불러 그
+  # 결과 집합에 이 finding 의 계보가 있는지 본다(원장에는 쓰지 않는다).
+  python3 -c 'import sys
+sys.path.insert(0, sys.argv[3])
+from docreview_state import load_state, _refresh_open_lineages
+st = load_state(sys.argv[1])
+n = int(st["round"])
+_refresh_open_lineages(st, n)
+lin = st["findings"][sys.argv[2]]["lineage"]
+print("open" if lin in st["rounds"][str(n)]["open_lineages"] else "closed")' "$1" "$2" "$SCRIPTS"
+}
+
+EXPECTED_OPEN='open_decide=open adopted=open blocked_expired=open superseded_expired=open
+held_decide=closed unapplied_fix=open escalated_fix=open held_fix=open
+blocking_ask_open=open ask_open=closed'
+expected_open_for() {   # $1=행 이름 → open | closed | "" (미등재)
+  local e
+  for e in $EXPECTED_OPEN; do
+    case "$e" in "$1="*) printf '%s' "${e#*=}"; return ;; esac
+  done
+}
+EO_KEYS="$(printf '%s\n' $EXPECTED_OPEN | sed 's/=.*//' | sort | tr '\n' ' ')"
+assert_eq "$EO_KEYS" "$(printf '%s\n' $RENDERED | sort | tr '\n' ' ')" \
+  "등식: 행동 기대표의 행 집합 = 표의 가시성 행 집합 (행을 늘리는 사람은 이 표도 채워야 한다)"
+n_eo_closed="$(printf '%s\n' $EXPECTED_OPEN | grep -c '=closed$' || true)"
+n_eo_open="$(printf '%s\n' $EXPECTED_OPEN | grep -c '=open$' || true)"
+{ [ "$n_eo_closed" -ge 1 ] && [ "$n_eo_open" -ge 4 ]; } \
+  && ok "도출: 행동 기대표에 열림 ${n_eo_open}건 · 닫힘 ${n_eo_closed}건 (양방향 하한 4·1)" \
+  || no "도출: 행동 기대표가 한쪽으로 쏠렸다(열림 ${n_eo_open} · 닫힘 ${n_eo_closed}) — 한 방향은 공허하게 통과한다"
+
 # ── 가시성 + 차단/양성 짝 ───────────────────────────────────────────────────
 for row in $RENDERED; do
   d="$(mktemp -d -t gv-XXXXXX)"
@@ -262,6 +316,20 @@ for row in $RENDERED; do
       # 적혀도 이 락은 못 잡는다(부재 단언에는 짝이 없으면 이빨이 없다).
       assert_eq "$ar" "True" "양성 짝: 행 $row(비차단) 하나만 살아 있으면 approval_ready 는 True" ;;
   esac
+  # ── 열림 축 (M3) — 위 헤더의 (A)·(B) ──────────────────────────────────────
+  op="$(_open_probe "$d" "$fid")"
+  case " $BLOCKING " in
+    *" $row "*)
+      assert_eq "$op" "open" \
+        "차단⟹열림: 행 $row 하나만 살아 있으면 그 계보가 열린 계보 집합에 있다 (기대는 blocks 열에서 도출 — open 열도 증인 표도 안 읽는다)" ;;
+  esac
+  exp_op="$(expected_open_for "$row")"
+  if [ -z "$exp_op" ]; then
+    no "행동: 행 $row 이 행동 기대표에 없다 — 위 등식이 이미 소리를 냈어야 한다(계측기 붕괴)"
+  else
+    assert_eq "$op" "$exp_op" \
+      "행동: 행 $row 하나만 살아 있을 때 그 계보는 $exp_op (§8.4 stagnation 의 입력이 되는 원장 값)"
+  fi
   rm -rf "$d"
 done
 finish
