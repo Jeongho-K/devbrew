@@ -100,7 +100,21 @@ fi
 # 쓴 것**뿐이다 — 러너가 `trap … EXIT`·`emit_fallback` 으로 남기는 이번 라운드의 degrade
 # 기록(`codex_failed: true` + 실제 사유)은 이 지움 **뒤에** 쓰이므로 살아남아 하류에 사유를
 # 그대로 전한다. 이 줄을 아래 분기 안으로 옮기면 그 보장이 깨진다.
-[ -n "${CODEX_YAML:-}" ] && rm -f "$CODEX_YAML"
+# **그리고 지움은 «시도» 가 아니라 «보장» 이어야 한다.** rc 를 보지 않으면 이 블록은
+# 무조건형으로 적어 놓고 조건부로 동작한다 — 실측: 상태 디렉토리가 쓰기 불가면 `rm` 은
+# rc 1 로 실패하고 파일이 살아남아, kill switch 를 켠 라운드가 직전 라운드 finding 을
+# 그대로 삼킨다(수정 전 결함의 완전 재현). unlink 는 **디렉토리** 권한을, 절단은 **파일**
+# 권한을 요구하므로 둘은 함께 실패하지 않는다 — 그래서 지우지 못하면 0바이트로 절단한다.
+# 0바이트는 하류에서 이미 fail-closed 다(실측: `codex_absent: true`). 둘 다 실패하면
+# 조용히 넘어가지 않고 아래에서 codex 축을 **끈다**.
+residue_unclear=0
+if [ -n "${CODEX_YAML:-}" ]; then
+  rm -f "$CODEX_YAML" 2>/dev/null
+  if [ -e "$CODEX_YAML" ]; then
+    : > "$CODEX_YAML" 2>/dev/null
+    [ -s "$CODEX_YAML" ] && residue_unclear=1
+  fi
+fi
 DETECT_OUT="$(bash "$SD/scripts/detect_codex.sh")"
 codex_avail="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^codex_available: //p')"
 skip_reason="$(printf '%s\n' "$DETECT_OUT" | sed -n 's/^skip_reason: //p')"
@@ -117,14 +131,25 @@ if [[ -z "${spec_path:-}" || -z "${CODEX_YAML:-}" ]]; then
   echo "[spec-distill] codex 게이트 입력 부재 — spec_path='${spec_path:-}' CODEX_YAML='${CODEX_YAML:-}'. 「## 입력」 블록을 이 펜스 앞에 이어 붙여 같은 Bash 호출 안에서 함께 돌리고, spec_path 에는 dispatch mandate 의 'spec path:' 슬롯 값을 대입해라. 이 라운드의 codex 축은 없이 간다." >&2
   codex_avail=""; skip_reason="gate_inputs_missing"
 fi
+# 진입 중화가 실패했으면 그 사실이 다른 어떤 사유보다 앞선다 — 이 라운드는 codex 를
+# 돌리지 않을 뿐 아니라, 하류가 그 자리의 파일을 이번 라운드 판정으로 읽으면 안 된다.
+if [[ "$residue_unclear" == "1" ]]; then
+  echo "[spec-distill] codex 산출물 경로를 비우지 못했다 — 지우지도 절단하지도 못했다: ${CODEX_YAML}. 그 자리의 내용이 직전 라운드 것인지 이번 실행 것인지 구별할 수 없다(판별자는 시점인데 그 보장이 사라졌다). 5단계의 --codex 에 이 경로를 넘기지 마라 — 넘기면 직전 라운드의 codex finding 이 이번 라운드 판정으로 섭취된다. 해소: 그 파일을 직접 지우거나 상태 디렉토리의 쓰기 권한을 복구하라." >&2
+  codex_avail=""; skip_reason="residue_unclearable"; CODEX_YAML=""
+fi
 if [[ "$codex_avail" == "true" ]]; then
   bash "$SD/scripts/run_docreview_codex_reviewer.sh" "$PROFILE" "$spec_path" "$(pwd)" "$CODEX_YAML"; runner_rc=$?
-  # 위 진입 제거의 **둘째 방어선**이다. 러너가 산출물을 쓰지 못한 종료(rc 2 인자 부족 ·
-  # rc 3 쓰기 불가)에서 남을 수 있는 0바이트 껍데기를 걷어낸다. 이 조건이 정직한 기록을
-  # 지우지 않는다는 것은 러너의 종료 지점 전수로 확인된다 — 기록을 남기는 경로
-  # (`emit_fallback` · `runner_common_unloadable` · `yaml_conversion_failed` · EXIT 트랩의
-  # `_degrade_if_empty` · 정상)는 **전부 exit 0** 이고, non-zero 는 아무것도 쓰지 못한 둘뿐이다.
-  if [[ "$runner_rc" -ne 0 ]]; then rm -f "$CODEX_YAML"; fi
+  # 껍데기 정리 — 형제 `framing-requests` 와 같은 `-eq 3` 이다.
+  # **앞선 판본의 `-ne 0` 은 거짓 전제 위에 있었다**: 「기록을 남기는 러너 종료는 전부
+  # exit 0」이라고 적었는데 그렇지 않다. EXIT 트랩은 «자기 rc 를 갖는 종료 지점»이 아니라
+  # 모든 종료에 얹히므로 **원래 실패의 rc 를 그대로 두고** 기록을 남긴다 — 실측: 트랩
+  # 무장 뒤 SIGTERM 이면 `rc 143` + `reason: aborted_before_completion` 인 정직한 이번
+  # 라운드 기록이 함께 나온다. `-ne 0` 은 바로 그 기록을 지운다.
+  # 그리고 `-ne 0` 이 대신 막아 주는 것은 없다: 껍데기가 생기는 유일한 자리는 러너의
+  # `runner_common` 미로드 + 기록 실패이고 그것은 **rc 3** 이며(rc 2 는 절단 이전이라
+  # 파일 자체가 없다), 0바이트는 하류에서 이미 fail-closed 다(실측: `codex_absent: true`).
+  # 넓은 술어가 사는 것은 없고 잃는 것은 정직한 사유다 — `-eq 3` 이 지배한다.
+  if [[ "$runner_rc" -eq 3 ]]; then rm -f "$CODEX_YAML"; fi
 else
   echo "[spec-distill] codex co-review SKIPPED (reason: ${skip_reason:-unknown}) — Claude-only, 이 리뷰에는 모델 다양성이 없었다 (degraded)." >&2
 fi
